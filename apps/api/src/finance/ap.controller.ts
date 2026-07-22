@@ -1,0 +1,94 @@
+import { BadRequestException, Body, Controller, Delete, Get, Header, Param, Post, Query, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { ApiBearerAuth, ApiConsumes, ApiTags } from "@nestjs/swagger";
+import { InvoiceStatus } from "@prisma/client";
+import { memoryStorage } from "multer";
+import { PERMISSIONS } from "@erp/shared-constants";
+import { Permissions } from "../common/decorators/permissions.decorator";
+import { CurrentCompanyId } from "../common/decorators/current-company-id.decorator";
+import { CurrentUser } from "../common/decorators/current-user.decorator";
+import { JwtPayload } from "../auth/types/jwt-payload.type";
+import { ApService } from "./ap.service";
+import { CreatePurchaseInvoiceDto } from "./dto/create-purchase-invoice.dto";
+
+// JwtAuthGuard + PermissionsGuard are registered globally in AppModule.
+@ApiTags("accounts-payable")
+@ApiBearerAuth()
+@Controller("ap/invoices")
+export class ApController {
+  constructor(private readonly apService: ApService) {}
+
+  @Get()
+  @Permissions(PERMISSIONS.AP_INVOICE_VIEW)
+  async list(
+    @CurrentCompanyId() companyId: string,
+    @Query("status") status?: InvoiceStatus,
+    @Query("partnerId") partnerId?: string,
+  ) {
+    return this.apService.list(companyId, { status, businessPartnerId: partnerId });
+  }
+
+  @Get("open")
+  @Permissions(PERMISSIONS.AP_INVOICE_VIEW)
+  async listOpen(@CurrentCompanyId() companyId: string, @Query("partnerId") partnerId?: string) {
+    return this.apService.listOpen(companyId, partnerId);
+  }
+
+  @Get("import/expenses/template")
+  @Permissions(PERMISSIONS.AP_INVOICE_VIEW)
+  @Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+  @Header("Content-Disposition", 'attachment; filename="expenses_import_template.xlsx"')
+  importExpensesTemplate() {
+    return this.apService.expensesXlsxTemplate();
+  }
+
+  @Post("import/expenses")
+  @Permissions(PERMISSIONS.AP_INVOICE_CREATE)
+  @ApiConsumes("multipart/form-data")
+  @UseInterceptors(FileInterceptor("file", { storage: memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }))
+  async importExpenses(
+    @CurrentCompanyId() companyId: string,
+    @CurrentUser() user: JwtPayload,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException("No file uploaded");
+    }
+    return this.apService.importExpensesXlsx(companyId, user.sub, file.buffer);
+  }
+
+  @Get(":id")
+  @Permissions(PERMISSIONS.AP_INVOICE_VIEW)
+  async get(@CurrentCompanyId() companyId: string, @Param("id") id: string) {
+    return this.apService.get(companyId, id);
+  }
+
+  @Post()
+  @Permissions(PERMISSIONS.AP_INVOICE_CREATE)
+  async createDraft(
+    @CurrentCompanyId() companyId: string,
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: CreatePurchaseInvoiceDto,
+  ) {
+    return this.apService.createDraft(companyId, user.sub, dto);
+  }
+
+  @Delete(":id")
+  @Permissions(PERMISSIONS.AP_INVOICE_CREATE)
+  async deleteDraft(@CurrentCompanyId() companyId: string, @Param("id") id: string) {
+    return this.apService.deleteDraft(companyId, id);
+  }
+
+  @Post(":id/post")
+  @Permissions(PERMISSIONS.AP_INVOICE_POST)
+  async post(@CurrentCompanyId() companyId: string, @Param("id") id: string, @CurrentUser() user: JwtPayload) {
+    const allowSoftClosedOverride = user.permissions.includes(PERMISSIONS.PERIOD_POST_SOFT_CLOSED);
+    return this.apService.postInvoice(companyId, id, user.sub, allowSoftClosedOverride);
+  }
+
+  @Post(":id/cancel")
+  @Permissions(PERMISSIONS.AP_INVOICE_CANCEL)
+  async cancel(@CurrentCompanyId() companyId: string, @Param("id") id: string, @CurrentUser() user: JwtPayload) {
+    return this.apService.cancelInvoice(companyId, id, user.sub);
+  }
+}

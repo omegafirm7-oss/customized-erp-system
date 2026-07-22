@@ -1,0 +1,336 @@
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { apiClient } from "../api/client";
+
+interface Partner {
+  id: string;
+  code: string;
+  name: string;
+  partnerType: "CUSTOMER" | "VENDOR" | "BOTH";
+}
+
+interface Item {
+  id: string;
+  code: string;
+  name: string;
+  vatCategory: "STANDARD_15" | "ZERO_RATED" | "EXEMPT";
+  isInventoryItem?: boolean;
+}
+
+interface Warehouse {
+  id: string;
+  code: string;
+  name: string;
+  isDefault: boolean;
+}
+
+interface ProjectRef {
+  id: string;
+  code: string;
+  name: string;
+  status: string;
+}
+
+interface TaskRef {
+  id: string;
+  code: string;
+  name: string;
+}
+
+interface LineForm {
+  itemId: string;
+  description: string;
+  quantity: string;
+  unitPrice: string;
+  discountAmount: string;
+  vatCategory: "STANDARD_15" | "ZERO_RATED" | "EXEMPT";
+  warehouseId: string;
+  projectId: string;
+  wbsTaskId: string;
+}
+
+const VAT_RATE: Record<string, number> = { STANDARD_15: 15, ZERO_RATED: 0, EXEMPT: 0 };
+
+function emptyLine(): LineForm {
+  return { itemId: "", description: "", quantity: "1", unitPrice: "0", discountAmount: "0", vatCategory: "STANDARD_15", warehouseId: "", projectId: "", wbsTaskId: "" };
+}
+
+function lineAmounts(line: LineForm) {
+  const net = Math.max(0, (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0) - (Number(line.discountAmount) || 0));
+  const netRounded = Math.round(net * 100) / 100;
+  const vat = Math.round(netRounded * VAT_RATE[line.vatCategory]) / 100;
+  return { net: netRounded, vat, gross: netRounded + vat };
+}
+
+export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
+  const navigate = useNavigate();
+  const [partners, setPartners] = useState<Partner[]>([]);
+  const [items, setItems] = useState<Item[]>([]);
+  const [partnerId, setPartnerId] = useState("");
+  const [vendorInvoiceNumber, setVendorInvoiceNumber] = useState("");
+  const today = new Date().toISOString().slice(0, 10);
+  const [postingDate, setPostingDate] = useState(today);
+  const [dueDate, setDueDate] = useState(new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().slice(0, 10));
+  const [memo, setMemo] = useState("");
+  const [lines, setLines] = useState<LineForm[]>([emptyLine()]);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [projects, setProjects] = useState<ProjectRef[]>([]);
+  const [tasksByProject, setTasksByProject] = useState<Record<string, TaskRef[]>>({});
+
+  useEffect(() => {
+    apiClient.get<Partner[]>("/partners").then((res) => {
+      const wanted = side === "ar" ? ["CUSTOMER", "BOTH"] : ["VENDOR", "BOTH"];
+      setPartners(res.data.filter((p) => wanted.includes(p.partnerType)));
+    });
+    apiClient.get<Item[]>("/items").then((res) => setItems(res.data));
+    apiClient.get<Warehouse[]>("/warehouses").then((res) => setWarehouses(res.data));
+    apiClient.get<ProjectRef[]>("/projects").then((res) => {
+      // Costs need ACTIVE; billing allows ACTIVE/COMPLETED
+      const allowed = side === "ap" ? ["ACTIVE"] : ["ACTIVE", "COMPLETED"];
+      setProjects(res.data.filter((p) => allowed.includes(p.status)));
+    });
+  }, [side]);
+
+  async function loadTasks(projectId: string) {
+    if (!projectId || tasksByProject[projectId]) return;
+    const res = await apiClient.get(`/projects/${projectId}`);
+    setTasksByProject((prev) => ({ ...prev, [projectId]: res.data.tasks.filter((t: any) => t.isActive) }));
+  }
+
+  const totals = useMemo(() => {
+    return lines.reduce(
+      (acc, line) => {
+        const amounts = lineAmounts(line);
+        return { net: acc.net + amounts.net, vat: acc.vat + amounts.vat, gross: acc.gross + amounts.gross };
+      },
+      { net: 0, vat: 0, gross: 0 },
+    );
+  }, [lines]);
+
+  function updateLine(index: number, patch: Partial<LineForm>) {
+    setLines((prev) => prev.map((line, i) => (i === index ? { ...line, ...patch } : line)));
+  }
+
+  function selectItem(index: number, itemId: string) {
+    const item = items.find((i) => i.id === itemId);
+    const defaultWarehouse = warehouses.find((w) => w.isDefault);
+    updateLine(index, {
+      itemId,
+      description: item ? item.name : "",
+      vatCategory: item?.vatCategory ?? "STANDARD_15",
+      warehouseId: item?.isInventoryItem ? defaultWarehouse?.id ?? "" : "",
+    });
+  }
+
+  function isInventoryLine(line: LineForm): boolean {
+    return !!items.find((i) => i.id === line.itemId)?.isInventoryItem;
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const payload: Record<string, unknown> = {
+        businessPartnerId: partnerId,
+        postingDate: new Date(postingDate).toISOString(),
+        dueDate: new Date(dueDate).toISOString(),
+        memo: memo || undefined,
+        lines: lines.map((line) => ({
+          itemId: line.itemId || undefined,
+          description: line.description,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          discountAmount: line.discountAmount || "0",
+          vatCategory: line.vatCategory,
+          warehouseId: line.warehouseId || undefined,
+          projectId: line.projectId || undefined,
+          wbsTaskId: line.wbsTaskId || undefined,
+        })),
+      };
+      if (side === "ar") {
+        payload.issueDateTime = new Date(postingDate).toISOString();
+      } else {
+        payload.vendorInvoiceNumber = vendorInvoiceNumber;
+      }
+      await apiClient.post(`/${side}/invoices`, payload);
+      navigate(`/${side}/invoices`);
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to create invoice");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <h2>{side === "ar" ? "New Sales Invoice" : "New Purchase Invoice"}</h2>
+      {error && <div className="error-banner">{Array.isArray(error) ? (error as string[]).join("; ") : error}</div>}
+      <form onSubmit={handleSubmit}>
+        <div className="form-row">
+          <select value={partnerId} onChange={(e) => setPartnerId(e.target.value)} required style={{ flex: 1 }}>
+            <option value="" disabled>
+              Select {side === "ar" ? "customer" : "vendor"}…
+            </option>
+            {partners.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.code} — {p.name}
+              </option>
+            ))}
+          </select>
+          {side === "ap" && (
+            <input
+              placeholder="Vendor invoice number"
+              value={vendorInvoiceNumber}
+              onChange={(e) => setVendorInvoiceNumber(e.target.value)}
+              required
+            />
+          )}
+          <div>
+            <label>Posting </label>
+            <input type="date" value={postingDate} onChange={(e) => setPostingDate(e.target.value)} required />
+          </div>
+          <div>
+            <label>Due </label>
+            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required />
+          </div>
+        </div>
+        <div className="form-row">
+          <input placeholder="Memo (optional)" value={memo} onChange={(e) => setMemo(e.target.value)} style={{ flex: 1 }} />
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Description</th>
+              <th>Qty</th>
+              <th>Unit Price</th>
+              <th>Discount</th>
+              <th>VAT</th>
+              <th>WH</th>
+              <th>Project</th>
+              <th>Task</th>
+              <th>Net</th>
+              <th>VAT Amt</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map((line, index) => {
+              const amounts = lineAmounts(line);
+              return (
+                <tr key={index}>
+                  <td>
+                    <select value={line.itemId} onChange={(e) => selectItem(index, e.target.value)}>
+                      <option value="">(no item)</option>
+                      {items.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.code} — {item.name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <input value={line.description} onChange={(e) => updateLine(index, { description: e.target.value })} required />
+                  </td>
+                  <td>
+                    <input type="number" min="0.000001" step="any" style={{ width: 70 }} value={line.quantity} onChange={(e) => updateLine(index, { quantity: e.target.value })} />
+                  </td>
+                  <td>
+                    <input type="number" min="0" step="0.01" style={{ width: 90 }} value={line.unitPrice} onChange={(e) => updateLine(index, { unitPrice: e.target.value })} />
+                  </td>
+                  <td>
+                    <input type="number" min="0" step="0.01" style={{ width: 80 }} value={line.discountAmount} onChange={(e) => updateLine(index, { discountAmount: e.target.value })} />
+                  </td>
+                  <td>
+                    <select value={line.vatCategory} onChange={(e) => updateLine(index, { vatCategory: e.target.value as LineForm["vatCategory"] })}>
+                      <option value="STANDARD_15">15%</option>
+                      <option value="ZERO_RATED">0% (zero-rated)</option>
+                      <option value="EXEMPT">Exempt</option>
+                    </select>
+                  </td>
+                  <td>
+                    {isInventoryLine(line) ? (
+                      <select
+                        value={line.warehouseId}
+                        onChange={(e) => updateLine(index, { warehouseId: e.target.value })}
+                        required
+                      >
+                        <option value="" disabled>
+                          WH…
+                        </option>
+                        {warehouses.map((w) => (
+                          <option key={w.id} value={w.id}>
+                            {w.code}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span style={{ color: "#98a2b3" }}>—</span>
+                    )}
+                  </td>
+                  <td>
+                    <select
+                      value={line.projectId}
+                      onChange={(e) => {
+                        updateLine(index, { projectId: e.target.value, wbsTaskId: "" });
+                        loadTasks(e.target.value);
+                      }}
+                    >
+                      <option value="">—</option>
+                      {projects.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.code}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    {line.projectId ? (
+                      <select value={line.wbsTaskId} onChange={(e) => updateLine(index, { wbsTaskId: e.target.value })}>
+                        <option value="">—</option>
+                        {(tasksByProject[line.projectId] ?? []).map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.code}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span style={{ color: "#98a2b3" }}>—</span>
+                    )}
+                  </td>
+                  <td>{amounts.net.toFixed(2)}</td>
+                  <td>{amounts.vat.toFixed(2)}</td>
+                  <td>
+                    {lines.length > 1 && (
+                      <button type="button" className="secondary" onClick={() => setLines((prev) => prev.filter((_, i) => i !== index))}>
+                        ×
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+
+        <div className="form-row" style={{ justifyContent: "space-between", marginTop: 10 }}>
+          <button type="button" className="secondary" onClick={() => setLines((prev) => [...prev, emptyLine()])}>
+            Add line
+          </button>
+          <strong>
+            Net {totals.net.toFixed(2)} + VAT {totals.vat.toFixed(2)} = Gross {totals.gross.toFixed(2)}
+          </strong>
+        </div>
+
+        <button type="submit" disabled={submitting || !partnerId} style={{ marginTop: 12 }}>
+          {submitting ? "Saving…" : "Save as draft"}
+        </button>
+      </form>
+    </div>
+  );
+}

@@ -1,0 +1,167 @@
+import { ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { JwtService } from "@nestjs/jwt";
+import { ConfigService } from "@nestjs/config";
+import { randomBytes, randomUUID, createHash } from "crypto";
+import ms from "ms";
+import { PrismaService } from "../common/prisma/prisma.service";
+import { IamService } from "../iam/iam.service";
+import { UsersService } from "../iam/users.service";
+import { JwtPayload } from "./types/jwt-payload.type";
+import { AppConfig } from "../core/config/configuration";
+
+export interface IssuedTokens {
+  accessToken: string;
+  expiresIn: number;
+  refreshToken: string;
+  refreshExpiresAt: Date;
+}
+
+interface RequestMeta {
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+@Injectable()
+export class AuthService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService<AppConfig, true>,
+    private readonly iamService: IamService,
+    private readonly usersService: UsersService,
+  ) {}
+
+  async register(email: string, password: string, fullName: string) {
+    return this.usersService.createUser(email, password, fullName);
+  }
+
+  async validateUserCredentials(email: string, password: string) {
+    const user = await this.usersService.findByEmail(email);
+    if (!user || !user.isActive) {
+      return null;
+    }
+    const valid = await this.usersService.verifyPassword(user.passwordHash, password);
+    return valid ? user : null;
+  }
+
+  async login(userId: string, meta: RequestMeta = {}): Promise<IssuedTokens> {
+    const memberships = await this.iamService.getCompanyMemberships(userId);
+    const defaultMembership = memberships.find((m) => m.isDefault) ?? memberships[0] ?? null;
+    return this.issueTokens(userId, defaultMembership?.companyId ?? null, meta);
+  }
+
+  async switchCompany(userId: string, companyId: string, meta: RequestMeta = {}): Promise<IssuedTokens> {
+    const membership = await this.prisma.companyUser.findUnique({
+      where: { userId_companyId: { userId, companyId } },
+    });
+    if (!membership || membership.status !== "ACTIVE") {
+      throw new ForbiddenException("You are not an active member of this company");
+    }
+    return this.issueTokens(userId, companyId, meta);
+  }
+
+  async refresh(rawToken: string, meta: RequestMeta = {}): Promise<IssuedTokens> {
+    const [id, secret] = rawToken.split(".");
+    if (!id || !secret) {
+      throw new UnauthorizedException("Malformed refresh token");
+    }
+
+    const existing = await this.prisma.refreshToken.findUnique({ where: { id } });
+    if (!existing) {
+      throw new UnauthorizedException("Refresh token not recognized");
+    }
+
+    if (existing.revokedAt) {
+      // Reuse of an already-rotated/revoked token is a compromise signal —
+      // revoke the entire token family (all tokens for this user) to force re-login.
+      await this.prisma.refreshToken.updateMany({
+        where: { userId: existing.userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      throw new UnauthorizedException("Refresh token reuse detected — all sessions revoked");
+    }
+
+    if (existing.expiresAt < new Date() || this.hashSecret(secret) !== existing.tokenHash) {
+      throw new UnauthorizedException("Refresh token invalid or expired");
+    }
+
+    const tokens = await this.issueTokens(existing.userId, existing.activeCompanyId, meta);
+    await this.prisma.refreshToken.update({
+      where: { id: existing.id },
+      data: { revokedAt: new Date() },
+    });
+    return tokens;
+  }
+
+  async revoke(rawToken: string): Promise<void> {
+    const [id] = rawToken.split(".");
+    if (!id) return;
+    await this.prisma.refreshToken.updateMany({
+      where: { id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  }
+
+  private async issueTokens(
+    userId: string,
+    activeCompanyId: string | null,
+    meta: RequestMeta,
+  ): Promise<IssuedTokens> {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException("User not found");
+    }
+
+    let roleId: string | null = null;
+    let permissions: string[] = [];
+    if (activeCompanyId) {
+      const membership = await this.prisma.companyUser.findUnique({
+        where: { userId_companyId: { userId, companyId: activeCompanyId } },
+      });
+      roleId = membership?.roleId ?? null;
+      permissions = await this.iamService.getPermissionsForCompanyUser(userId, activeCompanyId);
+    }
+
+    const payload: JwtPayload = {
+      sub: user.id,
+      email: user.email,
+      activeCompanyId,
+      roleId,
+      permissions,
+    };
+
+    const jwtConfig = this.configService.get("jwt", { infer: true });
+    const accessToken = this.jwtService.sign(payload, {
+      secret: jwtConfig.accessSecret,
+      expiresIn: jwtConfig.accessTtl,
+    });
+    const expiresIn = Math.floor(ms(jwtConfig.accessTtl) / 1000);
+
+    const refreshSecret = randomBytes(32).toString("hex");
+    const refreshId = randomUUID();
+    const refreshExpiresAt = new Date(Date.now() + ms(jwtConfig.refreshTtl));
+
+    await this.prisma.refreshToken.create({
+      data: {
+        id: refreshId,
+        userId: user.id,
+        tokenHash: this.hashSecret(refreshSecret),
+        activeCompanyId,
+        expiresAt: refreshExpiresAt,
+        userAgent: meta.userAgent,
+        ipAddress: meta.ipAddress,
+      },
+    });
+
+    return {
+      accessToken,
+      expiresIn,
+      refreshToken: `${refreshId}.${refreshSecret}`,
+      refreshExpiresAt,
+    };
+  }
+
+  private hashSecret(secret: string): string {
+    return createHash("sha256").update(secret).digest("hex");
+  }
+}

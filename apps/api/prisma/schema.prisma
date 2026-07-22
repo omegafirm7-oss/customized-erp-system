@@ -1,0 +1,2277 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────
+
+enum AccountClassCode {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+// IFRS 18 Presentation and Disclosure in Financial Statements — the three
+// new mandatory income-statement categories, plus income tax (already a
+// distinct line, now formally categorized too). Only meaningful on
+// REVENUE/EXPENSE sub-classes; ASSET/LIABILITY/EQUITY sub-classes leave
+// this null since the Statement of Financial Position doesn't use it —
+// only AccountSubClass.isCurrent does, unchanged. Discontinued operations
+// is deliberately not modeled: nothing in this business's data would ever
+// exercise it.
+enum Ifrs18Category {
+  OPERATING
+  INVESTING
+  FINANCING
+  INCOME_TAX
+}
+
+enum NormalBalance {
+  DEBIT
+  CREDIT
+}
+
+enum ControlAccountType {
+  AR
+  AP
+  INVENTORY
+  BANK
+  CASH
+  VAT_OUTPUT
+  VAT_INPUT
+  COGS
+  INVENTORY_ADJUSTMENT
+  CONTRACT_ASSET
+  CONTRACT_LIABILITY
+  CONTRACT_REVENUE
+  EMPLOYEE_LOANS
+  SALARIES_PAYABLE
+  GOSI_PAYABLE
+  EOSB_PROVISION
+  LEAVE_PROVISION
+  SALARY_EXPENSE
+  GOSI_EXPENSE
+  EOSB_EXPENSE
+  LEAVE_EXPENSE
+  MANPOWER_REVENUE
+  EQUIPMENT_REVENUE
+  DISPOSAL_GAIN_LOSS
+  EQUIPMENT_ASSET
+  ACCUM_DEPRECIATION
+  DEPRECIATION_EXPENSE
+  ALLOWANCE_EXPENSE
+}
+
+enum FiscalYearStatus {
+  OPEN
+  CLOSED
+}
+
+enum FiscalPeriodStatus {
+  OPEN
+  SOFT_CLOSED
+  CLOSED
+}
+
+enum JournalEntryStatus {
+  DRAFT
+  POSTED
+  REVERSED
+}
+
+enum JournalSourceModule {
+  MANUAL
+  AR
+  AP
+  INVENTORY
+  PAYROLL
+  PROJECTS
+  EQUIPMENT
+}
+
+enum ProjectStatus {
+  PLANNED
+  ACTIVE
+  COMPLETED
+  CLOSED
+}
+
+enum RecognitionMethod {
+  POINT_IN_TIME
+  OVER_TIME
+}
+
+enum RevenueRecognitionRunStatus {
+  POSTED
+  REVERSED
+}
+
+enum DocumentType {
+  JOURNAL_ENTRY
+  SALES_INVOICE
+  CREDIT_NOTE
+  PURCHASE_INVOICE
+  PURCHASE_QUOTATION
+  PURCHASE_ORDER
+  GOODS_RECEIPT
+  GOODS_ISSUE
+  INCOMING_PAYMENT
+  OUTGOING_PAYMENT
+  STOCK_TRANSFER
+  STOCK_ADJUSTMENT
+  PAYROLL_RUN
+  EMPLOYEE_LOAN
+  FINAL_SETTLEMENT
+  DEPRECIATION_RUN
+  EMPLOYEE_PAYMENT
+}
+
+enum EquipmentStatus {
+  ACTIVE
+  DISPOSED
+}
+
+// Billable = anything except BREAKDOWN (idle units kept on site still bill).
+enum UsageDayType {
+  ON_RENT
+  IDLE
+  BREAKDOWN
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  TERMINATED
+}
+
+enum ContractType {
+  UNLIMITED
+  LIMITED
+}
+
+enum PayrollRunStatus {
+  DRAFT
+  POSTED
+  REVERSED
+}
+
+enum LoanStatus {
+  ACTIVE
+  SETTLED
+  CANCELLED
+}
+
+// Wage basis for EOSB and leave provisions. Saudi Labor Law "wage" is the
+// full last wage; some firms provision on basic+housing only.
+enum EosbBasis {
+  BASIC_ONLY
+  BASIC_HOUSING
+  FULL_GROSS
+}
+
+enum SettlementReason {
+  RESIGNATION
+  TERMINATION_BY_EMPLOYER
+  CONTRACT_END
+}
+
+enum SettlementStatus {
+  POSTED
+  REVERSED
+}
+
+enum ManpowerContractStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum RateBasis {
+  HOURLY
+  DAILY
+  MONTHLY
+}
+
+enum TimesheetStatus {
+  DRAFT
+  APPROVED
+  INVOICED
+}
+
+enum TimesheetDayType {
+  WORKED
+  REST
+  ABSENT
+  UNPAID_LEAVE
+  ANNUAL_LEAVE
+}
+
+// Informal, manually-settled cash paid to an employee outside payroll —
+// distinct from EmployeeLoan (formal, installment-scheduled advances).
+// ALLOWANCE is a straight expense (nothing pending); ADVANCE/OTHER post to
+// the same employee-loans control account as Loans and stay pending until
+// recovered.
+enum EmployeePaymentCategory {
+  ALLOWANCE
+  ADVANCE
+  OTHER
+}
+
+enum StockMovementType {
+  RECEIPT
+  ISSUE
+  TRANSFER_IN
+  TRANSFER_OUT
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+}
+
+enum StockAdjustmentDirection {
+  IN
+  OUT
+}
+
+enum InvoiceStatus {
+  DRAFT
+  POSTED
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+}
+
+enum SalesDocumentKind {
+  INVOICE
+  CREDIT_NOTE
+}
+
+enum PaymentDirection {
+  INCOMING
+  OUTGOING
+}
+
+enum PaymentStatus {
+  POSTED
+  CANCELLED
+}
+
+enum ZatcaEnvironment {
+  SANDBOX
+  SIMULATION
+  PRODUCTION
+}
+
+enum ZatcaDeviceStatus {
+  CREATED
+  COMPLIANCE_CSID_ISSUED
+  COMPLIANCE_CHECKED
+  ACTIVE
+  FAILED
+  REVOKED
+}
+
+enum ZatcaInvoiceKind {
+  STANDARD
+  SIMPLIFIED
+}
+
+enum ZatcaSubmissionType {
+  CLEARANCE
+  REPORTING
+}
+
+enum ZatcaSubmissionStatus {
+  PENDING
+  CLEARED
+  REPORTED
+  REJECTED
+  FAILED
+}
+
+enum PartnerType {
+  CUSTOMER
+  VENDOR
+  BOTH
+}
+
+enum PartnerAddressType {
+  BILLING
+  SHIPPING
+  LEGAL
+}
+
+enum ItemType {
+  INVENTORY
+  SERVICE
+  NON_INVENTORY
+}
+
+enum VatCategory {
+  STANDARD_15
+  ZERO_RATED
+  EXEMPT
+}
+
+enum CompanyUserStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  POST
+  REVERSE
+  CLOSE
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// IAM: users, companies, membership, roles, permissions
+// ─────────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  fullName     String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  companyMemberships CompanyUser[]
+  refreshTokens      RefreshToken[]
+  joinRequests       CompanyJoinRequest[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id              String    @id @default(uuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash       String
+  activeCompanyId String?
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  replacedById    String?
+  userAgent       String?
+  ipAddress       String?
+  createdAt       DateTime  @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Company {
+  id                    String   @id @default(uuid())
+  code                  String   @unique
+  legalName             String
+  tradeName             String?
+  countryCode           String
+  baseCurrencyCode      String
+  taxRegistrationNumber String?
+  crNumber              String?
+  addressLine1          String?
+  addressLine2          String?
+  // ZATCA UBL seller address requires structured components (BR-KSA rules)
+  buildingNumber        String?
+  district              String?
+  additionalNumber      String?
+  city                  String?
+  postalCode            String?
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  companyUsers              CompanyUser[]
+  roles                     Role[]
+  fiscalYears               FiscalYear[]
+  accounts                  Account[]
+  costCenters               CostCenter[]
+  journalEntries            JournalEntry[]
+  businessPartners          BusinessPartner[]
+  items                     Item[]
+  warehouses                Warehouse[]
+  numberingSeries           NumberingSeries[]
+  auditLogs                 AuditLog[]
+  exchangeRates             ExchangeRate[]
+  salesInvoices             SalesInvoice[]
+  purchaseInvoices          PurchaseInvoice[]
+  purchaseQuotations        PurchaseQuotation[]
+  purchaseOrders            PurchaseOrder[]
+  payments                  Payment[]
+  zatcaDevices              ZatcaDevice[]
+  projects                  Project[]
+  hrSettings                HrSettings?
+  employees                 Employee[]
+  employeeLoans             EmployeeLoan[]
+  payrollRuns               PayrollRun[]
+  finalSettlements          FinalSettlement[]
+  manpowerContracts         ManpowerContract[]
+  timesheets                Timesheet[]
+  equipment                 Equipment[]
+  equipmentRentalContracts  EquipmentRentalContract[]
+  usageLogs                 UsageLog[]
+  depreciationRuns          DepreciationRun[]
+  settlementPayments        SettlementPayment[]
+  employeeTimesheetEntries  EmployeeTimesheetEntry[]
+  employeePayments          EmployeePayment[]
+  employeePaymentRecoveries EmployeePaymentRecovery[]
+  joinRequests              CompanyJoinRequest[]
+
+  @@map("companies")
+}
+
+model CompanyUser {
+  id        String            @id @default(uuid())
+  userId    String
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyId String
+  company   Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  roleId    String
+  role      Role              @relation(fields: [roleId], references: [id])
+  status    CompanyUserStatus @default(ACTIVE)
+  isDefault Boolean           @default(false)
+  invitedAt DateTime?
+  joinedAt  DateTime?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@unique([userId, companyId])
+  @@index([companyId])
+  @@map("company_users")
+}
+
+model Role {
+  id        String   @id @default(uuid())
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name      String
+  isSystem  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rolePermissions RolePermission[]
+  companyUsers    CompanyUser[]
+  joinRequests    CompanyJoinRequest[]
+
+  @@unique([companyId, name])
+  @@map("roles")
+}
+
+enum CompanyJoinRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// A user's self-service request to join an existing company by its code.
+// Deliberately a separate model rather than reusing CompanyUser with a new
+// status: CompanyUser.roleId is non-nullable and @@unique([userId,
+// companyId]) would collide between "was rejected once" and "wants to
+// request again". No DB-level uniqueness here on purpose — a rejected
+// request must be re-requestable; the service layer blocks duplicates by
+// checking for an existing PENDING row instead.
+model CompanyJoinRequest {
+  id              String                   @id @default(uuid())
+  userId          String
+  user            User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyId       String
+  company         Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  status          CompanyJoinRequestStatus @default(PENDING)
+  message         String?
+  requestedAt     DateTime                 @default(now())
+  decidedByUserId String?
+  decidedAt       DateTime?
+  roleId          String?
+  role            Role?                    @relation(fields: [roleId], references: [id])
+
+  @@index([companyId, status])
+  @@index([userId])
+  @@map("company_join_requests")
+}
+
+model Permission {
+  id          String  @id @default(uuid())
+  key         String  @unique
+  module      String
+  description String?
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Fiscal calendar
+// ─────────────────────────────────────────────────────────────────────────
+
+model FiscalYear {
+  id             String           @id @default(uuid())
+  companyId      String
+  company        Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  code           String
+  startDate      DateTime
+  endDate        DateTime
+  status         FiscalYearStatus @default(OPEN)
+  closedAt       DateTime?
+  closedByUserId String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  periods         FiscalPeriod[]
+  journalEntries  JournalEntry[]
+  numberingSeries NumberingSeries[]
+
+  @@unique([companyId, code])
+  @@map("fiscal_years")
+}
+
+model FiscalPeriod {
+  id           String             @id @default(uuid())
+  fiscalYearId String
+  fiscalYear   FiscalYear         @relation(fields: [fiscalYearId], references: [id], onDelete: Cascade)
+  companyId    String
+  periodNumber Int
+  startDate    DateTime
+  endDate      DateTime
+  status       FiscalPeriodStatus @default(OPEN)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  journalEntries         JournalEntry[]
+  revenueRecognitionRuns RevenueRecognitionRun[]
+  payrollRuns            PayrollRun[]
+  timesheets             Timesheet[]
+  usageLogs              UsageLog[]
+  depreciationRuns       DepreciationRun[]
+
+  @@unique([fiscalYearId, periodNumber])
+  @@index([companyId])
+  @@map("fiscal_periods")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Currency
+// ─────────────────────────────────────────────────────────────────────────
+
+model Currency {
+  code          String @id
+  name          String
+  decimalPlaces Int    @default(2)
+
+  exchangeRatesFrom ExchangeRate[] @relation("FromCurrency")
+  exchangeRatesTo   ExchangeRate[] @relation("ToCurrency")
+
+  @@map("currencies")
+}
+
+model ExchangeRate {
+  id               String   @id @default(uuid())
+  companyId        String
+  company          Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fromCurrencyCode String
+  fromCurrency     Currency @relation("FromCurrency", fields: [fromCurrencyCode], references: [code])
+  toCurrencyCode   String
+  toCurrency       Currency @relation("ToCurrency", fields: [toCurrencyCode], references: [code])
+  rateDate         DateTime
+  rate             Decimal  @db.Decimal(18, 8)
+  createdAt        DateTime @default(now())
+
+  @@unique([companyId, fromCurrencyCode, toCurrencyCode, rateDate])
+  @@map("exchange_rates")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Chart of Accounts
+// ─────────────────────────────────────────────────────────────────────────
+
+model AccountClass {
+  id   String           @id @default(uuid())
+  code AccountClassCode @unique
+  name String
+
+  subClasses AccountSubClass[]
+  accounts   Account[]
+
+  @@map("account_classes")
+}
+
+model AccountSubClass {
+  id             String          @id @default(uuid())
+  accountClassId String
+  accountClass   AccountClass    @relation(fields: [accountClassId], references: [id])
+  code           String          @unique
+  name           String
+  isCurrent      Boolean? // relevant for Asset/Liability current vs non-current classification
+  ifrs18Category Ifrs18Category? // relevant for Revenue/Expense P&L categorization (IFRS 18)
+  sortOrder      Int             @default(0)
+
+  accounts Account[]
+
+  @@map("account_sub_classes")
+}
+
+model Account {
+  id                 String              @id @default(uuid())
+  companyId          String
+  company            Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  code               String
+  name               String
+  nameAr             String?
+  accountClassId     String
+  accountClass       AccountClass        @relation(fields: [accountClassId], references: [id])
+  accountSubClassId  String
+  accountSubClass    AccountSubClass     @relation(fields: [accountSubClassId], references: [id])
+  parentAccountId    String?
+  parentAccount      Account?            @relation("AccountHierarchy", fields: [parentAccountId], references: [id])
+  childAccounts      Account[]           @relation("AccountHierarchy")
+  isPostable         Boolean             @default(true)
+  normalBalance      NormalBalance
+  currencyCode       String?
+  controlAccountType ControlAccountType?
+  isActive           Boolean             @default(true)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  journalEntryLines         JournalEntryLine[]
+  salesInvoiceLines         SalesInvoiceLine[]
+  purchaseInvoiceLines      PurchaseInvoiceLine[]
+  payments                  Payment[]
+  employeeLoanDisbursements EmployeeLoan[]
+  settlementPayments        SettlementPayment[]
+  employeePayments          EmployeePayment[]
+  employeePaymentRecoveries EmployeePaymentRecovery[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@map("accounts")
+}
+
+// Stub for the future Projects module — exists now only so JournalEntryLine
+// can carry a cost-center dimension from day one without a later migration.
+model CostCenter {
+  id        String   @id @default(uuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  code      String
+  name      String
+  // Set when this cost center is the auto-created 1:1 partner of a project.
+  project   Project?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  journalEntryLines       JournalEntryLine[]
+  employees               Employee[]
+  payrollRunLines         PayrollRunLine[]
+  salesInvoiceLines       SalesInvoiceLine[]
+  manpowerContract        ManpowerContract?
+  purchaseInvoiceLines    PurchaseInvoiceLine[]
+  purchaseOrderLines      PurchaseOrderLine[]
+  equipmentRentalContract EquipmentRentalContract?
+  depreciationRunLines    DepreciationRunLine[]
+
+  @@unique([companyId, code])
+  @@map("cost_centers")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// General Ledger
+// ─────────────────────────────────────────────────────────────────────────
+
+model JournalEntry {
+  id                       String              @id @default(uuid())
+  companyId                String
+  company                  Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  // Null while Draft — numbers are allocated only at posting time (via
+  // NumberingService, under a row lock) so an abandoned/deleted draft never
+  // creates a gap in the posted sequence.
+  entryNumber              String?
+  fiscalYearId             String
+  fiscalYear               FiscalYear          @relation(fields: [fiscalYearId], references: [id])
+  fiscalPeriodId           String
+  fiscalPeriod             FiscalPeriod        @relation(fields: [fiscalPeriodId], references: [id])
+  postingDate              DateTime
+  documentDate             DateTime
+  currencyCode             String
+  exchangeRateToFunctional Decimal             @default(1) @db.Decimal(18, 8)
+  status                   JournalEntryStatus  @default(DRAFT)
+  sourceModule             JournalSourceModule @default(MANUAL)
+  sourceDocumentId         String?
+  reversalOfEntryId        String?             @unique
+  reversalOfEntry          JournalEntry?       @relation("JournalReversal", fields: [reversalOfEntryId], references: [id])
+  reversedByEntry          JournalEntry?       @relation("JournalReversal")
+  memo                     String?
+  createdByUserId          String
+  updatedByUserId          String?
+  postedByUserId           String?
+  postedAt                 DateTime?
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
+
+  lines JournalEntryLine[]
+
+  salesInvoice            SalesInvoice?
+  purchaseInvoice         PurchaseInvoice?
+  payment                 Payment?
+  stockMovements          StockMovement[]
+  stockAdjustment         StockAdjustment?
+  revRecRun               RevenueRecognitionRun?   @relation("RevRecJournal")
+  revRecReversalRun       RevenueRecognitionRun?   @relation("RevRecReversalJournal")
+  loanDisbursement        EmployeeLoan?            @relation("LoanDisbursementJournal")
+  payrollRun              PayrollRun?              @relation("PayrollJournal")
+  payrollReversalRun      PayrollRun?              @relation("PayrollReversalJournal")
+  finalSettlement         FinalSettlement?         @relation("SettlementJournal")
+  finalSettlementReversal FinalSettlement?         @relation("SettlementReversalJournal")
+  equipmentCapitalization Equipment?               @relation("EquipmentCapitalizationJournal")
+  equipmentDisposal       Equipment?               @relation("EquipmentDisposalJournal")
+  depreciationRun         DepreciationRun?         @relation("DepreciationJournal")
+  depreciationReversalRun DepreciationRun?         @relation("DepreciationReversalJournal")
+  settlementPayment       SettlementPayment?       @relation("SettlementPaymentJournal")
+  employeePayment         EmployeePayment?         @relation("EmployeePaymentJournal")
+  employeePaymentRecovery EmployeePaymentRecovery? @relation("EmployeePaymentRecoveryJournal")
+
+  @@unique([companyId, entryNumber])
+  @@index([companyId, status])
+  @@index([companyId, fiscalPeriodId])
+  @@map("journal_entries")
+}
+
+model JournalEntryLine {
+  id                          String           @id @default(uuid())
+  journalEntryId              String
+  journalEntry                JournalEntry     @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  companyId                   String
+  lineNumber                  Int
+  accountId                   String
+  account                     Account          @relation(fields: [accountId], references: [id])
+  debit                       Decimal          @default(0) @db.Decimal(18, 4)
+  credit                      Decimal          @default(0) @db.Decimal(18, 4)
+  description                 String?
+  businessPartnerId           String?
+  businessPartner             BusinessPartner? @relation(fields: [businessPartnerId], references: [id])
+  costCenterId                String?
+  costCenter                  CostCenter?      @relation(fields: [costCenterId], references: [id])
+  wbsTaskId                   String?
+  wbsTask                     WbsTask?         @relation(fields: [wbsTaskId], references: [id])
+  currencyCode                String
+  amountInTransactionCurrency Decimal          @db.Decimal(18, 4)
+  amountInFunctionalCurrency  Decimal          @db.Decimal(18, 4)
+
+  @@index([companyId, accountId])
+  @@index([costCenterId])
+  @@index([journalEntryId])
+  @@map("journal_entry_lines")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Master data: Business Partners
+// ─────────────────────────────────────────────────────────────────────────
+
+model BusinessPartner {
+  id                           String      @id @default(uuid())
+  companyId                    String
+  company                      Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  code                         String
+  name                         String
+  nameAr                       String?
+  partnerType                  PartnerType
+  taxRegistrationNumber        String?
+  commercialRegistrationNumber String?
+  // Buyer other-ID for ZATCA standard invoices when the buyer has no VAT
+  // registration (schemeID: CRN|MOM|MLS|700|SAG|NAT|GCC|IQA|OTH)
+  additionalIdScheme           String?
+  additionalIdNumber           String?
+  currencyCode                 String?
+  isActive                     Boolean     @default(true)
+  createdAt                    DateTime    @default(now())
+  updatedAt                    DateTime    @updatedAt
+
+  addresses                PartnerAddress[]
+  journalEntryLines        JournalEntryLine[]
+  salesInvoices            SalesInvoice[]
+  purchaseInvoices         PurchaseInvoice[]
+  purchaseQuotations       PurchaseQuotation[]
+  purchaseOrders           PurchaseOrder[]
+  payments                 Payment[]
+  projects                 Project[]
+  manpowerContracts        ManpowerContract[]
+  equipmentRentalContracts EquipmentRentalContract[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@map("business_partners")
+}
+
+model PartnerAddress {
+  id                String             @id @default(uuid())
+  businessPartnerId String
+  businessPartner   BusinessPartner    @relation(fields: [businessPartnerId], references: [id], onDelete: Cascade)
+  addressType       PartnerAddressType
+  street            String?
+  buildingNumber    String?
+  district          String?
+  city              String?
+  postalCode        String?
+  countryCode       String?
+
+  @@map("partner_addresses")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Master data: Items, UoM, Warehouse
+// ─────────────────────────────────────────────────────────────────────────
+
+model UnitOfMeasure {
+  id         String  @id @default(uuid())
+  companyId  String?
+  code       String
+  name       String
+  isBaseUnit Boolean @default(true)
+
+  itemsAsBase          Item[]                @relation("BaseUoM")
+  itemsAsSales         Item[]                @relation("SalesUoM")
+  itemsAsPurchase      Item[]                @relation("PurchaseUoM")
+  conversionsFrom      UoMConversion[]       @relation("FromUoM")
+  conversionsTo        UoMConversion[]       @relation("ToUoM")
+  salesInvoiceLines    SalesInvoiceLine[]
+  purchaseInvoiceLines PurchaseInvoiceLine[]
+
+  @@unique([companyId, code])
+  @@map("units_of_measure")
+}
+
+model UoMConversion {
+  id        String        @id @default(uuid())
+  fromUoMId String
+  fromUoM   UnitOfMeasure @relation("FromUoM", fields: [fromUoMId], references: [id])
+  toUoMId   String
+  toUoM     UnitOfMeasure @relation("ToUoM", fields: [toUoMId], references: [id])
+  factor    Decimal       @db.Decimal(18, 6)
+
+  @@unique([fromUoMId, toUoMId])
+  @@map("uom_conversions")
+}
+
+model Item {
+  id                        String         @id @default(uuid())
+  companyId                 String
+  company                   Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  code                      String
+  name                      String
+  nameAr                    String?
+  itemType                  ItemType
+  baseUoMId                 String
+  baseUoM                   UnitOfMeasure  @relation("BaseUoM", fields: [baseUoMId], references: [id])
+  salesUoMId                String?
+  salesUoM                  UnitOfMeasure? @relation("SalesUoM", fields: [salesUoMId], references: [id])
+  purchaseUoMId             String?
+  purchaseUoM               UnitOfMeasure? @relation("PurchaseUoM", fields: [purchaseUoMId], references: [id])
+  isSalesItem               Boolean        @default(true)
+  isPurchaseItem            Boolean        @default(true)
+  isInventoryItem           Boolean        @default(false)
+  defaultSalesAccountId     String?
+  defaultPurchaseAccountId  String?
+  defaultInventoryAccountId String?
+  vatCategory               VatCategory    @default(STANDARD_15)
+  isActive                  Boolean        @default(true)
+  createdAt                 DateTime       @default(now())
+  updatedAt                 DateTime       @updatedAt
+
+  salesInvoiceLines      SalesInvoiceLine[]
+  purchaseInvoiceLines   PurchaseInvoiceLine[]
+  purchaseQuotationLines PurchaseQuotationLine[]
+  purchaseOrderLines     PurchaseOrderLine[]
+  stockLevels            ItemWarehouseStock[]
+  stockMovements         StockMovement[]
+  stockTransferLines     StockTransferLine[]
+  stockAdjustmentLines   StockAdjustmentLine[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@map("items")
+}
+
+model Warehouse {
+  id        String  @id @default(uuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  code      String
+  name      String
+  // Exactly one default per company (partial unique index in
+  // inventory-constraints migration); preselected on invoice lines.
+  isDefault Boolean @default(false)
+  isActive  Boolean @default(true)
+
+  stockLevels          ItemWarehouseStock[]
+  stockMovements       StockMovement[]
+  salesInvoiceLines    SalesInvoiceLine[]
+  purchaseInvoiceLines PurchaseInvoiceLine[]
+  purchaseOrderLines   PurchaseOrderLine[]
+  transfersFrom        StockTransfer[]       @relation("TransferFrom")
+  transfersTo          StockTransfer[]       @relation("TransferTo")
+  adjustments          StockAdjustment[]
+
+  @@unique([companyId, code])
+  @@map("warehouses")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Document numbering
+// ─────────────────────────────────────────────────────────────────────────
+
+model NumberingSeries {
+  id           String       @id @default(uuid())
+  companyId    String
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  documentType DocumentType
+  prefix       String?
+  nextNumber   Int          @default(1)
+  numberLength Int          @default(6)
+  fiscalYearId String?
+  fiscalYear   FiscalYear?  @relation(fields: [fiscalYearId], references: [id])
+  isActive     Boolean      @default(true)
+
+  @@unique([companyId, documentType, fiscalYearId])
+  @@map("numbering_series")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Audit log
+// ─────────────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id              String      @id @default(uuid())
+  companyId       String?
+  company         Company?    @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  entityName      String
+  entityId        String
+  action          AuditAction
+  changedByUserId String?
+  changedAt       DateTime    @default(now())
+  beforeSnapshot  Json?
+  afterSnapshot   Json?
+  ipAddress       String?
+  userAgent       String?
+
+  @@index([companyId, entityName, entityId])
+  @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Finance: AR/AP invoices & payments
+// ─────────────────────────────────────────────────────────────────────────
+
+model SalesInvoice {
+  id                       String            @id @default(uuid())
+  companyId                String
+  company                  Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  // Null while Draft — allocated gaplessly at posting time, same pattern as
+  // JournalEntry.entryNumber. ZATCA Phase 2 requires a gapless sequence here.
+  invoiceNumber            String?
+  documentKind             SalesDocumentKind @default(INVOICE)
+  businessPartnerId        String
+  businessPartner          BusinessPartner   @relation(fields: [businessPartnerId], references: [id])
+  // Required (service-enforced) when documentKind = CREDIT_NOTE; becomes the
+  // ZATCA billing reference in the e-invoicing phase.
+  originalInvoiceId        String?
+  originalInvoice          SalesInvoice?     @relation("CreditNoteOriginal", fields: [originalInvoiceId], references: [id])
+  creditNotes              SalesInvoice[]    @relation("CreditNoteOriginal")
+  status                   InvoiceStatus     @default(DRAFT)
+  issueDateTime            DateTime
+  postingDate              DateTime
+  dueDate                  DateTime
+  currencyCode             String
+  exchangeRateToFunctional Decimal           @default(1) @db.Decimal(18, 8)
+  // ZATCA-ready snapshots, captured at posting time so later partner edits
+  // never change what was legally invoiced.
+  buyerNameSnapshot        String?
+  buyerTrnSnapshot         String?
+  invoiceTypeCode          String?
+  // ZATCA UBL fields: ActualDeliveryDate (mandatory for standard invoices,
+  // defaults to postingDate at post), PaymentMeans code (UNTDID 4461),
+  // and the mandatory reason for credit notes (KSA-10 InstructionNote).
+  deliveryDate             DateTime?
+  paymentMeansCode         String?
+  creditNoteReason         String?
+  netTotal                 Decimal           @default(0) @db.Decimal(18, 4)
+  vatTotal                 Decimal           @default(0) @db.Decimal(18, 4)
+  grossTotal               Decimal           @default(0) @db.Decimal(18, 4)
+  netTotalFunctional       Decimal           @default(0) @db.Decimal(18, 4)
+  vatTotalFunctional       Decimal           @default(0) @db.Decimal(18, 4)
+  grossTotalFunctional     Decimal           @default(0) @db.Decimal(18, 4)
+  paidAmount               Decimal           @default(0) @db.Decimal(18, 4)
+  openAmount               Decimal           @default(0) @db.Decimal(18, 4)
+  journalEntryId           String?           @unique
+  journalEntry             JournalEntry?     @relation(fields: [journalEntryId], references: [id])
+  timesheet                Timesheet?
+  usageLog                 UsageLog?
+  memo                     String?
+  createdByUserId          String
+  postedByUserId           String?
+  postedAt                 DateTime?
+  cancelledByUserId        String?
+  cancelledAt              DateTime?
+  createdAt                DateTime          @default(now())
+  updatedAt                DateTime          @updatedAt
+
+  lines              SalesInvoiceLine[]
+  paymentAllocations PaymentAllocation[]
+  zatcaSubmission    ZatcaSubmission?
+
+  @@unique([companyId, invoiceNumber])
+  @@index([companyId, status])
+  @@index([companyId, businessPartnerId])
+  @@index([companyId, dueDate])
+  @@map("sales_invoices")
+}
+
+model SalesInvoiceLine {
+  id                     String         @id @default(uuid())
+  salesInvoiceId         String
+  salesInvoice           SalesInvoice   @relation(fields: [salesInvoiceId], references: [id], onDelete: Cascade)
+  companyId              String
+  lineNumber             Int
+  itemId                 String?
+  item                   Item?          @relation(fields: [itemId], references: [id])
+  description            String
+  uomId                  String?
+  uom                    UnitOfMeasure? @relation(fields: [uomId], references: [id])
+  quantity               Decimal        @db.Decimal(18, 6)
+  unitPrice              Decimal        @db.Decimal(18, 4)
+  discountAmount         Decimal        @default(0) @db.Decimal(18, 4)
+  netAmount              Decimal        @db.Decimal(18, 4)
+  vatCategory            VatCategory
+  // Snapshot of the rate applied — historical documents must not change if
+  // VAT_RATES changes in a future fiscal reform.
+  vatRate                Decimal        @db.Decimal(5, 2)
+  vatAmount              Decimal        @db.Decimal(18, 4)
+  grossAmount            Decimal        @db.Decimal(18, 4)
+  // ZATCA: mandatory for ZERO_RATED/EXEMPT lines (VATEX-SA-* catalog)
+  vatExemptionReasonCode String?
+  vatExemptionReasonText String?
+  // Required (service-enforced) for inventory items; resolved at draft time.
+  warehouseId            String?
+  warehouse              Warehouse?     @relation(fields: [warehouseId], references: [id])
+  // Job-costing dimensions (Phase 5): stamped onto the GL revenue/COGS legs.
+  projectId              String?
+  project                Project?       @relation(fields: [projectId], references: [id])
+  wbsTaskId              String?
+  wbsTask                WbsTask?       @relation(fields: [wbsTaskId], references: [id])
+  // Explicit cost-center dimension (Phase 7) — takes precedence over the
+  // project's cost center on the GL revenue leg. Mutually exclusive with
+  // projectId (service-enforced).
+  costCenterId           String?
+  costCenter             CostCenter?    @relation(fields: [costCenterId], references: [id])
+  revenueAccountId       String
+  revenueAccount         Account        @relation(fields: [revenueAccountId], references: [id])
+
+  @@index([salesInvoiceId])
+  @@index([companyId, itemId])
+  @@map("sales_invoice_lines")
+}
+
+model PurchaseInvoice {
+  id                       String          @id @default(uuid())
+  companyId                String
+  company                  Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  invoiceNumber            String?
+  // The supplier's own invoice number — unique per vendor to block booking
+  // the same supplier bill twice.
+  vendorInvoiceNumber      String
+  businessPartnerId        String
+  businessPartner          BusinessPartner @relation(fields: [businessPartnerId], references: [id])
+  // Set when this invoice was generated from a Purchase Order (see
+  // PurchaseOrder.generateInvoice); null for a directly-created invoice
+  // (the pre-existing, non-PO purchasing path — unchanged).
+  sourcePurchaseOrderId    String?
+  sourcePurchaseOrder      PurchaseOrder?  @relation(fields: [sourcePurchaseOrderId], references: [id])
+  status                   InvoiceStatus   @default(DRAFT)
+  postingDate              DateTime
+  dueDate                  DateTime
+  currencyCode             String
+  exchangeRateToFunctional Decimal         @default(1) @db.Decimal(18, 8)
+  netTotal                 Decimal         @default(0) @db.Decimal(18, 4)
+  vatTotal                 Decimal         @default(0) @db.Decimal(18, 4)
+  grossTotal               Decimal         @default(0) @db.Decimal(18, 4)
+  netTotalFunctional       Decimal         @default(0) @db.Decimal(18, 4)
+  vatTotalFunctional       Decimal         @default(0) @db.Decimal(18, 4)
+  grossTotalFunctional     Decimal         @default(0) @db.Decimal(18, 4)
+  paidAmount               Decimal         @default(0) @db.Decimal(18, 4)
+  openAmount               Decimal         @default(0) @db.Decimal(18, 4)
+  journalEntryId           String?         @unique
+  journalEntry             JournalEntry?   @relation(fields: [journalEntryId], references: [id])
+  memo                     String?
+  createdByUserId          String
+  postedByUserId           String?
+  postedAt                 DateTime?
+  cancelledByUserId        String?
+  cancelledAt              DateTime?
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
+
+  lines              PurchaseInvoiceLine[]
+  paymentAllocations PaymentAllocation[]
+
+  @@unique([companyId, invoiceNumber])
+  @@unique([companyId, businessPartnerId, vendorInvoiceNumber])
+  @@index([companyId, status])
+  @@index([companyId, dueDate])
+  @@index([sourcePurchaseOrderId])
+  @@map("purchase_invoices")
+}
+
+model PurchaseInvoiceLine {
+  id                String          @id @default(uuid())
+  purchaseInvoiceId String
+  purchaseInvoice   PurchaseInvoice @relation(fields: [purchaseInvoiceId], references: [id], onDelete: Cascade)
+  companyId         String
+  lineNumber        Int
+  itemId            String?
+  item              Item?           @relation(fields: [itemId], references: [id])
+  description       String
+  uomId             String?
+  uom               UnitOfMeasure?  @relation(fields: [uomId], references: [id])
+  quantity          Decimal         @db.Decimal(18, 6)
+  unitPrice         Decimal         @db.Decimal(18, 4)
+  discountAmount    Decimal         @default(0) @db.Decimal(18, 4)
+  netAmount         Decimal         @db.Decimal(18, 4)
+  vatCategory       VatCategory
+  vatRate           Decimal         @db.Decimal(5, 2)
+  vatAmount         Decimal         @db.Decimal(18, 4)
+  grossAmount       Decimal         @db.Decimal(18, 4)
+  // Required (service-enforced) for inventory items; resolved at draft time.
+  warehouseId       String?
+  warehouse         Warehouse?      @relation(fields: [warehouseId], references: [id])
+  // Job-costing dimensions (Phase 5): stamped onto the GL expense legs.
+  projectId         String?
+  project           Project?        @relation(fields: [projectId], references: [id])
+  wbsTaskId         String?
+  wbsTask           WbsTask?        @relation(fields: [wbsTaskId], references: [id])
+  // Explicit cost-center dimension (Phase 8 — e.g. equipment maintenance);
+  // takes precedence over the project's cost center on the GL expense leg.
+  costCenterId      String?
+  costCenter        CostCenter?     @relation(fields: [costCenterId], references: [id])
+  // For inventory items this holds the INVENTORY asset account, not an
+  // expense — resolved at draft time by LineBuilderService.
+  expenseAccountId  String
+  expenseAccount    Account         @relation(fields: [expenseAccountId], references: [id])
+
+  @@index([purchaseInvoiceId])
+  @@index([companyId, itemId])
+  @@map("purchase_invoice_lines")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Purchasing cycle: Quotation → Order → Invoice (PurchaseInvoice, above).
+// Neither Quotation nor Order posts to the GL — a quotation is a vendor's
+// quoted price (no commitment), an order is a commitment but not yet a
+// transaction (matches the standard "PO doesn't hit the books" convention
+// and this system's established draft-doesn't-post pattern). Only the
+// resulting PurchaseInvoice posts, exactly as it already did before this
+// cycle existed.
+// ─────────────────────────────────────────────────────────────────────────
+
+enum PurchaseQuotationStatus {
+  DRAFT
+  RECEIVED
+  CONVERTED
+  CANCELLED
+}
+
+model PurchaseQuotation {
+  id                String                  @id @default(uuid())
+  companyId         String
+  company           Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  // Null while Draft — allocated at RECEIVED, mirroring how invoice numbers
+  // are allocated only once a document becomes real (see PurchaseInvoice).
+  quotationNumber   String?
+  businessPartnerId String
+  businessPartner   BusinessPartner         @relation(fields: [businessPartnerId], references: [id])
+  quotationDate     DateTime
+  validUntil        DateTime?
+  status            PurchaseQuotationStatus @default(DRAFT)
+  memo              String?
+  createdByUserId   String
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  lines          PurchaseQuotationLine[]
+  purchaseOrders PurchaseOrder[]
+
+  @@unique([companyId, quotationNumber])
+  @@index([companyId, status])
+  @@map("purchase_quotations")
+}
+
+model PurchaseQuotationLine {
+  id                  String            @id @default(uuid())
+  purchaseQuotationId String
+  purchaseQuotation   PurchaseQuotation @relation(fields: [purchaseQuotationId], references: [id], onDelete: Cascade)
+  lineNumber          Int
+  itemId              String?
+  item                Item?             @relation(fields: [itemId], references: [id])
+  description         String
+  quantity            Decimal           @db.Decimal(18, 6)
+  unitPrice           Decimal           @db.Decimal(18, 4)
+  vatCategory         VatCategory?
+
+  @@index([purchaseQuotationId])
+  @@map("purchase_quotation_lines")
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  SENT
+  PARTIALLY_INVOICED
+  INVOICED
+  CANCELLED
+}
+
+model PurchaseOrder {
+  id                String              @id @default(uuid())
+  companyId         String
+  company           Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  orderNumber       String?
+  businessPartnerId String
+  businessPartner   BusinessPartner     @relation(fields: [businessPartnerId], references: [id])
+  // Optional — a PO can be raised directly, without a prior quotation.
+  sourceQuotationId String?
+  sourceQuotation   PurchaseQuotation?  @relation(fields: [sourceQuotationId], references: [id])
+  orderDate         DateTime
+  expectedDate      DateTime?
+  status            PurchaseOrderStatus @default(DRAFT)
+  memo              String?
+  createdByUserId   String
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  lines            PurchaseOrderLine[]
+  purchaseInvoices PurchaseInvoice[]
+
+  @@unique([companyId, orderNumber])
+  @@index([companyId, status])
+  @@index([sourceQuotationId])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderLine {
+  id               String        @id @default(uuid())
+  purchaseOrderId  String
+  purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  lineNumber       Int
+  itemId           String?
+  item             Item?         @relation(fields: [itemId], references: [id])
+  description      String
+  quantity         Decimal       @db.Decimal(18, 6)
+  // How much of `quantity` has already been carried onto a generated
+  // PurchaseInvoice — drives PARTIALLY_INVOICED vs INVOICED and how much
+  // remains to prefill on the next invoice.
+  invoicedQuantity Decimal       @default(0) @db.Decimal(18, 6)
+  unitPrice        Decimal       @db.Decimal(18, 4)
+  vatCategory      VatCategory?
+  // Carried onto the generated PurchaseInvoiceLine at invoice time.
+  warehouseId      String?
+  warehouse        Warehouse?    @relation(fields: [warehouseId], references: [id])
+  costCenterId     String?
+  costCenter       CostCenter?   @relation(fields: [costCenterId], references: [id])
+
+  @@index([purchaseOrderId])
+  @@map("purchase_order_lines")
+}
+
+model Payment {
+  id                       String           @id @default(uuid())
+  companyId                String
+  company                  Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  paymentNumber            String?
+  direction                PaymentDirection
+  businessPartnerId        String
+  businessPartner          BusinessPartner  @relation(fields: [businessPartnerId], references: [id])
+  paymentDate              DateTime
+  bankCashAccountId        String
+  bankCashAccount          Account          @relation(fields: [bankCashAccountId], references: [id])
+  currencyCode             String
+  exchangeRateToFunctional Decimal          @default(1) @db.Decimal(18, 8)
+  amount                   Decimal          @db.Decimal(18, 4)
+  allocatedAmount          Decimal          @default(0) @db.Decimal(18, 4)
+  unallocatedAmount        Decimal          @default(0) @db.Decimal(18, 4)
+  reference                String?
+  memo                     String?
+  status                   PaymentStatus    @default(POSTED)
+  journalEntryId           String?          @unique
+  journalEntry             JournalEntry?    @relation(fields: [journalEntryId], references: [id])
+  createdByUserId          String
+  cancelledByUserId        String?
+  cancelledAt              DateTime?
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
+
+  allocations PaymentAllocation[]
+
+  @@unique([companyId, paymentNumber])
+  @@index([companyId, direction, status])
+  @@index([companyId, businessPartnerId])
+  @@map("payments")
+}
+
+model PaymentAllocation {
+  id                String           @id @default(uuid())
+  paymentId         String
+  payment           Payment          @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  companyId         String
+  // Exactly one of the two is set (DB CHECK in finance-constraints migration).
+  salesInvoiceId    String?
+  salesInvoice      SalesInvoice?    @relation(fields: [salesInvoiceId], references: [id])
+  purchaseInvoiceId String?
+  purchaseInvoice   PurchaseInvoice? @relation(fields: [purchaseInvoiceId], references: [id])
+  allocatedAmount   Decimal          @db.Decimal(18, 4)
+  createdAt         DateTime         @default(now())
+
+  @@index([paymentId])
+  @@index([salesInvoiceId])
+  @@index([purchaseInvoiceId])
+  @@map("payment_allocations")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ZATCA e-Invoicing (Fatoora)
+// ─────────────────────────────────────────────────────────────────────────
+
+// One EGS (e-invoice generation solution) unit per company per environment.
+// Holds the signing identity and the per-device compliance chain state:
+// icvCounter (KSA-16 invoice counter) and lastInvoiceHash (KSA-13 PIH).
+// Both are mutated only under SELECT ... FOR UPDATE inside the invoice-post
+// transaction — the same row-lock discipline as NumberingSeries.
+model ZatcaDevice {
+  id                   String            @id @default(uuid())
+  companyId            String
+  company              Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  environment          ZatcaEnvironment
+  unitName             String
+  egsSerialNumber      String
+  // Private key + CSID secrets are AES-256-GCM encrypted at rest with
+  // ZATCA_KEY_ENCRYPTION_KEY from env; never exposed through the API.
+  privateKeyEnc        String
+  csrPem               String
+  complianceRequestId  String?
+  complianceCsid       String?
+  complianceSecretEnc  String?
+  productionCsid       String?
+  productionSecretEnc  String?
+  certificateExpiresAt DateTime?
+  status               ZatcaDeviceStatus @default(CREATED)
+  failureReason        String?
+  // PIH chain seed: base64 of the hex string of sha256("0"), per ZATCA spec.
+  icvCounter           Int               @default(0)
+  lastInvoiceHash      String            @default("NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ==")
+  onboardedAt          DateTime?
+  createdByUserId      String
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  submissions ZatcaSubmission[]
+
+  @@unique([companyId, environment])
+  @@map("zatca_devices")
+}
+
+model ZatcaSubmission {
+  id                  String                @id @default(uuid())
+  companyId           String
+  deviceId            String
+  device              ZatcaDevice           @relation(fields: [deviceId], references: [id])
+  salesInvoiceId      String                @unique
+  salesInvoice        SalesInvoice          @relation(fields: [salesInvoiceId], references: [id])
+  uuid                String
+  icv                 Int
+  invoiceHash         String
+  previousInvoiceHash String
+  invoiceKind         ZatcaInvoiceKind
+  submissionType      ZatcaSubmissionType
+  // Signed UBL XML as generated by us. For STANDARD invoices, clearedXml is
+  // the ZATCA-countersigned document — the legal artifact to share with the
+  // buyer; signedXml must not be distributed for standard invoices.
+  signedXml           String
+  clearedXml          String?
+  // TLV base64: set at generation for SIMPLIFIED, extracted from clearedXml
+  // for STANDARD after clearance.
+  qrCode              String?
+  status              ZatcaSubmissionStatus @default(PENDING)
+  zatcaResponse       Json?
+  warnings            Json?
+  errors              Json?
+  retryCount          Int                   @default(0)
+  lastAttemptAt       DateTime?
+  submittedAt         DateTime?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  @@unique([deviceId, icv])
+  @@index([companyId, status])
+  @@map("zatca_submissions")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Trading & Inventory (Phase 4)
+// ─────────────────────────────────────────────────────────────────────────
+
+// Perpetual-inventory state: one row per item per warehouse.
+// totalValue (functional currency) is the authoritative figure that must
+// reconcile to the INVENTORY GL account; avgCost is a cached derivation
+// (totalValue / onHandQty). Rows are mutated ONLY under SELECT ... FOR
+// UPDATE inside the posting transaction — the NumberingService discipline.
+model ItemWarehouseStock {
+  id          String    @id @default(uuid())
+  companyId   String
+  itemId      String
+  item        Item      @relation(fields: [itemId], references: [id])
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+  onHandQty   Decimal   @default(0) @db.Decimal(18, 6)
+  totalValue  Decimal   @default(0) @db.Decimal(18, 4)
+  avgCost     Decimal   @default(0) @db.Decimal(18, 6)
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([itemId, warehouseId])
+  @@index([companyId])
+  @@map("item_warehouse_stock")
+}
+
+// Append-only movement ledger (IAS 2 audit trail). qtyAfter/avgCostAfter
+// are running-balance snapshots so the ledger report needs no window
+// functions. journalEntryId is set-once after JE creation in the same tx
+// (enforced by trigger); null for transfers, which post no JE.
+model StockMovement {
+  id                 String            @id @default(uuid())
+  companyId          String
+  itemId             String
+  item               Item              @relation(fields: [itemId], references: [id])
+  warehouseId        String
+  warehouse          Warehouse         @relation(fields: [warehouseId], references: [id])
+  movementType       StockMovementType
+  quantity           Decimal           @db.Decimal(18, 6)
+  unitCost           Decimal           @db.Decimal(18, 6)
+  totalCost          Decimal           @db.Decimal(18, 4)
+  qtyAfter           Decimal           @db.Decimal(18, 6)
+  avgCostAfter       Decimal           @db.Decimal(18, 6)
+  sourceDocumentType DocumentType
+  sourceDocumentId   String
+  journalEntryId     String?
+  journalEntry       JournalEntry?     @relation(fields: [journalEntryId], references: [id])
+  postingDate        DateTime
+  memo               String?
+  createdByUserId    String
+  createdAt          DateTime          @default(now())
+
+  @@index([companyId, itemId, warehouseId, createdAt])
+  @@index([companyId, sourceDocumentId])
+  @@map("stock_movements")
+}
+
+// Immediate-post document (no draft/status/cancel — corrections are made
+// with an opposite transfer). No JE: value never leaves the INVENTORY GL
+// account; the document + TRANSFER_OUT/IN movement pair is the audit trail.
+model StockTransfer {
+  id              String    @id @default(uuid())
+  companyId       String
+  transferNumber  String
+  fromWarehouseId String
+  fromWarehouse   Warehouse @relation("TransferFrom", fields: [fromWarehouseId], references: [id])
+  toWarehouseId   String
+  toWarehouse     Warehouse @relation("TransferTo", fields: [toWarehouseId], references: [id])
+  postingDate     DateTime
+  memo            String?
+  createdByUserId String
+  createdAt       DateTime  @default(now())
+
+  lines StockTransferLine[]
+
+  @@unique([companyId, transferNumber])
+  @@map("stock_transfers")
+}
+
+model StockTransferLine {
+  id              String        @id @default(uuid())
+  stockTransferId String
+  stockTransfer   StockTransfer @relation(fields: [stockTransferId], references: [id], onDelete: Cascade)
+  companyId       String
+  lineNumber      Int
+  itemId          String
+  item            Item          @relation(fields: [itemId], references: [id])
+  quantity        Decimal       @db.Decimal(18, 6)
+  unitCost        Decimal       @db.Decimal(18, 6)
+  totalCost       Decimal       @db.Decimal(18, 4)
+
+  @@index([stockTransferId])
+  @@map("stock_transfer_lines")
+}
+
+// Immediate-post; one direction per document. IN receives at the client's
+// unitCost (JE Dr Inventory / Cr 5150); OUT issues at moving average
+// (JE Dr 5150 / Cr Inventory).
+model StockAdjustment {
+  id               String                   @id @default(uuid())
+  companyId        String
+  adjustmentNumber String
+  warehouseId      String
+  warehouse        Warehouse                @relation(fields: [warehouseId], references: [id])
+  direction        StockAdjustmentDirection
+  postingDate      DateTime
+  reason           String
+  journalEntryId   String?                  @unique
+  journalEntry     JournalEntry?            @relation(fields: [journalEntryId], references: [id])
+  createdByUserId  String
+  createdAt        DateTime                 @default(now())
+
+  lines StockAdjustmentLine[]
+
+  @@unique([companyId, adjustmentNumber])
+  @@map("stock_adjustments")
+}
+
+model StockAdjustmentLine {
+  id                String          @id @default(uuid())
+  stockAdjustmentId String
+  stockAdjustment   StockAdjustment @relation(fields: [stockAdjustmentId], references: [id], onDelete: Cascade)
+  companyId         String
+  lineNumber        Int
+  itemId            String
+  item              Item            @relation(fields: [itemId], references: [id])
+  quantity          Decimal         @db.Decimal(18, 6)
+  unitCost          Decimal         @db.Decimal(18, 6)
+  totalCost         Decimal         @db.Decimal(18, 4)
+
+  @@index([stockAdjustmentId])
+  @@map("stock_adjustment_lines")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Projects — full job accounting (Phase 5)
+// ─────────────────────────────────────────────────────────────────────────
+
+// A project is 1:1 with an auto-created cost center (code "PRJ-<code>").
+// All financial values are functional currency. estimatedTotalCost is the
+// cost-to-cost POC basis; both it and contractValue are PATCHable while
+// ACTIVE (audit-logged) and snapshotted onto each revenue-recognition run.
+model Project {
+  id                 String            @id @default(uuid())
+  companyId          String
+  company            Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  code               String
+  name               String
+  description        String?
+  businessPartnerId  String?
+  businessPartner    BusinessPartner?  @relation(fields: [businessPartnerId], references: [id])
+  status             ProjectStatus     @default(PLANNED)
+  recognitionMethod  RecognitionMethod @default(POINT_IN_TIME)
+  startDate          DateTime?
+  endDate            DateTime?
+  contractValue      Decimal           @default(0) @db.Decimal(18, 4)
+  estimatedTotalCost Decimal           @default(0) @db.Decimal(18, 4)
+  costCenterId       String            @unique
+  costCenter         CostCenter        @relation(fields: [costCenterId], references: [id])
+  createdByUserId    String
+  updatedByUserId    String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  tasks                  WbsTask[]
+  revenueRecognitionRuns RevenueRecognitionRun[]
+  salesInvoiceLines      SalesInvoiceLine[]
+  purchaseInvoiceLines   PurchaseInvoiceLine[]
+
+  @@unique([companyId, code])
+  @@index([companyId, status])
+  @@map("projects")
+}
+
+// WBS task tree (arbitrary depth). Budget rollup is informational —
+// variance is reported, postings are never rejected on budget grounds.
+model WbsTask {
+  id           String    @id @default(uuid())
+  projectId    String
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  companyId    String
+  parentTaskId String?
+  parentTask   WbsTask?  @relation("WbsHierarchy", fields: [parentTaskId], references: [id])
+  children     WbsTask[] @relation("WbsHierarchy")
+  code         String
+  name         String
+  costBudget   Decimal   @default(0) @db.Decimal(18, 4)
+  sortOrder    Int       @default(0)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  journalEntryLines    JournalEntryLine[]
+  salesInvoiceLines    SalesInvoiceLine[]
+  purchaseInvoiceLines PurchaseInvoiceLine[]
+
+  @@unique([projectId, code])
+  @@index([projectId])
+  @@map("wbs_tasks")
+}
+
+// One POC revenue-recognition run per project per fiscal period (enforced
+// by a partial unique index WHERE status='POSTED' — reverse-then-rerun for
+// corrections). Snapshots make every run independently auditable.
+model RevenueRecognitionRun {
+  id                         String                      @id @default(uuid())
+  companyId                  String
+  projectId                  String
+  project                    Project                     @relation(fields: [projectId], references: [id])
+  fiscalPeriodId             String
+  fiscalPeriod               FiscalPeriod                @relation(fields: [fiscalPeriodId], references: [id])
+  runDate                    DateTime
+  costsToDateFunctional      Decimal                     @db.Decimal(18, 4)
+  estimatedTotalCostSnapshot Decimal                     @db.Decimal(18, 4)
+  contractValueSnapshot      Decimal                     @db.Decimal(18, 4)
+  percentComplete            Decimal                     @db.Decimal(7, 4)
+  cumulativeRevenue          Decimal                     @db.Decimal(18, 4)
+  previouslyRecognized       Decimal                     @db.Decimal(18, 4)
+  recognizedThisRun          Decimal                     @db.Decimal(18, 4)
+  journalEntryId             String                      @unique
+  journalEntry               JournalEntry                @relation("RevRecJournal", fields: [journalEntryId], references: [id])
+  status                     RevenueRecognitionRunStatus @default(POSTED)
+  reversalJournalEntryId     String?                     @unique
+  reversalJournalEntry       JournalEntry?               @relation("RevRecReversalJournal", fields: [reversalJournalEntryId], references: [id])
+  createdByUserId            String
+  createdAt                  DateTime                    @default(now())
+
+  @@index([projectId, fiscalPeriodId])
+  @@map("revenue_recognition_runs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// HR & Saudi Payroll
+// ─────────────────────────────────────────────────────────────────────────
+
+// Per-company statutory configuration. Rates are configurable because GOSI
+// reform changes contribution rates over time — never hardcode them.
+model HrSettings {
+  id                     String    @id @default(uuid())
+  companyId              String    @unique
+  company                Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  saudiEmployeeRatePct   Decimal   @default(9.75) @db.Decimal(7, 4)
+  saudiEmployerRatePct   Decimal   @default(11.75) @db.Decimal(7, 4)
+  expatEmployerRatePct   Decimal   @default(2) @db.Decimal(7, 4)
+  gosiWageFloor          Decimal   @default(1500) @db.Decimal(18, 4)
+  gosiWageCap            Decimal   @default(45000) @db.Decimal(18, 4)
+  overtimeMultiplier     Decimal   @default(1.5) @db.Decimal(7, 4)
+  hoursPerDay            Decimal   @default(8) @db.Decimal(7, 2)
+  daysPerMonth           Decimal   @default(30) @db.Decimal(7, 2)
+  defaultAnnualLeaveDays Decimal   @default(21) @db.Decimal(7, 2)
+  eosbBasis              EosbBasis @default(FULL_GROSS)
+  // WPS SIF employer identifiers
+  molEstablishmentId     String?
+  employerBankCode       String?
+  employerIban           String?
+  updatedByUserId        String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@map("hr_settings")
+}
+
+model Employee {
+  id                  String         @id @default(uuid())
+  companyId           String
+  company             Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  code                String
+  nameEn              String
+  nameAr              String?
+  // Job title / trade, e.g. "Mason", "Electrician", "Site Supervisor" —
+  // matches the profession printed on the Saudi iqama/work permit.
+  designation         String?
+  nationality         String?
+  isSaudi             Boolean        @default(false)
+  gender              String?
+  dateOfBirth         DateTime?
+  iqamaOrNationalId   String?
+  iqamaExpiry         DateTime?
+  passportNumber      String?
+  passportExpiry      DateTime?
+  gosiNumber          String?
+  joinDate            DateTime
+  contractType        ContractType   @default(UNLIMITED)
+  status              EmployeeStatus @default(ACTIVE)
+  terminationDate     DateTime?
+  // WPS payout routing
+  bankCode            String?
+  iban                String?
+  costCenterId        String?
+  costCenter          CostCenter?    @relation(fields: [costCenterId], references: [id])
+  annualLeaveDays     Decimal        @default(21) @db.Decimal(7, 2)
+  leaveOpeningBalance Decimal        @default(0) @db.Decimal(7, 2)
+  basicSalary         Decimal        @default(0) @db.Decimal(18, 4)
+  housingAllowance    Decimal        @default(0) @db.Decimal(18, 4)
+  transportAllowance  Decimal        @default(0) @db.Decimal(18, 4)
+  otherAllowance      Decimal        @default(0) @db.Decimal(18, 4)
+  gosiExempt          Boolean        @default(false)
+  createdByUserId     String
+  updatedByUserId     String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  loans                    EmployeeLoan[]
+  payrollRunLines          PayrollRunLine[]
+  finalSettlement          FinalSettlement?
+  manpowerAssignments      ManpowerAssignment[]
+  timesheetEntries         TimesheetEntry[]
+  employeeTimesheetEntries EmployeeTimesheetEntry[]
+  payments                 EmployeePayment[]
+
+  @@unique([companyId, code])
+  @@index([companyId, status])
+  @@map("employees")
+}
+
+// Loans are created and disbursed atomically (JE Dr employee-loans control /
+// Cr bank-or-cash), so loanNumber and the disbursement JE are always present.
+model EmployeeLoan {
+  id                         String       @id @default(uuid())
+  companyId                  String
+  company                    Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employeeId                 String
+  employee                   Employee     @relation(fields: [employeeId], references: [id])
+  loanNumber                 String
+  principal                  Decimal      @db.Decimal(18, 4)
+  monthlyInstallment         Decimal      @db.Decimal(18, 4)
+  balance                    Decimal      @db.Decimal(18, 4)
+  status                     LoanStatus   @default(ACTIVE)
+  disbursementJournalEntryId String       @unique
+  disbursementJournalEntry   JournalEntry @relation("LoanDisbursementJournal", fields: [disbursementJournalEntryId], references: [id])
+  disbursementAccountId      String
+  disbursementAccount        Account      @relation(fields: [disbursementAccountId], references: [id])
+  memo                       String?
+  createdByUserId            String
+  createdAt                  DateTime     @default(now())
+  updatedAt                  DateTime     @updatedAt
+
+  @@unique([companyId, loanNumber])
+  @@index([employeeId, status])
+  @@map("employee_loans")
+}
+
+// One POSTED payroll run per fiscal period (partial unique index in SQL
+// migration — reverse-then-rerun for corrections). runNumber is allocated
+// at posting time so abandoned drafts never create numbering gaps.
+model PayrollRun {
+  id                     String           @id @default(uuid())
+  companyId              String
+  company                Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fiscalPeriodId         String
+  fiscalPeriod           FiscalPeriod     @relation(fields: [fiscalPeriodId], references: [id])
+  runNumber              String?
+  status                 PayrollRunStatus @default(DRAFT)
+  runDate                DateTime         @default(now())
+  journalEntryId         String?          @unique
+  journalEntry           JournalEntry?    @relation("PayrollJournal", fields: [journalEntryId], references: [id])
+  reversalJournalEntryId String?          @unique
+  reversalJournalEntry   JournalEntry?    @relation("PayrollReversalJournal", fields: [reversalJournalEntryId], references: [id])
+  totalGross             Decimal          @default(0) @db.Decimal(18, 4)
+  totalGosiEmployee      Decimal          @default(0) @db.Decimal(18, 4)
+  totalGosiEmployer      Decimal          @default(0) @db.Decimal(18, 4)
+  totalLoanDeductions    Decimal          @default(0) @db.Decimal(18, 4)
+  totalNetPay            Decimal          @default(0) @db.Decimal(18, 4)
+  totalEosbDelta         Decimal          @default(0) @db.Decimal(18, 4)
+  totalLeaveDelta        Decimal          @default(0) @db.Decimal(18, 4)
+  createdByUserId        String
+  postedByUserId         String?
+  postedAt               DateTime?
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+
+  lines PayrollRunLine[]
+
+  @@unique([companyId, runNumber])
+  @@index([companyId, fiscalPeriodId])
+  @@map("payroll_runs")
+}
+
+// Everything needed to audit a payslip is snapshotted on the line — salary
+// structure, GOSI base/shares, exception inputs, and computed results.
+model PayrollRunLine {
+  id                    String      @id @default(uuid())
+  runId                 String
+  run                   PayrollRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  companyId             String
+  employeeId            String
+  employee              Employee    @relation(fields: [employeeId], references: [id])
+  // Salary snapshot
+  basicSalary           Decimal     @db.Decimal(18, 4)
+  housingAllowance      Decimal     @db.Decimal(18, 4)
+  transportAllowance    Decimal     @db.Decimal(18, 4)
+  otherAllowance        Decimal     @db.Decimal(18, 4)
+  gosiBase              Decimal     @db.Decimal(18, 4)
+  gosiEmployee          Decimal     @db.Decimal(18, 4)
+  gosiEmployer          Decimal     @db.Decimal(18, 4)
+  // Exception inputs (editable while the run is DRAFT)
+  unpaidDays            Decimal     @default(0) @db.Decimal(7, 2)
+  absentDays            Decimal     @default(0) @db.Decimal(7, 2)
+  overtimeHours         Decimal     @default(0) @db.Decimal(7, 2)
+  annualLeaveDaysTaken  Decimal     @default(0) @db.Decimal(7, 2)
+  otherDeduction        Decimal     @default(0) @db.Decimal(18, 4)
+  otherDeductionMemo    String?
+  // Computed results
+  overtimePay           Decimal     @default(0) @db.Decimal(18, 4)
+  absenceDeduction      Decimal     @default(0) @db.Decimal(18, 4)
+  loanDeduction         Decimal     @default(0) @db.Decimal(18, 4)
+  // [{loanId, amount}] — lets a reversal restore each loan balance exactly.
+  loanBreakdown         Json?
+  grossPay              Decimal     @default(0) @db.Decimal(18, 4)
+  netPay                Decimal     @default(0) @db.Decimal(18, 4)
+  eosbEntitlementToDate Decimal     @default(0) @db.Decimal(18, 4)
+  eosbDelta             Decimal     @default(0) @db.Decimal(18, 4)
+  leaveBalanceDays      Decimal     @default(0) @db.Decimal(7, 2)
+  leaveProvisionToDate  Decimal     @default(0) @db.Decimal(18, 4)
+  leaveDelta            Decimal     @default(0) @db.Decimal(18, 4)
+  costCenterId          String?
+  costCenter            CostCenter? @relation(fields: [costCenterId], references: [id])
+
+  @@unique([runId, employeeId])
+  @@index([companyId, employeeId])
+  @@map("payroll_run_lines")
+}
+
+model FinalSettlement {
+  id                     String           @id @default(uuid())
+  companyId              String
+  company                Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employeeId             String           @unique
+  employee               Employee         @relation(fields: [employeeId], references: [id])
+  settlementNumber       String
+  reason                 SettlementReason
+  lastWorkingDay         DateTime
+  serviceYears           Decimal          @db.Decimal(7, 4)
+  finalSalaryAmount      Decimal          @db.Decimal(18, 4)
+  eosbAmount             Decimal          @db.Decimal(18, 4)
+  leavePayoutAmount      Decimal          @db.Decimal(18, 4)
+  loanRecovery           Decimal          @db.Decimal(18, 4)
+  netAmount              Decimal          @db.Decimal(18, 4)
+  // Provision balances cleared by the settlement JE (audit snapshot)
+  eosbProvisionCleared   Decimal          @db.Decimal(18, 4)
+  leaveProvisionCleared  Decimal          @db.Decimal(18, 4)
+  // Cumulative amount actually paid out against this settlement; the
+  // remaining pending balance is always netAmount − paidAmount.
+  paidAmount             Decimal          @default(0) @db.Decimal(18, 4)
+  journalEntryId         String           @unique
+  journalEntry           JournalEntry     @relation("SettlementJournal", fields: [journalEntryId], references: [id])
+  reversalJournalEntryId String?          @unique
+  reversalJournalEntry   JournalEntry?    @relation("SettlementReversalJournal", fields: [reversalJournalEntryId], references: [id])
+  status                 SettlementStatus @default(POSTED)
+  createdByUserId        String
+  createdAt              DateTime         @default(now())
+
+  payments SettlementPayment[]
+
+  @@unique([companyId, settlementNumber])
+  @@map("final_settlements")
+}
+
+// One or more payouts recorded against a final settlement (a released
+// employee is often paid over time rather than in one lump sum). Each
+// payment posts its own JE (Dr Accrued Salaries Payable / Cr bank-cash).
+model SettlementPayment {
+  id                String          @id @default(uuid())
+  companyId         String
+  company           Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  finalSettlementId String
+  finalSettlement   FinalSettlement @relation(fields: [finalSettlementId], references: [id], onDelete: Cascade)
+  amount            Decimal         @db.Decimal(18, 4)
+  paymentDate       DateTime
+  bankCashAccountId String
+  bankCashAccount   Account         @relation(fields: [bankCashAccountId], references: [id])
+  memo              String?
+  journalEntryId    String          @unique
+  journalEntry      JournalEntry    @relation("SettlementPaymentJournal", fields: [journalEntryId], references: [id])
+  createdByUserId   String
+  createdAt         DateTime        @default(now())
+
+  @@index([finalSettlementId])
+  @@map("settlement_payments")
+}
+
+// Day-by-day internal labor timesheet used for the per-project day-cost
+// Overview — one entry per employee per calendar day (dayType + hours
+// worked; hoursWorked always defaults to 0 and is entered explicitly,
+// never assumed). Payroll-independent: distinct
+// from HrSettings.daysPerMonth, which drives statutory payroll math, and
+// from the manpower Timesheet/TimesheetEntry models, which are client-
+// billing documents tied to a ManpowerContract and customer invoice.
+model EmployeeTimesheetEntry {
+  id              String           @id @default(uuid())
+  companyId       String
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employeeId      String
+  // Cascade: disposable costing metadata, not a financial record — it must
+  // never block deleting a mistaken employee entry.
+  employee        Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date            DateTime
+  dayType         TimesheetDayType @default(WORKED)
+  hoursWorked     Decimal          @default(0) @db.Decimal(5, 2)
+  enteredByUserId String
+  updatedByUserId String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@unique([employeeId, date])
+  @@index([companyId, date])
+  @@map("employee_timesheet_entries")
+}
+
+// One-off cash paid to an employee outside formal payroll. ALLOWANCE is a
+// straight expense (recoveredAmount always 0, service-enforced); ADVANCE/
+// OTHER post to the same EMPLOYEE_LOANS control account as EmployeeLoan and
+// remain pending (amount − recoveredAmount) until recovered.
+model EmployeePayment {
+  id                String                  @id @default(uuid())
+  companyId         String
+  company           Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employeeId        String
+  employee          Employee                @relation(fields: [employeeId], references: [id])
+  paymentNumber     String?
+  category          EmployeePaymentCategory
+  amount            Decimal                 @db.Decimal(18, 4)
+  paymentDate       DateTime
+  bankCashAccountId String
+  bankCashAccount   Account                 @relation(fields: [bankCashAccountId], references: [id])
+  memo              String?
+  recoveredAmount   Decimal                 @default(0) @db.Decimal(18, 4)
+  journalEntryId    String                  @unique
+  journalEntry      JournalEntry            @relation("EmployeePaymentJournal", fields: [journalEntryId], references: [id])
+  createdByUserId   String
+  createdAt         DateTime                @default(now())
+
+  recoveries EmployeePaymentRecovery[]
+
+  @@unique([companyId, paymentNumber])
+  @@index([employeeId, category])
+  @@map("employee_payments")
+}
+
+// One or more recoveries recorded against an ADVANCE/OTHER EmployeePayment
+// (mirrors SettlementPayment's partial-recovery pattern). Each recovery
+// posts its own JE (Dr bank-cash / Cr EMPLOYEE_LOANS).
+model EmployeePaymentRecovery {
+  id                String          @id @default(uuid())
+  companyId         String
+  company           Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employeePaymentId String
+  employeePayment   EmployeePayment @relation(fields: [employeePaymentId], references: [id], onDelete: Cascade)
+  amount            Decimal         @db.Decimal(18, 4)
+  recoveryDate      DateTime
+  bankCashAccountId String
+  bankCashAccount   Account         @relation(fields: [bankCashAccountId], references: [id])
+  memo              String?
+  journalEntryId    String          @unique
+  journalEntry      JournalEntry    @relation("EmployeePaymentRecoveryJournal", fields: [journalEntryId], references: [id])
+  createdByUserId   String
+  createdAt         DateTime        @default(now())
+
+  @@index([employeePaymentId])
+  @@map("employee_payment_recoveries")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Manpower Rental
+// ─────────────────────────────────────────────────────────────────────────
+
+// Rental contract hiring out employees to a client site. Auto-creates its
+// 1:1 cost center MPR-<code> so billing revenue and the assigned crew's
+// payroll cost meet on one dimension (same pattern as Project).
+model ManpowerContract {
+  id                String                 @id @default(uuid())
+  companyId         String
+  company           Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  code              String
+  name              String
+  businessPartnerId String
+  businessPartner   BusinessPartner        @relation(fields: [businessPartnerId], references: [id])
+  status            ManpowerContractStatus @default(ACTIVE)
+  startDate         DateTime
+  endDate           DateTime?
+  costCenterId      String                 @unique
+  costCenter        CostCenter             @relation(fields: [costCenterId], references: [id])
+  memo              String?
+  createdByUserId   String
+  updatedByUserId   String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  assignments ManpowerAssignment[]
+  timesheets  Timesheet[]
+
+  @@unique([companyId, code])
+  @@index([companyId, status])
+  @@map("manpower_contracts")
+}
+
+model ManpowerAssignment {
+  id              String           @id @default(uuid())
+  contractId      String
+  contract        ManpowerContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  companyId       String
+  employeeId      String
+  employee        Employee         @relation(fields: [employeeId], references: [id])
+  rateBasis       RateBasis
+  billRate        Decimal          @db.Decimal(18, 4)
+  // 0 = overtime is not billable on this assignment
+  otBillRate      Decimal          @default(0) @db.Decimal(18, 4)
+  startDate       DateTime
+  endDate         DateTime?
+  isActive        Boolean          @default(true)
+  createdByUserId String
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  timesheetEntries TimesheetEntry[]
+
+  @@index([contractId])
+  @@index([employeeId, isActive])
+  @@map("manpower_assignments")
+}
+
+// One timesheet per contract per fiscal period. DRAFT entries are editable;
+// APPROVED locks them for billing; INVOICED links the generated AR draft.
+model Timesheet {
+  id               String           @id @default(uuid())
+  companyId        String
+  company          Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contractId       String
+  contract         ManpowerContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  fiscalPeriodId   String
+  fiscalPeriod     FiscalPeriod     @relation(fields: [fiscalPeriodId], references: [id])
+  status           TimesheetStatus  @default(DRAFT)
+  salesInvoiceId   String?          @unique
+  salesInvoice     SalesInvoice?    @relation(fields: [salesInvoiceId], references: [id])
+  approvedByUserId String?
+  approvedAt       DateTime?
+  createdByUserId  String
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  entries TimesheetEntry[]
+
+  @@unique([contractId, fiscalPeriodId])
+  @@index([companyId, status])
+  @@map("timesheets")
+}
+
+model TimesheetEntry {
+  id            String             @id @default(uuid())
+  timesheetId   String
+  timesheet     Timesheet          @relation(fields: [timesheetId], references: [id], onDelete: Cascade)
+  companyId     String
+  assignmentId  String
+  assignment    ManpowerAssignment @relation(fields: [assignmentId], references: [id])
+  employeeId    String
+  employee      Employee           @relation(fields: [employeeId], references: [id])
+  date          DateTime
+  dayType       TimesheetDayType   @default(WORKED)
+  // Hours worked that day — drives HOURLY-basis billing
+  hours         Decimal            @default(0) @db.Decimal(7, 2)
+  overtimeHours Decimal            @default(0) @db.Decimal(7, 2)
+
+  @@unique([timesheetId, assignmentId, date])
+  @@index([employeeId, date])
+  @@map("timesheet_entries")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Equipment Rental & Fixed-Asset Ledger
+// ─────────────────────────────────────────────────────────────────────────
+
+// A rentable fixed-asset unit. Straight-line depreciation:
+// monthly = (cost − salvage) / usefulLifeMonths; accumulated (opening +
+// posted run lines) never exceeds cost − salvage.
+model Equipment {
+  id                             String          @id @default(uuid())
+  companyId                      String
+  company                        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  code                           String
+  name                           String
+  category                       String?
+  serialNumber                   String?
+  status                         EquipmentStatus @default(ACTIVE)
+  acquisitionDate                DateTime
+  acquisitionCost                Decimal         @db.Decimal(18, 4)
+  salvageValue                   Decimal         @default(0) @db.Decimal(18, 4)
+  usefulLifeMonths               Int
+  depreciationStartDate          DateTime
+  // For assets bought used / migrated with existing depreciation
+  openingAccumulatedDepreciation Decimal         @default(0) @db.Decimal(18, 4)
+  capitalizationJournalEntryId   String?         @unique
+  capitalizationJournalEntry     JournalEntry?   @relation("EquipmentCapitalizationJournal", fields: [capitalizationJournalEntryId], references: [id])
+  disposalDate                   DateTime?
+  disposalProceeds               Decimal?        @db.Decimal(18, 4)
+  disposalJournalEntryId         String?         @unique
+  disposalJournalEntry           JournalEntry?   @relation("EquipmentDisposalJournal", fields: [disposalJournalEntryId], references: [id])
+  createdByUserId                String
+  updatedByUserId                String?
+  createdAt                      DateTime        @default(now())
+  updatedAt                      DateTime        @updatedAt
+
+  assignments          EquipmentAssignment[]
+  usageLogEntries      UsageLogEntry[]
+  depreciationRunLines DepreciationRunLine[]
+
+  @@unique([companyId, code])
+  @@index([companyId, status])
+  @@map("equipment")
+}
+
+model EquipmentRentalContract {
+  id                String                 @id @default(uuid())
+  companyId         String
+  company           Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  code              String
+  name              String
+  businessPartnerId String
+  businessPartner   BusinessPartner        @relation(fields: [businessPartnerId], references: [id])
+  status            ManpowerContractStatus @default(ACTIVE)
+  startDate         DateTime
+  endDate           DateTime?
+  costCenterId      String                 @unique
+  costCenter        CostCenter             @relation(fields: [costCenterId], references: [id])
+  memo              String?
+  createdByUserId   String
+  updatedByUserId   String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  assignments EquipmentAssignment[]
+  usageLogs   UsageLog[]
+
+  @@unique([companyId, code])
+  @@index([companyId, status])
+  @@map("equipment_rental_contracts")
+}
+
+model EquipmentAssignment {
+  id              String                  @id @default(uuid())
+  contractId      String
+  contract        EquipmentRentalContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  companyId       String
+  equipmentId     String
+  equipment       Equipment               @relation(fields: [equipmentId], references: [id])
+  rateBasis       RateBasis
+  billRate        Decimal                 @db.Decimal(18, 4)
+  startDate       DateTime
+  endDate         DateTime?
+  isActive        Boolean                 @default(true)
+  createdByUserId String
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  usageLogEntries UsageLogEntry[]
+
+  @@index([contractId])
+  @@index([equipmentId, isActive])
+  @@map("equipment_assignments")
+}
+
+// One usage log per contract per fiscal period (mirror of Timesheet).
+model UsageLog {
+  id               String                  @id @default(uuid())
+  companyId        String
+  company          Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contractId       String
+  contract         EquipmentRentalContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  fiscalPeriodId   String
+  fiscalPeriod     FiscalPeriod            @relation(fields: [fiscalPeriodId], references: [id])
+  status           TimesheetStatus         @default(DRAFT)
+  salesInvoiceId   String?                 @unique
+  salesInvoice     SalesInvoice?           @relation(fields: [salesInvoiceId], references: [id])
+  approvedByUserId String?
+  approvedAt       DateTime?
+  createdByUserId  String
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  entries UsageLogEntry[]
+
+  @@unique([contractId, fiscalPeriodId])
+  @@index([companyId, status])
+  @@map("usage_logs")
+}
+
+model UsageLogEntry {
+  id           String              @id @default(uuid())
+  usageLogId   String
+  usageLog     UsageLog            @relation(fields: [usageLogId], references: [id], onDelete: Cascade)
+  companyId    String
+  assignmentId String
+  assignment   EquipmentAssignment @relation(fields: [assignmentId], references: [id])
+  equipmentId  String
+  equipment    Equipment           @relation(fields: [equipmentId], references: [id])
+  date         DateTime
+  dayStatus    UsageDayType        @default(ON_RENT)
+  // Metered hours that day — drives HOURLY-basis billing
+  hoursUsed    Decimal             @default(0) @db.Decimal(7, 2)
+
+  @@unique([usageLogId, assignmentId, date])
+  @@index([equipmentId, date])
+  @@map("usage_log_entries")
+}
+
+// One POSTED depreciation run per fiscal period (partial unique in SQL
+// migration — reverse-then-rerun). Posts immediately: create = post.
+model DepreciationRun {
+  id                     String           @id @default(uuid())
+  companyId              String
+  company                Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fiscalPeriodId         String
+  fiscalPeriod           FiscalPeriod     @relation(fields: [fiscalPeriodId], references: [id])
+  runNumber              String
+  status                 PayrollRunStatus @default(POSTED)
+  journalEntryId         String           @unique
+  journalEntry           JournalEntry     @relation("DepreciationJournal", fields: [journalEntryId], references: [id])
+  reversalJournalEntryId String?          @unique
+  reversalJournalEntry   JournalEntry?    @relation("DepreciationReversalJournal", fields: [reversalJournalEntryId], references: [id])
+  totalAmount            Decimal          @db.Decimal(18, 4)
+  createdByUserId        String
+  createdAt              DateTime         @default(now())
+
+  lines DepreciationRunLine[]
+
+  @@unique([companyId, runNumber])
+  @@index([companyId, fiscalPeriodId])
+  @@map("depreciation_runs")
+}
+
+model DepreciationRunLine {
+  id               String          @id @default(uuid())
+  runId            String
+  run              DepreciationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  companyId        String
+  equipmentId      String
+  equipment        Equipment       @relation(fields: [equipmentId], references: [id])
+  amount           Decimal         @db.Decimal(18, 4)
+  accumulatedAfter Decimal         @db.Decimal(18, 4)
+  nbvAfter         Decimal         @db.Decimal(18, 4)
+  // Rental contract's CC when the unit was assigned at period end
+  costCenterId     String?
+  costCenter       CostCenter?     @relation(fields: [costCenterId], references: [id])
+
+  @@unique([runId, equipmentId])
+  @@map("depreciation_run_lines")
+}

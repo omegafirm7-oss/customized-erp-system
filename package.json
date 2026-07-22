@@ -1,0 +1,24 @@
+{
+  "name": "erp-system",
+  "private": true,
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "dev:api": "pnpm --filter @erp/api start:dev",
+    "dev:web": "pnpm --filter @erp/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "prisma:generate": "pnpm --filter @erp/api prisma:generate",
+    "prisma:migrate": "pnpm --filter @erp/api prisma:migrate",
+    "prisma:seed": "pnpm --filter @erp/api prisma:seed"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "prettier": "^3.3.3",
+    "eslint": "^8.57.0"
+  }
+}

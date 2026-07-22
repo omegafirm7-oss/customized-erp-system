@@ -1,0 +1,312 @@
+import { INestApplication } from "@nestjs/common";
+import request from "supertest";
+import { createTestApp, createItem, createPartner, setupUserWithCompany } from "./utils/test-app";
+
+describe("Finance reports (e2e)", () => {
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  async function setupContext() {
+    const ctx = await setupUserWithCompany(app);
+    const customer = await createPartner(app, ctx.accessToken, "CUSTOMER");
+    const vendor = await createPartner(app, ctx.accessToken, "VENDOR");
+    const item = await createItem(app, ctx.accessToken, {
+      defaultSalesAccountId: ctx.accountByCode("4100").id,
+      defaultPurchaseAccountId: ctx.accountByCode("5240").id,
+    });
+    return { ...ctx, customer, vendor, item };
+  }
+
+  async function postArInvoice(
+    ctx: Awaited<ReturnType<typeof setupContext>>,
+    unitPrice: string,
+    dueInDays: number,
+    extra: Record<string, unknown> = {},
+  ) {
+    const today = new Date();
+    const draft = await request(app.getHttpServer())
+      .post("/ar/invoices")
+      .set("Authorization", `Bearer ${ctx.accessToken}`)
+      .send({
+        businessPartnerId: ctx.customer.id,
+        issueDateTime: today.toISOString(),
+        postingDate: today.toISOString(),
+        dueDate: new Date(today.getTime() + dueInDays * 24 * 3600 * 1000).toISOString(),
+        lines: [{ itemId: ctx.item.id, description: "Line", quantity: "1", unitPrice }],
+        ...extra,
+      })
+      .expect(201);
+    const posted = await request(app.getHttpServer())
+      .post(`/ar/invoices/${draft.body.id}/post`)
+      .set("Authorization", `Bearer ${ctx.accessToken}`)
+      .expect(201);
+    return posted.body;
+  }
+
+  it("buckets AR aging by overdue days and excludes paid invoices", async () => {
+    const ctx = await setupContext();
+
+    // Overdue amounts land in buckets by (asOfDate - dueDate)
+    await postArInvoice(ctx, "100", -10); // 1–30 days overdue, gross 115
+    await postArInvoice(ctx, "200", -45); // 31–60, gross 230
+    await postArInvoice(ctx, "300", -75); // 61–90, gross 345
+    await postArInvoice(ctx, "400", -120); // 90+, gross 460
+    await postArInvoice(ctx, "500", 15); // not yet due → current, gross 575
+
+    // A paid invoice must not appear
+    const paidInvoice = await postArInvoice(ctx, "50", -5); // gross 57.50
+    await request(app.getHttpServer())
+      .post("/payments/incoming")
+      .set("Authorization", `Bearer ${ctx.accessToken}`)
+      .send({
+        businessPartnerId: ctx.customer.id,
+        paymentDate: new Date().toISOString(),
+        bankCashAccountId: ctx.accountByCode("1120").id,
+        amount: "57.5",
+        allocations: [{ invoiceId: paidInvoice.id, amount: "57.5" }],
+      })
+      .expect(201);
+
+    const report = (
+      await request(app.getHttpServer())
+        .get("/reports/ar-aging")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200)
+    ).body;
+
+    expect(report.rows).toHaveLength(1);
+    const row = report.rows[0];
+    expect(Number(row.current)).toBe(575);
+    expect(Number(row.days1to30)).toBe(115);
+    expect(Number(row.days31to60)).toBe(230);
+    expect(Number(row.days61to90)).toBe(345);
+    expect(Number(row.days90plus)).toBe(460);
+    expect(Number(row.total)).toBe(575 + 115 + 230 + 345 + 460);
+  });
+
+  it("computes the VAT return with credit notes reducing output VAT", async () => {
+    const ctx = await setupContext();
+
+    // Sales: 1000 standard (150 VAT) + 500 zero-rated (0 VAT)
+    const invoice = await postArInvoice(ctx, "1000", 30);
+    await postArInvoice(ctx, "500", 30, {
+      lines: [{ itemId: ctx.item.id, description: "Export", quantity: "1", unitPrice: "500", vatCategory: "ZERO_RATED" }],
+    });
+
+    // Credit note 200 (30 VAT) against the first invoice
+    const cnDraft = await request(app.getHttpServer())
+      .post("/ar/invoices")
+      .set("Authorization", `Bearer ${ctx.accessToken}`)
+      .send({
+        documentKind: "CREDIT_NOTE",
+        originalInvoiceId: invoice.id,
+        businessPartnerId: ctx.customer.id,
+        issueDateTime: new Date().toISOString(),
+        postingDate: new Date().toISOString(),
+        dueDate: new Date().toISOString(),
+        lines: [{ itemId: ctx.item.id, description: "Refund", quantity: "1", unitPrice: "200" }],
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/ar/invoices/${cnDraft.body.id}/post`)
+      .set("Authorization", `Bearer ${ctx.accessToken}`)
+      .expect(201);
+
+    // Purchase: 400 standard (60 input VAT)
+    const apDraft = await request(app.getHttpServer())
+      .post("/ap/invoices")
+      .set("Authorization", `Bearer ${ctx.accessToken}`)
+      .send({
+        businessPartnerId: ctx.vendor.id,
+        vendorInvoiceNumber: `VND-${Date.now()}`,
+        postingDate: new Date().toISOString(),
+        dueDate: new Date().toISOString(),
+        lines: [{ itemId: ctx.item.id, description: "Supplies", quantity: "1", unitPrice: "400" }],
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/ap/invoices/${apDraft.body.id}/post`)
+      .set("Authorization", `Bearer ${ctx.accessToken}`)
+      .expect(201);
+
+    const from = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    const to = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+    const report = (
+      await request(app.getHttpServer())
+        .get(`/reports/vat-return?fromDate=${from}&toDate=${to}`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200)
+    ).body;
+
+    // Output: 150 − 30 (CN) = 120; Input: 60; Net payable: 60
+    expect(Number(report.outputVat)).toBe(120);
+    expect(Number(report.inputVat)).toBe(60);
+    expect(Number(report.netVatPayable)).toBe(60);
+
+    const standardSales = report.salesByCategory.find((c: any) => c.vatCategory === "STANDARD_15");
+    const zeroRatedSales = report.salesByCategory.find((c: any) => c.vatCategory === "ZERO_RATED");
+    expect(Number(standardSales.netAmount)).toBe(800); // 1000 − 200 CN
+    expect(Number(zeroRatedSales.netAmount)).toBe(500);
+    expect(Number(zeroRatedSales.vatAmount)).toBe(0);
+  });
+
+  it("keeps the trial balance balanced after the full AR/AP/payment cycle", async () => {
+    const ctx = await setupContext();
+
+    const invoice = await postArInvoice(ctx, "1000", 30);
+    await request(app.getHttpServer())
+      .post("/payments/incoming")
+      .set("Authorization", `Bearer ${ctx.accessToken}`)
+      .send({
+        businessPartnerId: ctx.customer.id,
+        paymentDate: new Date().toISOString(),
+        bankCashAccountId: ctx.accountByCode("1120").id,
+        amount: "1150",
+        allocations: [{ invoiceId: invoice.id, amount: "1150" }],
+      })
+      .expect(201);
+
+    const tb = (
+      await request(app.getHttpServer())
+        .get("/reports/trial-balance")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200)
+    ).body;
+    expect(tb.totalDebit).toBe(tb.totalCredit);
+
+    // Bank 1150 Dr, AR net zero, revenue 1000 Cr, VAT 150 Cr
+    const rowByCode = (code: string) => tb.rows.find((r: any) => r.accountCode === code);
+    expect(Number(rowByCode("1120").closingBalance)).toBe(1150);
+    expect(Number(rowByCode("1210").closingBalance)).toBe(0);
+    expect(Number(rowByCode("4100").closingBalance)).toBe(-1000);
+    expect(Number(rowByCode("2200").closingBalance)).toBe(-150);
+  });
+
+  async function postJournalEntry(
+    ctx: Awaited<ReturnType<typeof setupContext>>,
+    lines: Array<{ accountCode: string; debit: string; credit: string }>,
+    postingDate: Date = new Date(),
+  ) {
+    const draft = await request(app.getHttpServer())
+      .post("/gl/journal-entries")
+      .set("Authorization", `Bearer ${ctx.accessToken}`)
+      .send({
+        postingDate: postingDate.toISOString(),
+        documentDate: postingDate.toISOString(),
+        lines: lines.map((l) => ({ accountId: ctx.accountByCode(l.accountCode).id, debit: l.debit, credit: l.credit })),
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/gl/journal-entries/${draft.body.id}/post`)
+      .set("Authorization", `Bearer ${ctx.accessToken}`)
+      .expect(201);
+  }
+
+  it("computes IFRS 18 Statement of Profit or Loss subtotals and the EBITDA reconciliation", async () => {
+    const ctx = await setupContext();
+
+    // Operating: revenue 1000 (AR invoice, ex-VAT) − COGS 300 − opex 200 = Operating Profit 500
+    await postArInvoice(ctx, "1000", 30);
+    await postJournalEntry(ctx, [
+      { accountCode: "5100", debit: "300", credit: "0" },
+      { accountCode: "1310", debit: "0", credit: "300" },
+    ]);
+    await postJournalEntry(ctx, [
+      { accountCode: "5240", debit: "200", credit: "0" },
+      { accountCode: "1120", debit: "0", credit: "200" },
+    ]);
+    // Depreciation 50 (part of opex, also feeds EBITDA reconciliation)
+    await postJournalEntry(ctx, [
+      { accountCode: "5230", debit: "50", credit: "0" },
+      { accountCode: "1120", debit: "0", credit: "50" },
+    ]);
+    // Investing income 80 (gain on asset disposal)
+    await postJournalEntry(ctx, [
+      { accountCode: "1120", debit: "80", credit: "0" },
+      { accountCode: "4950", debit: "0", credit: "80" },
+    ]);
+    // Finance costs 40, tax expense 60
+    await postJournalEntry(ctx, [
+      { accountCode: "5800", debit: "40", credit: "0" },
+      { accountCode: "1120", debit: "0", credit: "40" },
+    ]);
+    await postJournalEntry(ctx, [
+      { accountCode: "5900", debit: "60", credit: "0" },
+      { accountCode: "1120", debit: "0", credit: "60" },
+    ]);
+
+    const from = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    const to = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+    const report = (
+      await request(app.getHttpServer())
+        .get(`/reports/profit-or-loss?fromDate=${from}&toDate=${to}`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200)
+    ).body;
+
+    expect(Number(report.operatingRevenue)).toBe(1000);
+    expect(Number(report.costOfSales)).toBe(300);
+    expect(Number(report.operatingExpense)).toBe(200 + 50);
+    expect(Number(report.operatingProfit)).toBe(1000 - 300 - 250); // 450
+    expect(Number(report.investingIncome)).toBe(80);
+    expect(Number(report.profitBeforeFinancingAndTax)).toBe(450 + 80); // 530
+    expect(Number(report.financeCosts)).toBe(40);
+    expect(Number(report.taxExpense)).toBe(60);
+    expect(Number(report.profitForThePeriod)).toBe(530 - 40 - 60); // 430
+
+    const ebitda = report.managementPerformanceMeasures.find((m: any) => m.name === "EBITDA");
+    expect(ebitda).toBeDefined();
+    expect(Number(ebitda.value)).toBe(450 + 50); // Operating Profit + Depreciation = 500
+    const opLine = ebitda.reconciliation.find((l: any) => l.label === "Operating Profit");
+    const deprLine = ebitda.reconciliation.find((l: any) => l.label === "Depreciation Expense");
+    expect(Number(opLine.amount)).toBe(450);
+    expect(Number(deprLine.amount)).toBe(50);
+  });
+
+  it("balances the Statement of Financial Position (Assets = Liabilities + Equity)", async () => {
+    const ctx = await setupContext();
+
+    await postArInvoice(ctx, "1000", 30);
+    await postJournalEntry(ctx, [
+      { accountCode: "5240", debit: "150", credit: "0" },
+      { accountCode: "1120", debit: "0", credit: "150" },
+    ]);
+
+    const report = (
+      await request(app.getHttpServer())
+        .get("/reports/financial-position")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200)
+    ).body;
+
+    expect(report.isBalanced).toBe(true);
+    const diff = Number(report.totalAssets) - (Number(report.totalLiabilities) + Number(report.totalEquity));
+    expect(Math.abs(diff)).toBeLessThan(0.01);
+
+    const currentYearEarnings = report.equity.find((l: any) => l.subClassCode === "CURRENT_YEAR_EARNINGS");
+    expect(currentYearEarnings).toBeDefined();
+    // Revenue 1000 (AR ex-VAT) − expense 150 = 850 current-year earnings
+    expect(Number(currentYearEarnings.balance)).toBe(850);
+  });
+
+  it("isolates reports between companies and blocks viewers from writing", async () => {
+    const a = await setupContext();
+    await postArInvoice(a, "1000", -10);
+
+    const b = await setupUserWithCompany(app);
+    const reportB = (
+      await request(app.getHttpServer())
+        .get("/reports/ar-aging")
+        .set("Authorization", `Bearer ${b.accessToken}`)
+        .expect(200)
+    ).body;
+    expect(reportB.rows).toHaveLength(0);
+  });
+});

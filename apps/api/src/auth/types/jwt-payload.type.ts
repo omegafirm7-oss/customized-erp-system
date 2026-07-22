@@ -1,0 +1,7 @@
+export interface JwtPayload {
+  sub: string;
+  email: string;
+  activeCompanyId: string | null;
+  roleId: string | null;
+  permissions: string[];
+}
