@@ -42,6 +42,12 @@ export class ProjectsController {
     return this.projectsService.get(companyId, id);
   }
 
+  @Get("projects/:id/cost-breakdown")
+  @Permissions(PERMISSIONS.PROJECT_VIEW)
+  async getCostBreakdown(@CurrentCompanyId() companyId: string, @Param("id") id: string) {
+    return this.projectsService.getCostBreakdown(companyId, id);
+  }
+
   @Post("projects")
   @Permissions(PERMISSIONS.PROJECT_MANAGE)
   async create(@CurrentCompanyId() companyId: string, @CurrentUser() user: JwtPayload, @Body() dto: CreateProjectDto) {

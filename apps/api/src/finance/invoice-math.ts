@@ -15,11 +15,15 @@ export const VAT_RATE_BY_CATEGORY: Record<VatCategory, Prisma.Decimal> = {
   EXEMPT: new Prisma.Decimal("0"),
 };
 
+export type TaxMode = "EXCLUSIVE" | "INCLUSIVE";
+
 export interface LineAmountsInput {
   quantity: Prisma.Decimal;
   unitPrice: Prisma.Decimal;
   discountAmount: Prisma.Decimal;
   vatCategory: VatCategory;
+  /** Whether unitPrice*quantity-discount is net-of-tax (default) or the tax-inclusive gross amount. */
+  taxMode?: TaxMode;
 }
 
 export interface LineAmounts {
@@ -40,12 +44,24 @@ export function computeLineAmounts(input: LineAmountsInput): LineAmounts {
     throw new BadRequestException("Line discount cannot be negative");
   }
 
-  const netAmount = input.quantity.mul(input.unitPrice).sub(input.discountAmount).toDecimalPlaces(2);
-  if (netAmount.lt(0)) {
+  const rawAmount = input.quantity.mul(input.unitPrice).sub(input.discountAmount).toDecimalPlaces(2);
+  if (rawAmount.lt(0)) {
     throw new BadRequestException("Line discount exceeds the line amount");
   }
 
   const vatRate = VAT_RATE_BY_CATEGORY[input.vatCategory];
+
+  if (input.taxMode === "INCLUSIVE") {
+    // rawAmount is the tax-inclusive gross; back out the net so net + vat == the
+    // gross the user typed exactly (vat computed as the difference, not net*rate,
+    // to avoid a rounding mismatch against the entered total — ZATCA convention).
+    const grossAmount = rawAmount;
+    const netAmount = grossAmount.div(vatRate.div(100).add(1)).toDecimalPlaces(2);
+    const vatAmount = grossAmount.sub(netAmount);
+    return { netAmount, vatRate, vatAmount, grossAmount };
+  }
+
+  const netAmount = rawAmount;
   const vatAmount = netAmount.mul(vatRate).div(100).toDecimalPlaces(2);
   const grossAmount = netAmount.add(vatAmount);
 

@@ -23,6 +23,8 @@ import { InventoryService } from "../inventory/inventory.service";
 import { AccountResolutionService } from "./account-resolution.service";
 import { LineBuilderService } from "./line-builder.service";
 import { CreatePurchaseInvoiceDto } from "./dto/create-purchase-invoice.dto";
+import { UpdatePurchaseInvoiceDto } from "./dto/update-purchase-invoice.dto";
+import { sumDocumentTotals } from "./invoice-math";
 
 const OPEN_STATUSES: InvoiceStatus[] = [InvoiceStatus.POSTED, InvoiceStatus.PARTIALLY_PAID];
 
@@ -316,6 +318,86 @@ export class ApService {
     return { imported: created.length, errors: [] as ImportRowError[] };
   }
 
+  async updateDraft(companyId: string, userId: string, invoiceId: string, dto: UpdatePurchaseInvoiceDto) {
+    const before = await this.getOwnedInvoice(companyId, invoiceId);
+    if (before.status !== InvoiceStatus.DRAFT) {
+      throw new ConflictException("Only draft invoices can be edited; delete and recreate a posted invoice's cancellation replacement instead");
+    }
+
+    const vendorInvoiceNumber = dto.vendorInvoiceNumber ?? before.vendorInvoiceNumber;
+    if (dto.vendorInvoiceNumber && dto.vendorInvoiceNumber !== before.vendorInvoiceNumber) {
+      const duplicate = await this.prisma.purchaseInvoice.findFirst({
+        where: {
+          companyId,
+          businessPartnerId: before.businessPartnerId,
+          vendorInvoiceNumber: dto.vendorInvoiceNumber,
+          status: { not: InvoiceStatus.CANCELLED },
+          id: { not: invoiceId },
+        },
+      });
+      if (duplicate) {
+        throw new ConflictException(
+          `Vendor invoice "${dto.vendorInvoiceNumber}" is already booked for this supplier (${duplicate.status})`,
+        );
+      }
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const built = await this.lineBuilder.buildLines(tx, companyId, "PURCHASE", dto.lines);
+      const totals = sumDocumentTotals(built.lines);
+
+      await tx.purchaseInvoiceLine.deleteMany({ where: { purchaseInvoiceId: invoiceId } });
+
+      return tx.purchaseInvoice.update({
+        where: { id: invoiceId },
+        data: {
+          vendorInvoiceNumber,
+          postingDate: dto.postingDate ? new Date(dto.postingDate) : undefined,
+          dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+          memo: dto.memo ?? before.memo,
+          netTotal: totals.netTotal,
+          vatTotal: totals.vatTotal,
+          grossTotal: totals.grossTotal,
+          lines: {
+            create: built.lines.map((line) => ({
+              companyId,
+              lineNumber: line.lineNumber,
+              itemId: line.itemId,
+              description: line.description,
+              uomId: line.uomId,
+              quantity: line.quantity,
+              unitPrice: line.unitPrice,
+              discountAmount: line.discountAmount,
+              netAmount: line.netAmount,
+              vatCategory: line.vatCategory,
+              vatRate: line.vatRate,
+              vatAmount: line.vatAmount,
+              grossAmount: line.grossAmount,
+              expenseAccountId: line.accountId,
+              warehouseId: line.warehouseId,
+              projectId: line.projectId,
+              wbsTaskId: line.wbsTaskId,
+              costCenterId: line.costCenterId,
+            })),
+          },
+        },
+        include: { lines: true, businessPartner: true },
+      });
+    });
+
+    await this.auditService.log({
+      companyId,
+      entityName: "PurchaseInvoice",
+      entityId: invoiceId,
+      action: "UPDATE",
+      changedByUserId: userId,
+      beforeSnapshot: before,
+      afterSnapshot: updated,
+    });
+
+    return updated;
+  }
+
   async deleteDraft(companyId: string, invoiceId: string) {
     const existing = await this.getOwnedInvoice(companyId, invoiceId);
     if (existing.status !== InvoiceStatus.DRAFT) {
@@ -558,7 +640,10 @@ export class ApService {
         ...(filters.businessPartnerId ? { businessPartnerId: filters.businessPartnerId } : {}),
       },
       orderBy: { createdAt: "desc" },
-      include: { lines: true, businessPartner: { select: { code: true, name: true } } },
+      include: {
+        lines: { include: { expenseAccount: { select: { code: true, name: true } }, costCenter: { select: { code: true, name: true } } } },
+        businessPartner: { select: { code: true, name: true } },
+      },
     });
   }
 

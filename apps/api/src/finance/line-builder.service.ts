@@ -187,7 +187,7 @@ export class LineBuilderService {
       const quantity = new Prisma.Decimal(dto.quantity);
       const unitPrice = new Prisma.Decimal(dto.unitPrice);
       const discountAmount = new Prisma.Decimal(dto.discountAmount ?? "0");
-      const amounts = computeLineAmounts({ quantity, unitPrice, discountAmount, vatCategory });
+      const amounts = computeLineAmounts({ quantity, unitPrice, discountAmount, vatCategory, taxMode: dto.taxMode });
 
       return {
         lineNumber: index + 1,

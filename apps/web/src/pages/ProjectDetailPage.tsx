@@ -35,6 +35,19 @@ interface ProjectDetail {
   revenueRecognitionRuns: RevRecRun[];
 }
 
+interface CostBreakdownRow {
+  code: string;
+  name: string;
+  amount: string;
+}
+
+interface CostBreakdown {
+  totalCosts: string;
+  pendingAmount: string;
+  paidAmount: string;
+  byAccount: CostBreakdownRow[];
+}
+
 interface FiscalPeriod {
   id: string;
   periodNumber: number;
@@ -58,16 +71,20 @@ export function ProjectDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [taskForm, setTaskForm] = useState({ code: "", name: "", parentTaskId: "", costBudget: "" });
-  const [estimates, setEstimates] = useState({ contractValue: "", estimatedTotalCost: "" });
+  const [estimates, setEstimates] = useState({ name: "", contractValue: "", estimatedTotalCost: "" });
+  const [costBreakdown, setCostBreakdown] = useState<CostBreakdown | null>(null);
 
   const load = useCallback(async () => {
-    const [projectRes, periodsRes] = await Promise.all([
+    const [projectRes, periodsRes, breakdownRes] = await Promise.all([
       apiClient.get<ProjectDetail>(`/projects/${id}`),
       apiClient.get<FiscalPeriod[]>("/companies/current/fiscal-periods"),
+      apiClient.get<CostBreakdown>(`/projects/${id}/cost-breakdown`),
     ]);
     setProject(projectRes.data);
     setPeriods(periodsRes.data);
+    setCostBreakdown(breakdownRes.data);
     setEstimates({
+      name: projectRes.data.name,
       contractValue: projectRes.data.contractValue,
       estimatedTotalCost: projectRes.data.estimatedTotalCost,
     });
@@ -177,9 +194,7 @@ export function ProjectDetailPage() {
     <div>
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h2>
-            {project.code} — {project.name}
-          </h2>
+          <h2>{project.code}</h2>
           <span>
             <span className={`badge ${project.status === "ACTIVE" ? "posted" : project.status === "CLOSED" ? "reversed" : "draft"}`}>
               {project.status}
@@ -203,6 +218,13 @@ export function ProjectDetailPage() {
         </p>
         {error && <div className="error-banner">{error}</div>}
         <form onSubmit={saveEstimates} className="form-row">
+          <label>Name </label>
+          <input
+            value={estimates.name}
+            onChange={(e) => setEstimates({ ...estimates, name: e.target.value })}
+            style={{ flex: 1 }}
+            disabled={project.status === "CLOSED"}
+          />
           <label>Contract </label>
           <input
             type="number"
@@ -226,6 +248,51 @@ export function ProjectDetailPage() {
           </button>
         </form>
       </div>
+
+      {costBreakdown && (
+        <div className="card">
+          <h3>Cost breakdown (real, from posted purchase invoices &amp; GL)</h3>
+          <div className="form-row">
+            <div className="kpi-tile">
+              <div>Total Costs</div>
+              <strong>{Number(costBreakdown.totalCosts).toFixed(2)}</strong>
+            </div>
+            <div className="kpi-tile">
+              <div>Paid</div>
+              <strong>{Number(costBreakdown.paidAmount).toFixed(2)}</strong>
+            </div>
+            <div className="kpi-tile">
+              <div>Pending (yet to be paid)</div>
+              <strong>{Number(costBreakdown.pendingAmount).toFixed(2)}</strong>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Account</th>
+                <th>Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {costBreakdown.byAccount.map((row) => (
+                <tr key={row.code}>
+                  <td>
+                    {row.code} — {row.name}
+                  </td>
+                  <td>{Number(row.amount).toFixed(2)}</td>
+                </tr>
+              ))}
+              {costBreakdown.byAccount.length === 0 && (
+                <tr>
+                  <td colSpan={2} style={{ color: "#98a2b3" }}>
+                    No posted costs yet
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="card">
         <h3>WBS tasks</h3>

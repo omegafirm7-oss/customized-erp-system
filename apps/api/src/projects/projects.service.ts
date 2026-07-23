@@ -179,6 +179,49 @@ export class ProjectsService {
     return project;
   }
 
+  /**
+   * Real cost breakdown by expense account, plus how much of that cost is
+   * still unpaid — sourced live from posted GL activity and purchase
+   * invoices tied to the project's cost center, same aggregation approach
+   * as reports.service.ts#projectProfitability's costsToDate subquery.
+   */
+  async getCostBreakdown(companyId: string, projectId: string) {
+    const project = await this.getOwned(companyId, projectId);
+
+    const byAccount = await this.prisma.$queryRaw<Array<{ code: string; name: string; amount: Prisma.Decimal }>>`
+      SELECT a."code", a."name", SUM(jel."debit" - jel."credit") AS "amount"
+      FROM "journal_entry_lines" jel
+      JOIN "journal_entries" je ON je."id" = jel."journalEntryId"
+      JOIN "accounts" a ON a."id" = jel."accountId"
+      JOIN "account_classes" ac ON ac."id" = a."accountClassId"
+      WHERE jel."costCenterId" = ${project.costCenterId} AND ac."code" = 'EXPENSE'
+        AND je."status" IN ('POSTED','REVERSED')
+      GROUP BY a."code", a."name"
+      ORDER BY a."code"
+    `;
+
+    // Pending (unpaid) amount: distinct open/partially-paid purchase invoices
+    // touching this project, deduped first — openAmount is invoice-level, and
+    // a project can span multiple lines on one invoice, so a raw join-and-sum
+    // would double count.
+    const openInvoices = await this.prisma.$queryRaw<Array<{ id: string; openAmount: Prisma.Decimal }>>`
+      SELECT DISTINCT pi."id", pi."openAmount"
+      FROM "purchase_invoice_lines" pil
+      JOIN "purchase_invoices" pi ON pi."id" = pil."purchaseInvoiceId"
+      WHERE pil."projectId" = ${projectId} AND pi."status" IN ('POSTED','PARTIALLY_PAID')
+    `;
+
+    const totalCosts = byAccount.reduce((sum, row) => sum.add(new Prisma.Decimal(row.amount)), new Prisma.Decimal(0));
+    const pendingAmount = openInvoices.reduce((sum, inv) => sum.add(new Prisma.Decimal(inv.openAmount)), new Prisma.Decimal(0));
+
+    return {
+      totalCosts: totalCosts.toFixed(2),
+      pendingAmount: pendingAmount.toFixed(2),
+      paidAmount: totalCosts.sub(pendingAmount).toFixed(2),
+      byAccount: byAccount.map((row) => ({ code: row.code, name: row.name, amount: new Prisma.Decimal(row.amount).toFixed(2) })),
+    };
+  }
+
   // ── WBS tasks ────────────────────────────────────────────────────────
 
   async createTask(companyId: string, projectId: string, userId: string, dto: CreateWbsTaskDto) {

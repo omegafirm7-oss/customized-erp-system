@@ -6,6 +6,7 @@ import {
   Get,
   Header,
   Param,
+  Patch,
   Post,
   Query,
   StreamableFile,
@@ -23,6 +24,7 @@ import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { JwtPayload } from "../auth/types/jwt-payload.type";
 import { ApService } from "./ap.service";
 import { CreatePurchaseInvoiceDto } from "./dto/create-purchase-invoice.dto";
+import { UpdatePurchaseInvoiceDto } from "./dto/update-purchase-invoice.dto";
 
 // JwtAuthGuard + PermissionsGuard are registered globally in AppModule.
 @ApiTags("accounts-payable")
@@ -88,6 +90,17 @@ export class ApController {
     @Body() dto: CreatePurchaseInvoiceDto,
   ) {
     return this.apService.createDraft(companyId, user.sub, dto);
+  }
+
+  @Patch(":id")
+  @Permissions(PERMISSIONS.AP_INVOICE_CREATE)
+  async updateDraft(
+    @CurrentCompanyId() companyId: string,
+    @CurrentUser() user: JwtPayload,
+    @Param("id") id: string,
+    @Body() dto: UpdatePurchaseInvoiceDto,
+  ) {
+    return this.apService.updateDraft(companyId, user.sub, id, dto);
   }
 
   @Delete(":id")

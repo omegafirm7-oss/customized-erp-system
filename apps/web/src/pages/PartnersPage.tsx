@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { apiClient } from "../api/client";
 
 interface Partner {
@@ -118,7 +119,9 @@ export function PartnersPage() {
             <tbody>
               {partners.map((p) => (
                 <tr key={p.id}>
-                  <td>{p.code}</td>
+                  <td>
+                    <Link to={`/partners/${p.id}`}>{p.code}</Link>
+                  </td>
                   <td>{p.name}</td>
                   <td>{p.partnerType}</td>
                   <td>{p.taxRegistrationNumber ?? "—"}</td>

@@ -14,6 +14,10 @@ interface InvoiceRow {
   grossTotal: string;
   openAmount: string;
   businessPartner?: { code: string; name: string };
+  lines?: Array<{
+    expenseAccount?: { code: string; name: string } | null;
+    costCenter?: { code: string; name: string } | null;
+  }>;
   zatcaSubmission?: {
     id: string;
     status: "PENDING" | "CLEARED" | "REPORTED" | "REJECTED" | "FAILED";
@@ -22,7 +26,27 @@ interface InvoiceRow {
   } | null;
 }
 
+// AP invoices from the Excel expense import are always single-line, so the
+// first line's account/cost-center IS the invoice's account/cost-center for
+// display purposes — a multi-line manually-created invoice would show only
+// its first line here, which is an accepted simplification for this list view.
+function accountSummary(inv: InvoiceRow): string {
+  const acct = inv.lines?.[0]?.expenseAccount;
+  return acct ? `${acct.code} ${acct.name}` : "—";
+}
+function costCenterSummary(inv: InvoiceRow): string {
+  const cc = inv.lines?.[0]?.costCenter;
+  return cc ? cc.code : "—";
+}
+
 const STATUS_FILTERS = ["ALL", "DRAFT", "POSTED", "PARTIALLY_PAID", "PAID", "CANCELLED"];
+
+interface VendorRef {
+  id: string;
+  code: string;
+  name: string;
+  partnerType: "CUSTOMER" | "VENDOR" | "BOTH";
+}
 
 export function InvoiceList({ side }: { side: "ar" | "ap" }) {
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
@@ -32,6 +56,8 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
   const [error, setError] = useState<string | null>(null);
   const [qrView, setQrView] = useState<{ invoiceNumber: string; dataUrl: string } | null>(null);
   const [importResult, setImportResult] = useState<string | null>(null);
+  const [vendors, setVendors] = useState<VendorRef[]>([]);
+  const [vendorSearch, setVendorSearch] = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
@@ -45,6 +71,18 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (side !== "ap") return;
+    apiClient.get<VendorRef[]>("/partners").then((res) => setVendors(res.data.filter((p) => p.partnerType === "VENDOR" || p.partnerType === "BOTH")));
+  }, [side]);
+
+  const vendorMatches =
+    side === "ap" && vendorSearch.trim().length > 0
+      ? vendors.filter(
+          (v) => v.name.toLowerCase().includes(vendorSearch.toLowerCase()) || v.code.toLowerCase().includes(vendorSearch.toLowerCase()),
+        )
+      : [];
 
   async function action(id: string, verb: "post" | "cancel") {
     setError(null);
@@ -225,6 +263,33 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
           </button>
         ))}
       </div>
+      {side === "ap" && (
+        <div className="form-row" style={{ position: "relative" }}>
+          <input
+            placeholder="Search vendors…"
+            value={vendorSearch}
+            onChange={(e) => setVendorSearch(e.target.value)}
+            style={{ maxWidth: 300 }}
+          />
+          {vendorMatches.length > 0 && (
+            <div
+              className="card"
+              style={{ position: "absolute", top: "100%", left: 0, zIndex: 10, maxHeight: 240, overflowY: "auto", padding: 4, minWidth: 300 }}
+            >
+              {vendorMatches.map((v) => (
+                <Link
+                  key={v.id}
+                  to={`/partners/${v.id}`}
+                  style={{ display: "block", padding: "6px 10px", textDecoration: "none", color: "inherit" }}
+                  onClick={() => setVendorSearch("")}
+                >
+                  {v.code} — {v.name}
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {importResult && <p style={{ color: "#027a48" }}>{importResult}</p>}
       {error && <div className="error-banner">{error}</div>}
       {qrView && (
@@ -244,10 +309,13 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
         <table>
           <thead>
             <tr>
+              <th>#</th>
               <th>Number</th>
               {side === "ap" && <th>Vendor Ref</th>}
               {side === "ar" && <th>Kind</th>}
               <th>Partner</th>
+              {side === "ap" && <th>Account</th>}
+              {side === "ap" && <th>Project</th>}
               <th>Posting Date</th>
               <th>Due Date</th>
               <th>Gross</th>
@@ -258,12 +326,15 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
             </tr>
           </thead>
           <tbody>
-            {invoices.map((inv) => (
+            {invoices.map((inv, idx) => (
               <tr key={inv.id}>
+                <td>{idx + 1}</td>
                 <td>{inv.invoiceNumber ?? "—"}</td>
                 {side === "ap" && <td>{inv.vendorInvoiceNumber}</td>}
                 {side === "ar" && <td>{inv.documentKind === "CREDIT_NOTE" ? "Credit Note" : "Invoice"}</td>}
                 <td>{inv.businessPartner ? `${inv.businessPartner.name}` : ""}</td>
+                {side === "ap" && <td>{accountSummary(inv)}</td>}
+                {side === "ap" && <td>{costCenterSummary(inv)}</td>}
                 <td>{new Date(inv.postingDate).toLocaleDateString()}</td>
                 <td>{new Date(inv.dueDate).toLocaleDateString()}</td>
                 <td>{Number(inv.grossTotal).toFixed(2)}</td>
@@ -280,7 +351,16 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
                       <button disabled={busyId === inv.id} onClick={() => action(inv.id, "post")}>
                         Post
                       </button>{" "}
-                      <button className="secondary" disabled={busyId === inv.id} onClick={() => remove(inv.id)}>
+                      {side === "ap" && (
+                        <>
+                          <Link to={`/ap/invoices/${inv.id}/edit`}>
+                            <button type="button" className="secondary" disabled={busyId === inv.id}>
+                              Edit
+                            </button>
+                          </Link>{" "}
+                        </>
+                      )}
+                      <button className="danger" disabled={busyId === inv.id} onClick={() => remove(inv.id)}>
                         Delete
                       </button>
                     </>
@@ -294,6 +374,20 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
               </tr>
             ))}
           </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan={5 + (side === "ap" ? 3 : 0) + (side === "ar" ? 1 : 0)}>
+                <strong>{invoices.length} invoices</strong>
+              </td>
+              <td>
+                <strong>{invoices.reduce((sum, inv) => sum + Number(inv.grossTotal), 0).toFixed(2)}</strong>
+              </td>
+              <td>
+                <strong>{invoices.reduce((sum, inv) => sum + Number(inv.openAmount), 0).toFixed(2)}</strong>
+              </td>
+              <td colSpan={2 + (side === "ar" ? 1 : 0)} />
+            </tr>
+          </tfoot>
         </table>
       )}
     </div>

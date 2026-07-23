@@ -13,6 +13,8 @@ import { FinancialPositionPage } from "./pages/FinancialPositionPage";
 import { ChangesInEquityPage } from "./pages/ChangesInEquityPage";
 import { CashFlowPage } from "./pages/CashFlowPage";
 import { PartnersPage } from "./pages/PartnersPage";
+import { PartnerDetailPage } from "./pages/PartnerDetailPage";
+import { EditPurchaseInvoicePage } from "./pages/EditPurchaseInvoicePage";
 import { ItemsPage } from "./pages/ItemsPage";
 import { SalesInvoicesPage, NewSalesInvoicePage } from "./pages/SalesInvoicesPage";
 import { PurchaseInvoicesPage, NewPurchaseInvoicePage } from "./pages/PurchaseInvoicesPage";
@@ -72,11 +74,13 @@ const companyRoutes: Array<{ path: string; element: JSX.Element }> = [
   { path: "/journal-entries", element: <JournalEntriesPage /> },
   { path: "/journal-entries/new", element: <NewJournalEntryPage /> },
   { path: "/partners", element: <PartnersPage /> },
+  { path: "/partners/:id", element: <PartnerDetailPage /> },
   { path: "/items", element: <ItemsPage /> },
   { path: "/ar/invoices", element: <SalesInvoicesPage /> },
   { path: "/ar/invoices/new", element: <NewSalesInvoicePage /> },
   { path: "/ap/invoices", element: <PurchaseInvoicesPage /> },
   { path: "/ap/invoices/new", element: <NewPurchaseInvoicePage /> },
+  { path: "/ap/invoices/:id/edit", element: <EditPurchaseInvoicePage /> },
   { path: "/ap/quotations", element: <PurchaseQuotationsPage /> },
   { path: "/ap/orders", element: <PurchaseOrdersPage /> },
   { path: "/payments", element: <PaymentsPage /> },

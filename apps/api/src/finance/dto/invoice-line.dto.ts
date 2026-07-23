@@ -1,6 +1,6 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { VatCategory } from "@prisma/client";
-import { IsEnum, IsNumberString, IsOptional, IsString, IsUUID } from "class-validator";
+import { IsEnum, IsIn, IsNumberString, IsOptional, IsString, IsUUID } from "class-validator";
 
 export class InvoiceLineDto {
   @ApiProperty({ required: false, description: "Optional item reference — fills description/VAT/account defaults" })
@@ -34,6 +34,15 @@ export class InvoiceLineDto {
   @IsOptional()
   @IsEnum(VatCategory)
   vatCategory?: VatCategory;
+
+  @ApiProperty({
+    enum: ["EXCLUSIVE", "INCLUSIVE"],
+    required: false,
+    description: "Whether the line amount (qty*unitPrice-discount) is tax-exclusive (default) or tax-inclusive",
+  })
+  @IsOptional()
+  @IsIn(["EXCLUSIVE", "INCLUSIVE"])
+  taxMode?: "EXCLUSIVE" | "INCLUSIVE";
 
   @ApiProperty({ required: false, description: "Revenue (AR) / expense (AP) account override; defaults from the item" })
   @IsOptional()

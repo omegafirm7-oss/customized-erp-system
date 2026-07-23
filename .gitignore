@@ -8,3 +8,6 @@ build/
 coverage/
 .turbo/
 apps/api/generated/
+
+# Real business data — never commit actual financial/vendor records
+imports/

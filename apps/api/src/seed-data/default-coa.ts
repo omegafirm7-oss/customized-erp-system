@@ -73,6 +73,20 @@ export const DEFAULT_COA_TEMPLATE: DefaultCoaEntry[] = [
 
   // Expenses
   { code: "5100", name: "Cost of Goods Sold", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT", controlAccountType: "COGS" },
+  // Direct project/site costs for a contracting business — these ARE cost
+  // of sales (unlike a trading company where COGS is only merchandise
+  // resold), since they're incurred specifically to execute a revenue-
+  // generating contract. See project_expense_coa_and_import memory.
+  { code: "5101", name: "Direct Materials", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT" },
+  { code: "5102", name: "Machinery & Equipment Rental (Project)", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT" },
+  { code: "5103", name: "Fuel & Lubricants (Project)", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT" },
+  { code: "5104", name: "Site Tools & Consumables", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT" },
+  { code: "5105", name: "Safety Gear & PPEs", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT" },
+  { code: "5106", name: "Site Facilities (Office/Container/Shelter/Water)", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT" },
+  { code: "5107", name: "Site Transportation", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT" },
+  { code: "5108", name: "Site Welfare (Food & Petty Cash)", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT" },
+  { code: "5109", name: "Printing & Engineering (Project)", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT" },
+  { code: "5110", name: "Site Office Supplies", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT" },
   { code: "5150", name: "Inventory Adjustment Gain/Loss", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT", controlAccountType: "INVENTORY_ADJUSTMENT" },
   { code: "5200", name: "Salaries & Wages", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT", controlAccountType: "SALARY_EXPENSE" },
   { code: "5210", name: "Rent Expense", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT" },
