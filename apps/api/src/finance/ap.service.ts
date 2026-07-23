@@ -296,8 +296,12 @@ export class ApService {
           {
             description: row.description,
             quantity: "1",
+            // Expense amounts in the spreadsheet are VAT-inclusive (what the
+            // vendor actually charged); back out net/VAT from that total
+            // rather than treating it as net-of-tax and adding VAT on top.
             unitPrice: row.amount,
             vatCategory: row.vatCategory,
+            taxMode: "INCLUSIVE",
             accountId: row.expenseAccountId,
             costCenterId: row.costCenterId,
           },

@@ -37,6 +37,8 @@ interface TaskRef {
   name: string;
 }
 
+type TaxMode = "EXCLUSIVE" | "INCLUSIVE";
+
 interface LineForm {
   itemId: string;
   description: string;
@@ -44,6 +46,7 @@ interface LineForm {
   unitPrice: string;
   discountAmount: string;
   vatCategory: "STANDARD_15" | "ZERO_RATED" | "EXEMPT";
+  taxMode: TaxMode;
   warehouseId: string;
   projectId: string;
   wbsTaskId: string;
@@ -51,15 +54,36 @@ interface LineForm {
 
 const VAT_RATE: Record<string, number> = { STANDARD_15: 15, ZERO_RATED: 0, EXEMPT: 0 };
 
-function emptyLine(): LineForm {
-  return { itemId: "", description: "", quantity: "1", unitPrice: "0", discountAmount: "0", vatCategory: "STANDARD_15", warehouseId: "", projectId: "", wbsTaskId: "" };
+// Purchase invoice amounts are entered as what the vendor actually charged
+// (VAT-inclusive) — default AP drafts to inclusive so VAT is backed out of
+// the typed total rather than added on top. Sales quotes are typically net,
+// so AR keeps the exclusive default.
+function emptyLine(side: "ar" | "ap"): LineForm {
+  return {
+    itemId: "",
+    description: "",
+    quantity: "1",
+    unitPrice: "0",
+    discountAmount: "0",
+    vatCategory: "STANDARD_15",
+    taxMode: side === "ap" ? "INCLUSIVE" : "EXCLUSIVE",
+    warehouseId: "",
+    projectId: "",
+    wbsTaskId: "",
+  };
 }
 
 function lineAmounts(line: LineForm) {
-  const net = Math.max(0, (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0) - (Number(line.discountAmount) || 0));
-  const netRounded = Math.round(net * 100) / 100;
-  const vat = Math.round(netRounded * VAT_RATE[line.vatCategory]) / 100;
-  return { net: netRounded, vat, gross: netRounded + vat };
+  const rawAmount = Math.max(0, (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0) - (Number(line.discountAmount) || 0));
+  const rawRounded = Math.round(rawAmount * 100) / 100;
+  const rate = VAT_RATE[line.vatCategory];
+  if (line.taxMode === "INCLUSIVE") {
+    const net = Math.round((rawRounded / (1 + rate / 100)) * 100) / 100;
+    const vat = rawRounded - net;
+    return { net, vat, gross: rawRounded };
+  }
+  const vat = Math.round((rawRounded * rate) / 100 * 100) / 100;
+  return { net: rawRounded, vat, gross: rawRounded + vat };
 }
 
 export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
@@ -72,7 +96,7 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
   const [postingDate, setPostingDate] = useState(today);
   const [dueDate, setDueDate] = useState(new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().slice(0, 10));
   const [memo, setMemo] = useState("");
-  const [lines, setLines] = useState<LineForm[]>([emptyLine()]);
+  const [lines, setLines] = useState<LineForm[]>([emptyLine(side)]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -146,6 +170,7 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
           unitPrice: line.unitPrice,
           discountAmount: line.discountAmount || "0",
           vatCategory: line.vatCategory,
+          taxMode: line.taxMode,
           warehouseId: line.warehouseId || undefined,
           projectId: line.projectId || undefined,
           wbsTaskId: line.wbsTaskId || undefined,
@@ -211,6 +236,7 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
               <th>Unit Price</th>
               <th>Discount</th>
               <th>VAT</th>
+              {side === "ap" && <th>VAT mode</th>}
               <th>WH</th>
               <th>Project</th>
               <th>Task</th>
@@ -253,6 +279,14 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
                       <option value="EXEMPT">Exempt</option>
                     </select>
                   </td>
+                  {side === "ap" && (
+                    <td>
+                      <select value={line.taxMode} onChange={(e) => updateLine(index, { taxMode: e.target.value as TaxMode })}>
+                        <option value="INCLUSIVE">Inclusive</option>
+                        <option value="EXCLUSIVE">Exclusive</option>
+                      </select>
+                    </td>
+                  )}
                   <td>
                     {isInventoryLine(line) ? (
                       <select
@@ -319,7 +353,7 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
         </table>
 
         <div className="form-row" style={{ justifyContent: "space-between", marginTop: 10 }}>
-          <button type="button" className="secondary" onClick={() => setLines((prev) => [...prev, emptyLine()])}>
+          <button type="button" className="secondary" onClick={() => setLines((prev) => [...prev, emptyLine(side)])}>
             Add line
           </button>
           <strong>

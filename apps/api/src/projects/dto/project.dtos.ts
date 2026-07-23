@@ -157,6 +157,20 @@ export class CreateCostCenterDto {
   name!: string;
 }
 
+export class UpdateCostCenterDto {
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  code?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  name?: string;
+}
+
 export class RunRevRecDto {
   @ApiProperty()
   @IsUUID()

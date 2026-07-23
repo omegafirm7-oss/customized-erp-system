@@ -38,6 +38,7 @@ interface InvoiceLine {
   unitPrice: string;
   discountAmount: string;
   vatCategory: VatCategory;
+  grossAmount: string;
   expenseAccountId: string;
   projectId: string | null;
 }
@@ -95,11 +96,15 @@ export function EditPurchaseInvoicePage() {
         inv.lines.map((l) => ({
           itemId: l.itemId,
           description: l.description,
-          quantity: l.quantity,
-          unitPrice: l.unitPrice,
-          discountAmount: l.discountAmount,
+          // Amounts on this business's invoices are always VAT-inclusive —
+          // show/edit the actual total charged (gross), not the net, so
+          // reopening a line and saving without changes reproduces the same
+          // gross exactly (the inclusive formula preserves the typed total).
+          quantity: "1",
+          unitPrice: l.grossAmount,
+          discountAmount: "0",
           vatCategory: l.vatCategory,
-          taxMode: "EXCLUSIVE",
+          taxMode: "INCLUSIVE",
           accountId: l.expenseAccountId,
           projectId: l.projectId ?? "",
         })),
@@ -287,7 +292,7 @@ export function EditPurchaseInvoicePage() {
             onClick={() =>
               setLines((prev) => [
                 ...prev,
-                { itemId: null, description: "", quantity: "1", unitPrice: "0", discountAmount: "0", vatCategory: "STANDARD_15", taxMode: "EXCLUSIVE", accountId: "", projectId: "" },
+                { itemId: null, description: "", quantity: "1", unitPrice: "0", discountAmount: "0", vatCategory: "STANDARD_15", taxMode: "INCLUSIVE", accountId: "", projectId: "" },
               ])
             }
           >

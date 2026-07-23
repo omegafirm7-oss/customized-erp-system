@@ -328,6 +328,33 @@ export class ProjectsService {
     return costCenter;
   }
 
+  async updateCostCenter(companyId: string, userId: string, costCenterId: string, dto: { code?: string; name?: string }) {
+    const before = await this.prisma.costCenter.findFirst({ where: { id: costCenterId, companyId } });
+    if (!before) {
+      throw new NotFoundException("Cost center not found");
+    }
+    if (dto.code && dto.code !== before.code) {
+      const clash = await this.prisma.costCenter.findFirst({ where: { companyId, code: dto.code, id: { not: costCenterId } } });
+      if (clash) {
+        throw new ConflictException(`Cost center ${dto.code} already exists`);
+      }
+    }
+    const costCenter = await this.prisma.costCenter.update({
+      where: { id: costCenterId },
+      data: { code: dto.code, name: dto.name },
+    });
+    await this.auditService.log({
+      companyId,
+      entityName: "CostCenter",
+      entityId: costCenter.id,
+      action: "UPDATE",
+      changedByUserId: userId,
+      beforeSnapshot: before,
+      afterSnapshot: costCenter,
+    });
+    return costCenter;
+  }
+
   // ── Internals ────────────────────────────────────────────────────────
 
   async getOwned(companyId: string, projectId: string) {

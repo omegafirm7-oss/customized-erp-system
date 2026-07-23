@@ -90,10 +90,15 @@ describe("AP expense import from Excel (e2e)", () => {
     expect(invoices).toHaveLength(2);
     const utilInvoice = invoices.find((i: any) => i.vendorInvoiceNumber === "UTIL-001");
     expect(utilInvoice.status).toBe("DRAFT");
-    expect(Number(utilInvoice.netTotal)).toBe(1000);
-    expect(Number(utilInvoice.vatTotal)).toBe(150); // 15%
+    // Expense amounts are treated as VAT-inclusive: the typed 1000.00 is the
+    // gross total charged, so net/VAT are backed out (1000/1.15 = 869.57 net,
+    // 130.43 VAT) while the gross stays exactly 1000.00.
+    expect(Number(utilInvoice.netTotal)).toBe(869.57);
+    expect(Number(utilInvoice.vatTotal)).toBe(130.43);
+    expect(Number(utilInvoice.grossTotal)).toBe(1000);
     const waterInvoice = invoices.find((i: any) => i.vendorInvoiceNumber === "UTIL-002");
-    expect(Number(waterInvoice.vatTotal)).toBe(0); // zero-rated
+    expect(Number(waterInvoice.vatTotal)).toBe(0); // zero-rated — inclusive mode is a no-op
+    expect(Number(waterInvoice.grossTotal)).toBe(200);
   });
 
   it("rejects the whole file (all-or-nothing) on an unknown vendor or account code", async () => {

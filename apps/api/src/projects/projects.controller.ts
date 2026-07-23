@@ -14,6 +14,7 @@ import {
   CreateWbsTaskDto,
   RunRevRecDto,
   TransitionStatusDto,
+  UpdateCostCenterDto,
   UpdateProjectDto,
   UpdateWbsTaskDto,
 } from "./dto/project.dtos";
@@ -158,5 +159,16 @@ export class ProjectsController {
     @Body() dto: CreateCostCenterDto,
   ) {
     return this.projectsService.createCostCenter(companyId, user.sub, dto.code, dto.name);
+  }
+
+  @Patch("cost-centers/:id")
+  @Permissions(PERMISSIONS.COA_ACCOUNT_MANAGE)
+  async updateCostCenter(
+    @CurrentCompanyId() companyId: string,
+    @CurrentUser() user: JwtPayload,
+    @Param("id") id: string,
+    @Body() dto: UpdateCostCenterDto,
+  ) {
+    return this.projectsService.updateCostCenter(companyId, user.sub, id, dto);
   }
 }

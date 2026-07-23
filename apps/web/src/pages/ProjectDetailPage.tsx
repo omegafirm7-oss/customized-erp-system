@@ -29,7 +29,7 @@ interface ProjectDetail {
   recognitionMethod: string;
   contractValue: string;
   estimatedTotalCost: string;
-  costCenter: { code: string };
+  costCenter: { id: string; code: string; name: string };
   businessPartner: { code: string; name: string } | null;
   tasks: WbsTask[];
   revenueRecognitionRuns: RevRecRun[];
@@ -73,6 +73,7 @@ export function ProjectDetailPage() {
   const [taskForm, setTaskForm] = useState({ code: "", name: "", parentTaskId: "", costBudget: "" });
   const [estimates, setEstimates] = useState({ name: "", contractValue: "", estimatedTotalCost: "" });
   const [costBreakdown, setCostBreakdown] = useState<CostBreakdown | null>(null);
+  const [costCenterForm, setCostCenterForm] = useState({ code: "", name: "" });
 
   const load = useCallback(async () => {
     const [projectRes, periodsRes, breakdownRes] = await Promise.all([
@@ -88,6 +89,7 @@ export function ProjectDetailPage() {
       contractValue: projectRes.data.contractValue,
       estimatedTotalCost: projectRes.data.estimatedTotalCost,
     });
+    setCostCenterForm({ code: projectRes.data.costCenter.code, name: projectRes.data.costCenter.name });
   }, [id]);
 
   useEffect(() => {
@@ -116,6 +118,21 @@ export function ProjectDetailPage() {
       await load();
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "Update failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveCostCenter(e: FormEvent) {
+    e.preventDefault();
+    if (!project) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await apiClient.patch(`/cost-centers/${project.costCenter.id}`, costCenterForm);
+      await load();
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Cost center update failed");
     } finally {
       setBusy(false);
     }
@@ -207,16 +224,32 @@ export function ProjectDetailPage() {
           </span>
         </div>
         <p>
-          Cost center <strong>{project.costCenter.code}</strong>
           {project.businessPartner && (
             <>
-              {" · "}Customer <strong>{project.businessPartner.name}</strong>
+              Customer <strong>{project.businessPartner.name}</strong>
+              {" · "}
             </>
           )}
-          {" · "}
           {project.recognitionMethod === "OVER_TIME" ? "Over-time (POC) recognition" : "Point-in-time recognition"}
         </p>
         {error && <div className="error-banner">{error}</div>}
+        <form onSubmit={saveCostCenter} className="form-row">
+          <label>Cost center code </label>
+          <input
+            value={costCenterForm.code}
+            onChange={(e) => setCostCenterForm({ ...costCenterForm, code: e.target.value })}
+            style={{ width: 140 }}
+          />
+          <label>Cost center name </label>
+          <input
+            value={costCenterForm.name}
+            onChange={(e) => setCostCenterForm({ ...costCenterForm, name: e.target.value })}
+            style={{ flex: 1 }}
+          />
+          <button type="submit" disabled={busy}>
+            Save cost center
+          </button>
+        </form>
         <form onSubmit={saveEstimates} className="form-row">
           <label>Name </label>
           <input
