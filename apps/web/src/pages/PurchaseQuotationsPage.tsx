@@ -52,6 +52,7 @@ export function PurchaseQuotationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [dateSort, setDateSort] = useState<"asc" | "desc">("desc");
 
   const [partnerId, setPartnerId] = useState("");
   const [quotationDate, setQuotationDate] = useState(new Date().toISOString().slice(0, 10));
@@ -154,7 +155,9 @@ export function PurchaseQuotationsPage() {
               <tr>
                 <th>Number</th>
                 <th>Vendor</th>
-                <th>Date</th>
+                <th style={{ cursor: "pointer" }} onClick={() => setDateSort((d) => (d === "asc" ? "desc" : "asc"))}>
+                  Date {dateSort === "asc" ? "▲" : "▼"}
+                </th>
                 <th>Valid until</th>
                 <th>Estimated total</th>
                 <th>Status</th>
@@ -162,7 +165,9 @@ export function PurchaseQuotationsPage() {
               </tr>
             </thead>
             <tbody>
-              {quotations.map((q) => (
+              {[...quotations]
+                .sort((a, b) => (dateSort === "asc" ? a.quotationDate.localeCompare(b.quotationDate) : b.quotationDate.localeCompare(a.quotationDate)))
+                .map((q) => (
                 <tr key={q.id}>
                   <td>{q.quotationNumber ?? "—"}</td>
                   <td>{q.businessPartner.code} — {q.businessPartner.name}</td>

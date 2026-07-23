@@ -20,7 +20,7 @@ async function bootstrap() {
   app.useGlobalFilters(new HttpExceptionFilter());
 
   const swaggerConfig = new DocumentBuilder()
-    .setTitle("ERP System API")
+    .setTitle("Universa Centrix API")
     .setDescription("Foundation: auth, companies, chart of accounts, general ledger, master data")
     .setVersion("0.1.0")
     .addBearerAuth()

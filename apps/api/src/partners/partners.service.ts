@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { PartnerType } from "@prisma/client";
 import { PrismaService } from "../common/prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
-import { CreateBusinessPartnerDto } from "./dto/create-business-partner.dto";
+import { CreateBusinessPartnerDto, UpdateBusinessPartnerDto } from "./dto/create-business-partner.dto";
 
 /** Column order of the CSV import template — flat, matches CreateBusinessPartnerDto. */
 const CSV_COLUMNS = [
@@ -57,6 +57,29 @@ export class PartnersService {
   async deactivate(companyId: string, id: string) {
     const partner = await this.get(companyId, id);
     return this.prisma.businessPartner.update({ where: { id: partner.id }, data: { isActive: false } });
+  }
+
+  async update(companyId: string, id: string, userId: string, dto: UpdateBusinessPartnerDto) {
+    const partner = await this.get(companyId, id);
+    if (dto.code && dto.code !== partner.code) {
+      const clash = await this.prisma.businessPartner.findUnique({
+        where: { companyId_code: { companyId, code: dto.code } },
+      });
+      if (clash) {
+        throw new ConflictException(`Business partner code "${dto.code}" already exists`);
+      }
+    }
+    const updated = await this.prisma.businessPartner.update({ where: { id: partner.id }, data: dto });
+    await this.auditService.log({
+      companyId,
+      entityName: "BusinessPartner",
+      entityId: partner.id,
+      action: "UPDATE",
+      changedByUserId: userId,
+      beforeSnapshot: partner,
+      afterSnapshot: updated,
+    });
+    return updated;
   }
 
   // ── CSV import ───────────────────────────────────────────────────────

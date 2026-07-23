@@ -36,6 +36,43 @@ export class CreateBusinessPartnerDto {
   currencyCode?: string;
 }
 
+export class UpdateBusinessPartnerDto {
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  code?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  nameAr?: string;
+
+  @ApiProperty({ enum: PartnerType, required: false })
+  @IsOptional()
+  @IsEnum(PartnerType)
+  partnerType?: PartnerType;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  taxRegistrationNumber?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  commercialRegistrationNumber?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  currencyCode?: string;
+}
+
 export class ImportPartnersDto {
   @ApiProperty({ description: "Raw CSV content matching the downloadable template" })
   @IsString()

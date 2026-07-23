@@ -32,6 +32,7 @@ export function StockTransferPage() {
   const [lines, setLines] = useState<Array<{ itemId: string; quantity: string }>>([{ itemId: "", quantity: "1" }]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [dateSort, setDateSort] = useState<"asc" | "desc">("desc");
 
   const load = useCallback(async () => {
     const [whRes, itemsRes, transfersRes] = await Promise.all([
@@ -144,14 +145,18 @@ export function StockTransferPage() {
           <thead>
             <tr>
               <th>Number</th>
-              <th>Date</th>
+              <th style={{ cursor: "pointer" }} onClick={() => setDateSort((d) => (d === "asc" ? "desc" : "asc"))}>
+                Date {dateSort === "asc" ? "▲" : "▼"}
+              </th>
               <th>From</th>
               <th>To</th>
               <th>Lines</th>
             </tr>
           </thead>
           <tbody>
-            {transfers.map((t) => (
+            {[...transfers]
+              .sort((a, b) => (dateSort === "asc" ? a.postingDate.localeCompare(b.postingDate) : b.postingDate.localeCompare(a.postingDate)))
+              .map((t) => (
               <tr key={t.id}>
                 <td>{t.transferNumber}</td>
                 <td>{new Date(t.postingDate).toLocaleDateString()}</td>

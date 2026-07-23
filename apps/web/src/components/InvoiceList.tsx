@@ -62,6 +62,7 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
   const [accountSearch, setAccountSearch] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [dateSort, setDateSort] = useState<"asc" | "desc">("desc");
 
   const load = useCallback(() => {
     setLoading(true);
@@ -116,7 +117,7 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
       if (toDate && posting > toDate) return false;
     }
     return true;
-  });
+  }).sort((a, b) => (dateSort === "asc" ? a.postingDate.localeCompare(b.postingDate) : b.postingDate.localeCompare(a.postingDate)));
 
   async function action(id: string, verb: "post" | "cancel") {
     setError(null);
@@ -397,7 +398,9 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
               <th>Partner</th>
               {side === "ap" && <th>Account</th>}
               {side === "ap" && <th>Project</th>}
-              <th>Posting Date</th>
+              <th style={{ cursor: "pointer" }} onClick={() => setDateSort((d) => (d === "asc" ? "desc" : "asc"))}>
+                Posting Date {dateSort === "asc" ? "▲" : "▼"}
+              </th>
               <th>Due Date</th>
               <th>Gross</th>
               <th>Open</th>

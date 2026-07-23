@@ -22,6 +22,7 @@ export function PaymentsPage() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dateSort, setDateSort] = useState<"asc" | "desc">("desc");
 
   const load = useCallback(() => {
     setLoading(true);
@@ -79,7 +80,9 @@ export function PaymentsPage() {
               <th>Number</th>
               <th>Direction</th>
               <th>Partner</th>
-              <th>Date</th>
+              <th style={{ cursor: "pointer" }} onClick={() => setDateSort((d) => (d === "asc" ? "desc" : "asc"))}>
+                Date {dateSort === "asc" ? "▲" : "▼"}
+              </th>
               <th>Amount</th>
               <th>Allocated</th>
               <th>On Account</th>
@@ -89,7 +92,9 @@ export function PaymentsPage() {
             </tr>
           </thead>
           <tbody>
-            {payments.map((p) => (
+            {[...payments]
+              .sort((a, b) => (dateSort === "asc" ? a.paymentDate.localeCompare(b.paymentDate) : b.paymentDate.localeCompare(a.paymentDate)))
+              .map((p) => (
               <tr key={p.id}>
                 <td>{p.paymentNumber}</td>
                 <td>{p.direction}</td>

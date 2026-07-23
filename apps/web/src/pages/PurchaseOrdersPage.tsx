@@ -82,6 +82,7 @@ export function PurchaseOrdersPage() {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [invoiceFormId, setInvoiceFormId] = useState<string | null>(null);
+  const [dateSort, setDateSort] = useState<"asc" | "desc">("desc");
   const [invoiceForm, setInvoiceForm] = useState({
     vendorInvoiceNumber: "",
     postingDate: new Date().toISOString().slice(0, 10),
@@ -206,7 +207,9 @@ export function PurchaseOrdersPage() {
               <tr>
                 <th>Number</th>
                 <th>Vendor</th>
-                <th>Date</th>
+                <th style={{ cursor: "pointer" }} onClick={() => setDateSort((d) => (d === "asc" ? "desc" : "asc"))}>
+                  Date {dateSort === "asc" ? "▲" : "▼"}
+                </th>
                 <th>Total</th>
                 <th>Remaining to invoice</th>
                 <th>Status</th>
@@ -214,7 +217,9 @@ export function PurchaseOrdersPage() {
               </tr>
             </thead>
             <tbody>
-              {orders.map((o) => (
+              {[...orders]
+                .sort((a, b) => (dateSort === "asc" ? a.orderDate.localeCompare(b.orderDate) : b.orderDate.localeCompare(a.orderDate)))
+                .map((o) => (
                 <>
                   <tr key={o.id}>
                     <td>{o.orderNumber ?? "—"}</td>

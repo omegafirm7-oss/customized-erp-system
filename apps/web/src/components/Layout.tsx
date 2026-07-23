@@ -167,7 +167,7 @@ export function Layout() {
   return (
     <div className={`app-shell ${collapsed ? "sidebar-collapsed" : ""}`}>
       <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
-        <h1>ERP System</h1>
+        <h1>Universa Centrix</h1>
         <nav>
           {NAV_SECTIONS.map((section) => {
             const isOpen = expandedSections.has(section.label);

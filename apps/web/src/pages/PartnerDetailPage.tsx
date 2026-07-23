@@ -40,6 +40,7 @@ export function PartnerDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [dateSort, setDateSort] = useState<"asc" | "desc">("desc");
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -183,7 +184,9 @@ export function PartnerDetailPage() {
               <th>Vendor Ref</th>
               <th>Account</th>
               <th>Project</th>
-              <th>Posting Date</th>
+              <th style={{ cursor: "pointer" }} onClick={() => setDateSort((d) => (d === "asc" ? "desc" : "asc"))}>
+                Posting Date {dateSort === "asc" ? "▲" : "▼"}
+              </th>
               <th>Gross</th>
               <th>Open</th>
               <th>Status</th>
@@ -191,7 +194,9 @@ export function PartnerDetailPage() {
             </tr>
           </thead>
           <tbody>
-            {invoices.map((inv) => (
+            {[...invoices]
+              .sort((a, b) => (dateSort === "asc" ? a.postingDate.localeCompare(b.postingDate) : b.postingDate.localeCompare(a.postingDate)))
+              .map((inv) => (
               <tr key={inv.id}>
                 <td>{inv.invoiceNumber ?? "—"}</td>
                 <td>{inv.vendorInvoiceNumber}</td>

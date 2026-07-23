@@ -28,6 +28,7 @@ export function StockMovementsPage() {
   const [items, setItems] = useState<Item[]>([]);
   const [itemId, setItemId] = useState("");
   const [loading, setLoading] = useState(true);
+  const [dateSort, setDateSort] = useState<"asc" | "desc">("desc");
 
   useEffect(() => {
     apiClient.get<Item[]>("/items").then((res) => setItems(res.data));
@@ -60,7 +61,9 @@ export function StockMovementsPage() {
         <table>
           <thead>
             <tr>
-              <th>Date</th>
+              <th style={{ cursor: "pointer" }} onClick={() => setDateSort((d) => (d === "asc" ? "desc" : "asc"))}>
+                Date {dateSort === "asc" ? "▲" : "▼"}
+              </th>
               <th>Type</th>
               <th>Item</th>
               <th>WH</th>
@@ -73,7 +76,9 @@ export function StockMovementsPage() {
             </tr>
           </thead>
           <tbody>
-            {movements.map((m) => (
+            {[...movements]
+              .sort((a, b) => (dateSort === "asc" ? a.postingDate.localeCompare(b.postingDate) : b.postingDate.localeCompare(a.postingDate)))
+              .map((m) => (
               <tr key={m.id}>
                 <td>{new Date(m.postingDate).toLocaleDateString()}</td>
                 <td>{m.movementType.replace("_", " ")}</td>

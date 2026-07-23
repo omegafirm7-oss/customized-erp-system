@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Header, Param, Post } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Header, Param, Patch, Post } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { PERMISSIONS } from "@erp/shared-constants";
 import { Permissions } from "../common/decorators/permissions.decorator";
@@ -6,7 +6,7 @@ import { CurrentCompanyId } from "../common/decorators/current-company-id.decora
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { JwtPayload } from "../auth/types/jwt-payload.type";
 import { PartnersService } from "./partners.service";
-import { CreateBusinessPartnerDto, ImportPartnersDto } from "./dto/create-business-partner.dto";
+import { CreateBusinessPartnerDto, ImportPartnersDto, UpdateBusinessPartnerDto } from "./dto/create-business-partner.dto";
 
 // JwtAuthGuard + PermissionsGuard are registered globally in AppModule.
 @ApiTags("business-partners")
@@ -49,6 +49,17 @@ export class PartnersController {
   @Permissions(PERMISSIONS.PARTNER_CUSTOMER_MANAGE)
   async create(@CurrentCompanyId() companyId: string, @Body() dto: CreateBusinessPartnerDto) {
     return this.partnersService.create(companyId, dto);
+  }
+
+  @Patch(":id")
+  @Permissions(PERMISSIONS.PARTNER_CUSTOMER_MANAGE)
+  async update(
+    @CurrentCompanyId() companyId: string,
+    @CurrentUser() user: JwtPayload,
+    @Param("id") id: string,
+    @Body() dto: UpdateBusinessPartnerDto,
+  ) {
+    return this.partnersService.update(companyId, id, user.sub, dto);
   }
 
   @Delete(":id")

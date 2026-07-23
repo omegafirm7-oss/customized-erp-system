@@ -110,4 +110,65 @@ describe("Business Partners CSV import (e2e)", () => {
     ).body;
     expect(bList).toHaveLength(0);
   });
+
+  it("edits an existing partner's name, type and VAT/TRN", async () => {
+    const { accessToken } = await setupUserWithCompany(app);
+    const created = (
+      await request(app.getHttpServer())
+        .post("/partners")
+        .set(auth(accessToken))
+        .send({ code: "V-006", name: "Original Name", partnerType: "VENDOR" })
+        .expect(201)
+    ).body;
+
+    const updated = (
+      await request(app.getHttpServer())
+        .patch(`/partners/${created.id}`)
+        .set(auth(accessToken))
+        .send({ name: "Renamed Vendor", partnerType: "BOTH", taxRegistrationNumber: "300011112220003" })
+        .expect(200)
+    ).body;
+    expect(updated.name).toBe("Renamed Vendor");
+    expect(updated.partnerType).toBe("BOTH");
+    expect(updated.taxRegistrationNumber).toBe("300011112220003");
+  });
+
+  it("rejects editing a partner's code to one that already exists", async () => {
+    const { accessToken } = await setupUserWithCompany(app);
+    await request(app.getHttpServer())
+      .post("/partners")
+      .set(auth(accessToken))
+      .send({ code: "V-007", name: "Vendor Seven", partnerType: "VENDOR" })
+      .expect(201);
+    const other = (
+      await request(app.getHttpServer())
+        .post("/partners")
+        .set(auth(accessToken))
+        .send({ code: "V-008", name: "Vendor Eight", partnerType: "VENDOR" })
+        .expect(201)
+    ).body;
+
+    await request(app.getHttpServer())
+      .patch(`/partners/${other.id}`)
+      .set(auth(accessToken))
+      .send({ code: "V-007" })
+      .expect(409);
+  });
+
+  it("deactivates a partner via DELETE, keeping it visible with isActive=false", async () => {
+    const { accessToken } = await setupUserWithCompany(app);
+    const created = (
+      await request(app.getHttpServer())
+        .post("/partners")
+        .set(auth(accessToken))
+        .send({ code: "V-009", name: "To Deactivate", partnerType: "VENDOR" })
+        .expect(201)
+    ).body;
+
+    await request(app.getHttpServer()).delete(`/partners/${created.id}`).set(auth(accessToken)).expect(200);
+
+    const list = (await request(app.getHttpServer()).get("/partners").set(auth(accessToken)).expect(200)).body;
+    const found = list.find((p: any) => p.id === created.id);
+    expect(found.isActive).toBe(false);
+  });
 });

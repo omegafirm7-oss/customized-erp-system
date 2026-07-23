@@ -25,6 +25,7 @@ export function JournalEntriesPage() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dateSort, setDateSort] = useState<"asc" | "desc">("desc");
 
   const load = useCallback(() => {
     setLoading(true);
@@ -80,7 +81,9 @@ export function JournalEntriesPage() {
           <thead>
             <tr>
               <th>Number</th>
-              <th>Date</th>
+              <th style={{ cursor: "pointer" }} onClick={() => setDateSort((d) => (d === "asc" ? "desc" : "asc"))}>
+                Date {dateSort === "asc" ? "▲" : "▼"}
+              </th>
               <th>Memo</th>
               <th>Status</th>
               <th>Lines</th>
@@ -88,7 +91,9 @@ export function JournalEntriesPage() {
             </tr>
           </thead>
           <tbody>
-            {entries.map((entry) => (
+            {[...entries]
+              .sort((a, b) => (dateSort === "asc" ? a.postingDate.localeCompare(b.postingDate) : b.postingDate.localeCompare(a.postingDate)))
+              .map((entry) => (
               <tr key={entry.id}>
                 <td>{entry.entryNumber ?? "—"}</td>
                 <td>{new Date(entry.postingDate).toLocaleDateString()}</td>

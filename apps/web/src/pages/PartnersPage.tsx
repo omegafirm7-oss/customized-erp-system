@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiClient } from "../api/client";
 
@@ -11,13 +11,20 @@ interface Partner {
   isActive: boolean;
 }
 
+const emptyForm = { code: "", name: "", partnerType: "CUSTOMER", taxRegistrationNumber: "" };
+
 export function PartnersPage() {
   const [partners, setPartners] = useState<Partner[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<string | null>(null);
-  const [form, setForm] = useState({ code: "", name: "", partnerType: "CUSTOMER", taxRegistrationNumber: "" });
+  const [search, setSearch] = useState("");
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [form, setForm] = useState(emptyForm);
   const [submitting, setSubmitting] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState(emptyForm);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -31,6 +38,12 @@ export function PartnersPage() {
     load();
   }, [load]);
 
+  const filteredPartners = useMemo(() => {
+    if (!search.trim()) return partners;
+    const q = search.trim().toLowerCase();
+    return partners.filter((p) => p.code.toLowerCase().includes(q) || p.name.toLowerCase().includes(q));
+  }, [partners, search]);
+
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -42,12 +55,55 @@ export function PartnersPage() {
         partnerType: form.partnerType,
         taxRegistrationNumber: form.taxRegistrationNumber || undefined,
       });
-      setForm({ code: "", name: "", partnerType: "CUSTOMER", taxRegistrationNumber: "" });
+      setForm(emptyForm);
+      setShowAddForm(false);
       await load();
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "Failed to create partner");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  function startEdit(p: Partner) {
+    setEditingId(p.id);
+    setEditForm({ code: p.code, name: p.name, partnerType: p.partnerType, taxRegistrationNumber: p.taxRegistrationNumber ?? "" });
+  }
+
+  async function saveEdit(e: FormEvent) {
+    e.preventDefault();
+    if (!editingId) return;
+    setError(null);
+    setBusyId(editingId);
+    try {
+      await apiClient.patch(`/partners/${editingId}`, {
+        code: editForm.code,
+        name: editForm.name,
+        partnerType: editForm.partnerType,
+        taxRegistrationNumber: editForm.taxRegistrationNumber || undefined,
+      });
+      setEditingId(null);
+      await load();
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to update partner");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleDelete(p: Partner) {
+    if (!window.confirm(`Deactivate ${p.code} — ${p.name}? It will be hidden from new invoices/orders but existing history is kept.`)) {
+      return;
+    }
+    setError(null);
+    setBusyId(p.id);
+    try {
+      await apiClient.delete(`/partners/${p.id}`);
+      await load();
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to deactivate partner");
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -99,44 +155,15 @@ export function PartnersPage() {
                   e.target.value = "";
                 }}
               />
-            </label>
+            </label>{" "}
+            <button onClick={() => setShowAddForm((v) => !v)}>{showAddForm ? "Cancel" : "+ Add vendor / customer"}</button>
           </span>
         </div>
         {importResult && <p style={{ color: "#027a48" }}>{importResult}</p>}
         {error && <div className="error-banner">{error}</div>}
-        {loading ? (
-          <p>Loading…</p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Code</th>
-                <th>Name</th>
-                <th>Type</th>
-                <th>VAT/TRN</th>
-              </tr>
-            </thead>
-            <tbody>
-              {partners.map((p) => (
-                <tr key={p.id}>
-                  <td>
-                    <Link to={`/partners/${p.id}`}>{p.code}</Link>
-                  </td>
-                  <td>{p.name}</td>
-                  <td>{p.partnerType}</td>
-                  <td>{p.taxRegistrationNumber ?? "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
 
-      <div className="card">
-        <h3>New partner</h3>
-        {error && <div className="error-banner">{error}</div>}
-        <form onSubmit={handleCreate}>
-          <div className="form-row">
+        {showAddForm && (
+          <form onSubmit={handleCreate} className="form-row" style={{ marginBottom: 14 }}>
             <input placeholder="Code" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} required />
             <input placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required style={{ flex: 1 }} />
             <select value={form.partnerType} onChange={(e) => setForm({ ...form, partnerType: e.target.value })}>
@@ -152,8 +179,98 @@ export function PartnersPage() {
             <button type="submit" disabled={submitting}>
               {submitting ? "Creating…" : "Create"}
             </button>
-          </div>
-        </form>
+          </form>
+        )}
+
+        <div className="form-row">
+          <input
+            placeholder="Search vendors / customers…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ maxWidth: 280 }}
+          />
+        </div>
+
+        {loading ? (
+          <p>Loading…</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Name</th>
+                <th>Type</th>
+                <th>VAT/TRN</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredPartners.map((p) =>
+                editingId === p.id ? (
+                  <tr key={p.id}>
+                    <td colSpan={6}>
+                      <form onSubmit={saveEdit} className="form-row" style={{ margin: 0 }}>
+                        <input value={editForm.code} onChange={(e) => setEditForm({ ...editForm, code: e.target.value })} required style={{ width: 100 }} />
+                        <input
+                          value={editForm.name}
+                          onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                          required
+                          style={{ flex: 1 }}
+                        />
+                        <select value={editForm.partnerType} onChange={(e) => setEditForm({ ...editForm, partnerType: e.target.value })}>
+                          <option value="CUSTOMER">Customer</option>
+                          <option value="VENDOR">Vendor</option>
+                          <option value="BOTH">Both</option>
+                        </select>
+                        <input
+                          placeholder="VAT/TRN"
+                          value={editForm.taxRegistrationNumber}
+                          onChange={(e) => setEditForm({ ...editForm, taxRegistrationNumber: e.target.value })}
+                        />
+                        <button type="submit" disabled={busyId === p.id}>
+                          Save
+                        </button>
+                        <button type="button" className="secondary" onClick={() => setEditingId(null)}>
+                          Cancel
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={p.id} style={{ opacity: p.isActive ? 1 : 0.55 }}>
+                    <td>
+                      <Link to={`/partners/${p.id}`}>{p.code}</Link>
+                    </td>
+                    <td>{p.name}</td>
+                    <td>{p.partnerType}</td>
+                    <td>{p.taxRegistrationNumber ?? "—"}</td>
+                    <td>
+                      <span className={`badge ${p.isActive ? "posted" : "reversed"}`}>{p.isActive ? "Active" : "Inactive"}</span>
+                    </td>
+                    <td>
+                      <button type="button" className="secondary" disabled={busyId === p.id} onClick={() => startEdit(p)}>
+                        Edit
+                      </button>{" "}
+                      {p.isActive && (
+                        <button type="button" className="danger" disabled={busyId === p.id} onClick={() => handleDelete(p)}>
+                          Delete
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ),
+              )}
+              {filteredPartners.length === 0 && (
+                <tr>
+                  <td colSpan={6} style={{ color: "#98a2b3" }}>
+                    No partners match "{search}"
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

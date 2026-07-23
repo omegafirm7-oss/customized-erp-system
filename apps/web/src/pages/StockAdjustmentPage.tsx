@@ -36,6 +36,7 @@ export function StockAdjustmentPage() {
   ]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [dateSort, setDateSort] = useState<"asc" | "desc">("desc");
 
   const load = useCallback(async () => {
     const [whRes, itemsRes, adjRes] = await Promise.all([
@@ -173,7 +174,9 @@ export function StockAdjustmentPage() {
           <thead>
             <tr>
               <th>Number</th>
-              <th>Date</th>
+              <th style={{ cursor: "pointer" }} onClick={() => setDateSort((d) => (d === "asc" ? "desc" : "asc"))}>
+                Date {dateSort === "asc" ? "▲" : "▼"}
+              </th>
               <th>WH</th>
               <th>Direction</th>
               <th>Reason</th>
@@ -181,7 +184,9 @@ export function StockAdjustmentPage() {
             </tr>
           </thead>
           <tbody>
-            {adjustments.map((a) => (
+            {[...adjustments]
+              .sort((a, b) => (dateSort === "asc" ? a.postingDate.localeCompare(b.postingDate) : b.postingDate.localeCompare(a.postingDate)))
+              .map((a) => (
               <tr key={a.id}>
                 <td>{a.adjustmentNumber}</td>
                 <td>{new Date(a.postingDate).toLocaleDateString()}</td>
