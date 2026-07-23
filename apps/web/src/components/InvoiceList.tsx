@@ -58,6 +58,7 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
   const [importResult, setImportResult] = useState<string | null>(null);
   const [vendors, setVendors] = useState<VendorRef[]>([]);
   const [vendorSearch, setVendorSearch] = useState("");
+  const [selectedVendors, setSelectedVendors] = useState<VendorRef[]>([]);
   const [accountSearch, setAccountSearch] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -83,15 +84,29 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
   const vendorMatches =
     side === "ap" && vendorSearch.trim().length > 0
       ? vendors.filter(
-          (v) => v.name.toLowerCase().includes(vendorSearch.toLowerCase()) || v.code.toLowerCase().includes(vendorSearch.toLowerCase()),
+          (v) =>
+            !selectedVendors.some((sv) => sv.id === v.id) &&
+            (v.name.toLowerCase().includes(vendorSearch.toLowerCase()) || v.code.toLowerCase().includes(vendorSearch.toLowerCase())),
         )
       : [];
 
-  // Account-name/code substring match (e.g. "fuel" matches "5103 Fuel and
-  // Lubricants") and posting-date range — both applied client-side on top of
-  // the server-side status filter, so a user reviewing DRAFT expenses for
-  // correction can narrow straight to "which fuel invoices in July".
+  function selectVendor(v: VendorRef) {
+    setSelectedVendors((prev) => (prev.some((sv) => sv.id === v.id) ? prev : [...prev, v]));
+    setVendorSearch("");
+  }
+  function deselectVendor(id: string) {
+    setSelectedVendors((prev) => prev.filter((v) => v.id !== id));
+  }
+
+  // Vendor (multi-select, e.g. "KPS" + "Fuel supplier"), account-name/code
+  // substring match (e.g. "fuel" matches "5103 Fuel and Lubricants"), and
+  // posting-date range — all applied client-side on top of the server-side
+  // status filter, so a user reviewing DRAFT expenses for correction can
+  // narrow straight to "which fuel invoices from these two vendors in July".
   const filteredInvoices = invoices.filter((inv) => {
+    if (side === "ap" && selectedVendors.length > 0) {
+      if (!selectedVendors.some((v) => v.code === inv.businessPartner?.code)) return false;
+    }
     if (side === "ap" && accountSearch.trim()) {
       if (!accountSummary(inv).toLowerCase().includes(accountSearch.trim().toLowerCase())) return false;
     }
@@ -283,54 +298,78 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
         ))}
       </div>
       {side === "ap" && (
-        <div className="form-row" style={{ position: "relative" }}>
-          <input
-            placeholder="Search vendors…"
-            value={vendorSearch}
-            onChange={(e) => setVendorSearch(e.target.value)}
-            style={{ maxWidth: 220 }}
-          />
-          {vendorMatches.length > 0 && (
-            <div
-              className="card"
-              style={{ position: "absolute", top: "100%", left: 0, zIndex: 10, maxHeight: 240, overflowY: "auto", padding: 4, minWidth: 300 }}
-            >
-              {vendorMatches.map((v) => (
-                <Link
+        <>
+          <div className="form-row" style={{ position: "relative" }}>
+            <input
+              placeholder="Select vendor (e.g. KPS)…"
+              value={vendorSearch}
+              onChange={(e) => setVendorSearch(e.target.value)}
+              style={{ maxWidth: 220 }}
+            />
+            {vendorMatches.length > 0 && (
+              <div
+                className="card"
+                style={{ position: "absolute", top: "100%", left: 0, zIndex: 10, maxHeight: 240, overflowY: "auto", padding: 4, minWidth: 300 }}
+              >
+                {vendorMatches.map((v) => (
+                  <button
+                    key={v.id}
+                    type="button"
+                    className="secondary"
+                    style={{ display: "block", width: "100%", textAlign: "left", border: "none", padding: "6px 10px" }}
+                    onClick={() => selectVendor(v)}
+                  >
+                    {v.code} — {v.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            <input
+              placeholder="Search account (e.g. fuel)…"
+              value={accountSearch}
+              onChange={(e) => setAccountSearch(e.target.value)}
+              style={{ maxWidth: 220 }}
+            />
+            <label>Period from </label>
+            <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+            <label>to </label>
+            <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+            {(selectedVendors.length > 0 || accountSearch || fromDate || toDate) && (
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  setSelectedVendors([]);
+                  setAccountSearch("");
+                  setFromDate("");
+                  setToDate("");
+                }}
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+          {selectedVendors.length > 0 && (
+            <div className="form-row">
+              {selectedVendors.map((v) => (
+                <span
                   key={v.id}
-                  to={`/partners/${v.id}`}
-                  style={{ display: "block", padding: "6px 10px", textDecoration: "none", color: "inherit" }}
-                  onClick={() => setVendorSearch("")}
+                  className="badge posted"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "default" }}
                 >
                   {v.code} — {v.name}
-                </Link>
+                  <button
+                    type="button"
+                    onClick={() => deselectVendor(v.id)}
+                    style={{ background: "none", border: "none", padding: 0, boxShadow: "none", color: "inherit", cursor: "pointer", fontWeight: 700 }}
+                  >
+                    ×
+                  </button>
+                </span>
               ))}
             </div>
           )}
-          <input
-            placeholder="Search account (e.g. fuel)…"
-            value={accountSearch}
-            onChange={(e) => setAccountSearch(e.target.value)}
-            style={{ maxWidth: 220 }}
-          />
-          <label>Period from </label>
-          <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
-          <label>to </label>
-          <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
-          {(accountSearch || fromDate || toDate) && (
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => {
-                setAccountSearch("");
-                setFromDate("");
-                setToDate("");
-              }}
-            >
-              Clear filters
-            </button>
-          )}
-        </div>
+        </>
       )}
       {importResult && <p style={{ color: "#027a48" }}>{importResult}</p>}
       {error && <div className="error-banner">{error}</div>}
