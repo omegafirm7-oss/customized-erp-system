@@ -58,6 +58,9 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
   const [importResult, setImportResult] = useState<string | null>(null);
   const [vendors, setVendors] = useState<VendorRef[]>([]);
   const [vendorSearch, setVendorSearch] = useState("");
+  const [accountSearch, setAccountSearch] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
@@ -83,6 +86,22 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
           (v) => v.name.toLowerCase().includes(vendorSearch.toLowerCase()) || v.code.toLowerCase().includes(vendorSearch.toLowerCase()),
         )
       : [];
+
+  // Account-name/code substring match (e.g. "fuel" matches "5103 Fuel and
+  // Lubricants") and posting-date range — both applied client-side on top of
+  // the server-side status filter, so a user reviewing DRAFT expenses for
+  // correction can narrow straight to "which fuel invoices in July".
+  const filteredInvoices = invoices.filter((inv) => {
+    if (side === "ap" && accountSearch.trim()) {
+      if (!accountSummary(inv).toLowerCase().includes(accountSearch.trim().toLowerCase())) return false;
+    }
+    if (side === "ap" && (fromDate || toDate)) {
+      const posting = inv.postingDate.slice(0, 10);
+      if (fromDate && posting < fromDate) return false;
+      if (toDate && posting > toDate) return false;
+    }
+    return true;
+  });
 
   async function action(id: string, verb: "post" | "cancel") {
     setError(null);
@@ -269,7 +288,7 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
             placeholder="Search vendors…"
             value={vendorSearch}
             onChange={(e) => setVendorSearch(e.target.value)}
-            style={{ maxWidth: 300 }}
+            style={{ maxWidth: 220 }}
           />
           {vendorMatches.length > 0 && (
             <div
@@ -287,6 +306,29 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
                 </Link>
               ))}
             </div>
+          )}
+          <input
+            placeholder="Search account (e.g. fuel)…"
+            value={accountSearch}
+            onChange={(e) => setAccountSearch(e.target.value)}
+            style={{ maxWidth: 220 }}
+          />
+          <label>Period from </label>
+          <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+          <label>to </label>
+          <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+          {(accountSearch || fromDate || toDate) && (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                setAccountSearch("");
+                setFromDate("");
+                setToDate("");
+              }}
+            >
+              Clear filters
+            </button>
           )}
         </div>
       )}
@@ -326,7 +368,7 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
             </tr>
           </thead>
           <tbody>
-            {invoices.map((inv, idx) => (
+            {filteredInvoices.map((inv, idx) => (
               <tr key={inv.id}>
                 <td>{idx + 1}</td>
                 <td>{inv.invoiceNumber ?? "—"}</td>
@@ -377,13 +419,16 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
           <tfoot>
             <tr>
               <td colSpan={5 + (side === "ap" ? 3 : 0) + (side === "ar" ? 1 : 0)}>
-                <strong>{invoices.length} invoices</strong>
+                <strong>
+                  {filteredInvoices.length} invoices
+                  {filteredInvoices.length !== invoices.length ? ` (of ${invoices.length})` : ""}
+                </strong>
               </td>
               <td>
-                <strong>{invoices.reduce((sum, inv) => sum + Number(inv.grossTotal), 0).toFixed(2)}</strong>
+                <strong>{filteredInvoices.reduce((sum, inv) => sum + Number(inv.grossTotal), 0).toFixed(2)}</strong>
               </td>
               <td>
-                <strong>{invoices.reduce((sum, inv) => sum + Number(inv.openAmount), 0).toFixed(2)}</strong>
+                <strong>{filteredInvoices.reduce((sum, inv) => sum + Number(inv.openAmount), 0).toFixed(2)}</strong>
               </td>
               <td colSpan={2 + (side === "ar" ? 1 : 0)} />
             </tr>
