@@ -10,6 +10,8 @@ import { NewJournalEntryPage } from "./pages/NewJournalEntryPage";
 import { TrialBalancePage } from "./pages/TrialBalancePage";
 import { ProfitOrLossPage } from "./pages/ProfitOrLossPage";
 import { FinancialPositionPage } from "./pages/FinancialPositionPage";
+import { ChangesInEquityPage } from "./pages/ChangesInEquityPage";
+import { CashFlowPage } from "./pages/CashFlowPage";
 import { PartnersPage } from "./pages/PartnersPage";
 import { ItemsPage } from "./pages/ItemsPage";
 import { SalesInvoicesPage, NewSalesInvoicePage } from "./pages/SalesInvoicesPage";
@@ -82,6 +84,8 @@ const companyRoutes: Array<{ path: string; element: JSX.Element }> = [
   { path: "/trial-balance", element: <TrialBalancePage /> },
   { path: "/profit-or-loss", element: <ProfitOrLossPage /> },
   { path: "/financial-position", element: <FinancialPositionPage /> },
+  { path: "/changes-in-equity", element: <ChangesInEquityPage /> },
+  { path: "/cash-flow", element: <CashFlowPage /> },
   { path: "/reports/ar-aging", element: <ArAgingPage /> },
   { path: "/reports/ap-aging", element: <ApAgingPage /> },
   { path: "/reports/vat-return", element: <VatReturnPage /> },

@@ -296,6 +296,162 @@ describe("Finance reports (e2e)", () => {
     expect(Number(currentYearEarnings.balance)).toBe(850);
   });
 
+  // Regression test for a real bug: financialPosition()'s raw SQL used an
+  // unconditional LEFT JOIN into journal_entry_lines followed by a second
+  // LEFT JOIN into journal_entries carrying the "postingDate <= asOfDate"
+  // filter in its ON clause — a join miss only nulls out je's own columns,
+  // it does NOT filter jel, so SUM(jel.debit)/SUM(jel.credit) silently
+  // summed ALL-TIME activity regardless of asOfDate. Fixed by gating the
+  // SUM on `je."id" IS NOT NULL`. This test posts activity strictly AFTER
+  // asOfDate and asserts it's excluded.
+  it("excludes postings made after asOfDate from the Statement of Financial Position", async () => {
+    const ctx = await setupContext();
+    const future = new Date(Date.now() + 10 * 24 * 3600 * 1000);
+    await postJournalEntry(
+      ctx,
+      [
+        { accountCode: "1120", debit: "9999", credit: "0" },
+        { accountCode: "3100", debit: "0", credit: "9999" },
+      ],
+      future,
+    );
+
+    const before = (
+      await request(app.getHttpServer())
+        .get("/reports/financial-position")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200)
+    ).body;
+
+    expect(Number(before.totalAssets)).toBe(0);
+    expect(Number(before.totalEquity)).toBe(0);
+    expect(before.isBalanced).toBe(true);
+  });
+
+  it("computes the Statement of Changes in Equity — opening, profit roll-forward, and direct movements", async () => {
+    const ctx = await setupContext();
+    const periodStart = new Date("2026-03-01T00:00:00.000Z");
+    const periodEnd = new Date("2026-03-31T00:00:00.000Z");
+    const beforePeriod = new Date("2026-02-15T00:00:00.000Z");
+
+    // Opening balance: capital raised before the period.
+    await postJournalEntry(
+      ctx,
+      [
+        { accountCode: "1120", debit: "2000", credit: "0" },
+        { accountCode: "3100", debit: "0", credit: "2000" },
+      ],
+      beforePeriod,
+    );
+    // Exactly at fromDate — must land in the opening balance, not "other movements".
+    await postJournalEntry(
+      ctx,
+      [
+        { accountCode: "1120", debit: "500", credit: "0" },
+        { accountCode: "3100", debit: "0", credit: "500" },
+      ],
+      new Date("2026-02-28T00:00:00.000Z"),
+    );
+    // Revenue 1000 within the period → flows into Retained Earnings via profitForPeriod.
+    await postJournalEntry(
+      ctx,
+      [
+        { accountCode: "1120", debit: "1000", credit: "0" },
+        { accountCode: "4100", debit: "0", credit: "1000" },
+      ],
+      periodStart,
+    );
+    // A within-period capital injection → "other movements" for Share Capital.
+    await postJournalEntry(
+      ctx,
+      [
+        { accountCode: "1120", debit: "300", credit: "0" },
+        { accountCode: "3100", debit: "0", credit: "300" },
+      ],
+      new Date("2026-03-15T00:00:00.000Z"),
+    );
+
+    const report = (
+      await request(app.getHttpServer())
+        .get(`/reports/changes-in-equity?fromDate=${periodStart.toISOString()}&toDate=${periodEnd.toISOString()}`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200)
+    ).body;
+
+    const shareCapital = report.lines.find((l: any) => l.subClassCode === "SHARE_CAPITAL");
+    expect(Number(shareCapital.opening)).toBe(2500); // 2000 + 500 (posted before fromDate, inclusive of Feb 28)
+    expect(Number(shareCapital.otherMovements)).toBe(300);
+    expect(Number(shareCapital.closing)).toBe(2800);
+
+    const retainedEarnings = report.lines.find((l: any) => l.subClassCode === "RETAINED_EARNINGS");
+    expect(Number(retainedEarnings.opening)).toBe(0);
+    expect(Number(retainedEarnings.profitForPeriod)).toBe(1000);
+    expect(Number(retainedEarnings.closing)).toBe(1000);
+
+    expect(Number(report.totalClosing)).toBe(2800 + 1000);
+  });
+
+  it("computes the Statement of Cash Flows (indirect method) and reconciles to actual cash movement", async () => {
+    const ctx = await setupContext();
+    const from = new Date("2026-06-01T00:00:00.000Z");
+    const to = new Date("2026-06-30T00:00:00.000Z");
+
+    // Financing: capital injection 5000.
+    await postJournalEntry(ctx, [
+      { accountCode: "1120", debit: "5000", credit: "0" },
+      { accountCode: "3100", debit: "0", credit: "5000" },
+    ], from);
+    // Operating: sale on credit 1000 (increases AR — cash-flow negative).
+    await postJournalEntry(ctx, [
+      { accountCode: "1210", debit: "1000", credit: "0" },
+      { accountCode: "4100", debit: "0", credit: "1000" },
+    ], new Date("2026-06-05T00:00:00.000Z"));
+    // Operating: expense on credit 400 (increases AP — cash-flow positive).
+    await postJournalEntry(ctx, [
+      { accountCode: "5240", debit: "400", credit: "0" },
+      { accountCode: "2110", debit: "0", credit: "400" },
+    ], new Date("2026-06-06T00:00:00.000Z"));
+    // Operating: depreciation 100 (non-cash addback).
+    await postJournalEntry(ctx, [
+      { accountCode: "5230", debit: "100", credit: "0" },
+      { accountCode: "1519", debit: "0", credit: "100" },
+    ], new Date("2026-06-10T00:00:00.000Z"));
+    // Financing: interest paid 50 (cash outflow; must not be double-subtracted from operating).
+    await postJournalEntry(ctx, [
+      { accountCode: "5800", debit: "50", credit: "0" },
+      { accountCode: "1120", debit: "0", credit: "50" },
+    ], new Date("2026-06-15T00:00:00.000Z"));
+
+    const report = (
+      await request(app.getHttpServer())
+        .get(`/reports/cash-flow?fromDate=${from.toISOString()}&toDate=${to.toISOString()}`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200)
+    ).body;
+
+    // Profit for period: revenue 1000 − opex 400 − depreciation 100 − finance cost 50 = 450.
+    expect(Number(report.profitForPeriod)).toBe(450);
+    expect(Number(report.depreciation)).toBe(100);
+    expect(Number(report.financeCostsAddback)).toBe(50);
+    const ar = report.workingCapitalItems.find((i: any) => i.label.includes("receivables"));
+    const ap = report.workingCapitalItems.find((i: any) => i.label.includes("payables"));
+    expect(Number(ar.amount)).toBe(-1000);
+    expect(Number(ap.amount)).toBe(400);
+    // 450 + 100 (depreciation) + 50 (finance cost addback) − 1000 (AR) + 400 (AP) = 0
+    expect(Number(report.netCashFromOperating)).toBe(0);
+
+    const financeCostsLine = report.financingItems.find((i: any) => i.label.includes("Finance costs"));
+    const shareCapitalLine = report.financingItems.find((i: any) => i.label.includes("share capital"));
+    expect(Number(financeCostsLine.amount)).toBe(-50);
+    expect(Number(shareCapitalLine.amount)).toBe(5000);
+    expect(Number(report.netCashFromFinancing)).toBe(4950);
+
+    expect(Number(report.netChangeInCash)).toBe(0 + 4950); // no investing activity this period
+    expect(Number(report.openingCash)).toBe(0);
+    expect(Number(report.closingCash)).toBe(4950);
+    expect(report.isReconciled).toBe(true);
+  });
+
   it("isolates reports between companies and blocks viewers from writing", async () => {
     const a = await setupContext();
     await postArInvoice(a, "1000", -10);

@@ -1,4 +1,17 @@
-import { BadRequestException, Body, Controller, Delete, Get, Header, Param, Post, Query, UploadedFile, UseInterceptors } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Header,
+  Param,
+  Post,
+  Query,
+  StreamableFile,
+  UploadedFile,
+  UseInterceptors,
+} from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiConsumes, ApiTags } from "@nestjs/swagger";
 import { InvoiceStatus } from "@prisma/client";
@@ -36,10 +49,14 @@ export class ApController {
 
   @Get("import/expenses/template")
   @Permissions(PERMISSIONS.AP_INVOICE_VIEW)
-  @Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
   @Header("Content-Disposition", 'attachment; filename="expenses_import_template.xlsx"')
   importExpensesTemplate() {
-    return this.apService.expensesXlsxTemplate();
+    // A raw Buffer returned from a normal handler gets JSON-serialized by
+    // Nest (`{"type":"Buffer","data":[...]}`) instead of sent as binary —
+    // StreamableFile is the documented way to stream real binary content.
+    return new StreamableFile(this.apService.expensesXlsxTemplate(), {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
   }
 
   @Post("import/expenses")

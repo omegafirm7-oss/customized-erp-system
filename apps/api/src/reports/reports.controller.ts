@@ -78,6 +78,26 @@ export class ReportsController {
     return this.reportsService.financialPosition(companyId, date);
   }
 
+  @Get("changes-in-equity")
+  @Permissions(PERMISSIONS.REPORTS_VIEW)
+  async statementOfChangesInEquity(
+    @CurrentCompanyId() companyId: string,
+    @Query("fromDate") fromDate: string,
+    @Query("toDate") toDate: string,
+  ) {
+    return this.reportsService.statementOfChangesInEquity(companyId, new Date(fromDate), new Date(toDate));
+  }
+
+  @Get("cash-flow")
+  @Permissions(PERMISSIONS.REPORTS_VIEW)
+  async statementOfCashFlows(
+    @CurrentCompanyId() companyId: string,
+    @Query("fromDate") fromDate: string,
+    @Query("toDate") toDate: string,
+  ) {
+    return this.reportsService.statementOfCashFlows(companyId, new Date(fromDate), new Date(toDate));
+  }
+
   @Get("stock-movements")
   @Permissions(PERMISSIONS.REPORTS_VIEW)
   async stockMovements(

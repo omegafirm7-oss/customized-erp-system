@@ -551,8 +551,8 @@ export class ReportsService {
         sc."name" AS "subClassName",
         ac."code" AS "classCode",
         sc."isCurrent" AS "isCurrent",
-        COALESCE(SUM(jel."debit"), 0) AS "debit",
-        COALESCE(SUM(jel."credit"), 0) AS "credit"
+        COALESCE(SUM(CASE WHEN je."id" IS NOT NULL THEN jel."debit" ELSE 0 END), 0) AS "debit",
+        COALESCE(SUM(CASE WHEN je."id" IS NOT NULL THEN jel."credit" ELSE 0 END), 0) AS "credit"
       FROM "accounts" a
       JOIN "account_sub_classes" sc ON sc."id" = a."accountSubClassId"
       JOIN "account_classes" ac ON ac."id" = a."accountClassId"
@@ -621,6 +621,244 @@ export class ReportsService {
       totalLiabilities: totalLiabilities.toFixed(2),
       totalEquity: totalEquity.toFixed(2),
       isBalanced: totalAssets.sub(totalLiabilities.add(totalEquity)).abs().lt("0.01"),
+    };
+  }
+
+  /**
+   * Statement of Changes in Equity for a period: opening balance, profit for
+   * the period (folded into Retained Earnings — this system doesn't run
+   * year-end closing entries, so the *only* other way retained earnings
+   * moves is a direct manual JE), other direct movements (e.g. a manual JE
+   * recording a capital injection or dividend distribution), and closing
+   * balance, for each equity sub-class.
+   */
+  async statementOfChangesInEquity(companyId: string, fromDate: Date, toDate: Date): Promise<EquityChangesReport> {
+    const [openingRows, movementRows, profitOrLossReport] = await Promise.all([
+      this.equitySubClassBalances(companyId, fromDate),
+      this.equitySubClassMovements(companyId, fromDate, toDate),
+      this.profitOrLoss(companyId, fromDate, toDate),
+    ]);
+
+    const openingBySubClass = new Map(openingRows.map((r) => [r.subClassCode, r]));
+    const movementBySubClass = new Map(movementRows.map((r) => [r.subClassCode, r]));
+    const allCodes = new Set([...openingBySubClass.keys(), ...movementBySubClass.keys()]);
+    // Every company gets these three from the default COA even with zero activity.
+    for (const code of ["SHARE_CAPITAL", "RETAINED_EARNINGS", "RESERVES"]) allCodes.add(code);
+
+    const profitForPeriod = new Prisma.Decimal(profitOrLossReport.profitForThePeriod);
+    const zero = new Prisma.Decimal(0);
+
+    const lines: EquityChangeLine[] = [...allCodes].sort().map((code) => {
+      const opening = openingBySubClass.get(code)?.balance ?? zero;
+      const otherMovements = movementBySubClass.get(code)?.balance ?? zero;
+      // Profit for the period only flows into Retained Earnings — there's no
+      // automatic closing entry, so this is the one place that connects the
+      // P&L to the equity roll-forward.
+      const periodProfit = code === "RETAINED_EARNINGS" ? profitForPeriod : zero;
+      const closing = opening.add(otherMovements).add(periodProfit);
+      return {
+        subClassCode: code,
+        subClassName: openingBySubClass.get(code)?.subClassName ?? movementBySubClass.get(code)?.subClassName ?? code,
+        opening: opening.toFixed(2),
+        profitForPeriod: periodProfit.toFixed(2),
+        otherMovements: otherMovements.toFixed(2),
+        closing: closing.toFixed(2),
+      };
+    });
+
+    const sumField = (field: keyof Omit<EquityChangeLine, "subClassCode" | "subClassName">) =>
+      lines.reduce((sum, l) => sum.add(new Prisma.Decimal(l[field])), zero);
+
+    return {
+      fromDate: fromDate.toISOString(),
+      toDate: toDate.toISOString(),
+      lines,
+      totalOpening: sumField("opening").toFixed(2),
+      totalProfitForPeriod: sumField("profitForPeriod").toFixed(2),
+      totalOtherMovements: sumField("otherMovements").toFixed(2),
+      totalClosing: sumField("closing").toFixed(2),
+    };
+  }
+
+  /**
+   * Balance strictly before fromDate — matches trialBalance()'s own
+   * opening-balance convention. The date condition lives on the second LEFT
+   * JOIN (to keep sub-classes with zero postings ever in the result), which
+   * means an unmatched `je` only nulls out `je`'s own columns — `jel.credit`/
+   * `jel.debit` are still present from the first (unconditional) join, so the
+   * SUM must be explicitly gated on `je."id" IS NOT NULL`, mirroring how
+   * trialBalance()'s CASE expressions reference `je."postingDate"` (NULL for
+   * a join miss) instead of summing jel's columns directly.
+   */
+  private async equitySubClassBalances(companyId: string, fromDate: Date) {
+    return this.prisma.$queryRaw<Array<{ subClassCode: string; subClassName: string; balance: Prisma.Decimal }>>`
+      SELECT sc."code" AS "subClassCode", sc."name" AS "subClassName",
+        COALESCE(SUM(CASE WHEN je."id" IS NOT NULL THEN jel."credit" - jel."debit" ELSE 0 END), 0) AS "balance"
+      FROM "accounts" a
+      JOIN "account_sub_classes" sc ON sc."id" = a."accountSubClassId"
+      JOIN "account_classes" ac ON ac."id" = a."accountClassId"
+      LEFT JOIN "journal_entry_lines" jel ON jel."accountId" = a."id"
+      LEFT JOIN "journal_entries" je
+        ON je."id" = jel."journalEntryId" AND je."status" IN ('POSTED', 'REVERSED') AND je."postingDate" < ${fromDate}
+      WHERE a."companyId" = ${companyId} AND ac."code" = 'EQUITY'
+      GROUP BY sc."code", sc."name"
+    `;
+  }
+
+  private async equitySubClassMovements(companyId: string, fromDate: Date, toDate: Date) {
+    return this.prisma.$queryRaw<Array<{ subClassCode: string; subClassName: string; balance: Prisma.Decimal }>>`
+      SELECT sc."code" AS "subClassCode", sc."name" AS "subClassName",
+        COALESCE(SUM(jel."credit" - jel."debit"), 0) AS "balance"
+      FROM "accounts" a
+      JOIN "account_sub_classes" sc ON sc."id" = a."accountSubClassId"
+      JOIN "account_classes" ac ON ac."id" = a."accountClassId"
+      JOIN "journal_entry_lines" jel ON jel."accountId" = a."id"
+      JOIN "journal_entries" je ON je."id" = jel."journalEntryId"
+      WHERE a."companyId" = ${companyId} AND ac."code" = 'EQUITY'
+        AND je."status" IN ('POSTED', 'REVERSED') AND je."postingDate" >= ${fromDate} AND je."postingDate" <= ${toDate}
+      GROUP BY sc."code", sc."name"
+    `;
+  }
+
+  /**
+   * Statement of Cash Flows for a period, indirect method (IAS 7). Built
+   * entirely from real, traceable data rather than a separate cash-flow
+   * classification field (this system has none): one grouped query buckets
+   * journal-entry-line movements by role (working-capital item, non-cash
+   * P&L addback, financing balance), and equipment acquisitions/disposals
+   * come straight from the Equipment table's own date-stamped fields (its
+   * capitalization/disposal JEs always move a bank/cash account directly —
+   * see equipment.service.ts — so their cost/proceeds are cash-accurate).
+   *
+   * Sign convention used throughout: `netCredit = credit - debit` for a
+   * bucket IS the correct cash-flow-statement contribution for every
+   * balance-sheet-style bucket (asset increase = cash used = negative;
+   * liability/equity increase = cash sourced = positive — this falls out of
+   * double-entry bookkeeping directly, no per-account-type branching
+   * needed). The two non-cash P&L reversal buckets (depreciation, disposal
+   * gain/loss) are the one exception and use `-netCredit` instead, since
+   * they're removing a P&L item's effect rather than reflecting a balance
+   * change with an implied cash counterpart.
+   */
+  async statementOfCashFlows(companyId: string, fromDate: Date, toDate: Date): Promise<CashFlowReport> {
+    const [profitOrLossReport, movementRows, equipmentPurchased, equipmentDisposedProceeds, openingCashRows] =
+      await Promise.all([
+        this.profitOrLoss(companyId, fromDate, toDate),
+        this.prisma.$queryRaw<Array<{ bucket: string | null; debit: Prisma.Decimal; credit: Prisma.Decimal }>>`
+          SELECT
+            CASE
+              WHEN a."controlAccountType" IN ('CASH', 'BANK') THEN 'CASH'
+              WHEN a."controlAccountType" = 'AR' THEN 'AR'
+              WHEN a."controlAccountType" = 'INVENTORY' THEN 'INVENTORY'
+              WHEN sc."code" = 'CURRENT_ASSET' THEN 'OTHER_CURRENT_ASSET'
+              WHEN a."controlAccountType" = 'AP' THEN 'AP'
+              WHEN sc."code" = 'CURRENT_LIABILITY' THEN 'OTHER_CURRENT_LIABILITY'
+              WHEN a."controlAccountType" = 'DEPRECIATION_EXPENSE' THEN 'DEPRECIATION'
+              WHEN a."controlAccountType" = 'DISPOSAL_GAIN_LOSS' THEN 'DISPOSAL_GAIN_LOSS'
+              WHEN a."controlAccountType" = 'EOSB_PROVISION' THEN 'EOSB_PROVISION'
+              WHEN sc."code" = 'NON_CURRENT_LIABILITY' THEN 'LONG_TERM_LOANS'
+              WHEN sc."code" = 'SHARE_CAPITAL' THEN 'SHARE_CAPITAL'
+              WHEN sc."code" = 'RETAINED_EARNINGS' THEN 'RETAINED_EARNINGS'
+              WHEN sc."code" = 'FINANCE_COST' THEN 'FINANCE_COST'
+              ELSE NULL
+            END AS "bucket",
+            COALESCE(SUM(jel."debit"), 0) AS "debit",
+            COALESCE(SUM(jel."credit"), 0) AS "credit"
+          FROM "accounts" a
+          JOIN "account_sub_classes" sc ON sc."id" = a."accountSubClassId"
+          JOIN "journal_entry_lines" jel ON jel."accountId" = a."id"
+          JOIN "journal_entries" je ON je."id" = jel."journalEntryId"
+          WHERE a."companyId" = ${companyId}
+            AND je."status" IN ('POSTED', 'REVERSED')
+            AND je."postingDate" >= ${fromDate}
+            AND je."postingDate" <= ${toDate}
+          GROUP BY "bucket"
+        `,
+        this.prisma.equipment.aggregate({
+          where: { companyId, capitalizationJournalEntryId: { not: null }, acquisitionDate: { gte: fromDate, lte: toDate } },
+          _sum: { acquisitionCost: true },
+        }),
+        this.prisma.equipment.aggregate({
+          where: { companyId, disposalJournalEntryId: { not: null }, disposalDate: { gte: fromDate, lte: toDate } },
+          _sum: { disposalProceeds: true },
+        }),
+        this.prisma.$queryRaw<Array<{ balance: Prisma.Decimal }>>`
+          SELECT COALESCE(SUM(jel."debit" - jel."credit"), 0) AS "balance"
+          FROM "accounts" a
+          JOIN "journal_entry_lines" jel ON jel."accountId" = a."id"
+          JOIN "journal_entries" je ON je."id" = jel."journalEntryId"
+          WHERE a."companyId" = ${companyId}
+            AND a."controlAccountType" IN ('CASH', 'BANK')
+            AND je."status" IN ('POSTED', 'REVERSED')
+            AND je."postingDate" < ${fromDate}
+        `,
+      ]);
+
+    const netCredit = new Map<string, Prisma.Decimal>();
+    for (const row of movementRows) {
+      if (!row.bucket) continue;
+      netCredit.set(row.bucket, new Prisma.Decimal(row.credit).sub(row.debit));
+    }
+    const zero = new Prisma.Decimal(0);
+    const nc = (bucket: string) => netCredit.get(bucket) ?? zero;
+
+    const profitForPeriod = new Prisma.Decimal(profitOrLossReport.profitForThePeriod);
+    const depreciation = nc("DEPRECIATION").neg(); // non-cash addback
+    const disposalGainLossAdj = nc("DISPOSAL_GAIN_LOSS").neg(); // remove non-cash gain/(loss); full proceeds shown in investing
+    // Finance costs are already deducted once inside profitForPeriod, but
+    // this statement classifies the actual cash paid under Financing (see
+    // financingItems below) — without adding it back here it would be
+    // subtracted twice. Standard IAS 7 treatment when interest paid is
+    // classified as a financing activity rather than operating.
+    const financeCostsAddback = nc("FINANCE_COST").neg();
+    const workingCapitalItems = [
+      { label: "(Increase)/decrease in trade receivables", amount: nc("AR") },
+      { label: "(Increase)/decrease in inventory", amount: nc("INVENTORY") },
+      { label: "(Increase)/decrease in other current assets", amount: nc("OTHER_CURRENT_ASSET") },
+      { label: "Increase/(decrease) in trade payables", amount: nc("AP") },
+      { label: "Increase/(decrease) in other current liabilities", amount: nc("OTHER_CURRENT_LIABILITY") },
+      { label: "Increase/(decrease) in end-of-service benefits provision", amount: nc("EOSB_PROVISION") },
+    ];
+    const netCashFromOperating = workingCapitalItems.reduce(
+      (sum, i) => sum.add(i.amount),
+      profitForPeriod.add(depreciation).add(disposalGainLossAdj).add(financeCostsAddback),
+    );
+
+    const equipmentPurchases = new Prisma.Decimal(equipmentPurchased._sum.acquisitionCost ?? 0).neg();
+    const disposalProceeds = new Prisma.Decimal(equipmentDisposedProceeds._sum.disposalProceeds ?? 0);
+    const netCashFromInvesting = equipmentPurchases.add(disposalProceeds);
+
+    const financingItems = [
+      { label: "Proceeds from/(repayment of) long-term loans", amount: nc("LONG_TERM_LOANS") },
+      { label: "Proceeds from issue of share capital", amount: nc("SHARE_CAPITAL") },
+      { label: "Dividends/distributions paid", amount: nc("RETAINED_EARNINGS") },
+      { label: "Finance costs paid", amount: nc("FINANCE_COST") },
+    ];
+    const netCashFromFinancing = financingItems.reduce((sum, i) => sum.add(i.amount), zero);
+
+    const netChangeInCash = netCashFromOperating.add(netCashFromInvesting).add(netCashFromFinancing);
+    const openingCash = new Prisma.Decimal(openingCashRows[0]?.balance ?? 0);
+    const closingCash = openingCash.add(netChangeInCash);
+    const actualCashMovement = nc("CASH").neg(); // CASH/BANK are debit-normal; netCredit's sign is inverted for them
+
+    return {
+      fromDate: fromDate.toISOString(),
+      toDate: toDate.toISOString(),
+      profitForPeriod: profitForPeriod.toFixed(2),
+      depreciation: depreciation.toFixed(2),
+      disposalGainLossAdjustment: disposalGainLossAdj.toFixed(2),
+      financeCostsAddback: financeCostsAddback.toFixed(2),
+      workingCapitalItems: workingCapitalItems.map((i) => ({ label: i.label, amount: i.amount.toFixed(2) })),
+      netCashFromOperating: netCashFromOperating.toFixed(2),
+      equipmentPurchases: equipmentPurchases.toFixed(2),
+      disposalProceeds: disposalProceeds.toFixed(2),
+      netCashFromInvesting: netCashFromInvesting.toFixed(2),
+      financingItems: financingItems.map((i) => ({ label: i.label, amount: i.amount.toFixed(2) })),
+      netCashFromFinancing: netCashFromFinancing.toFixed(2),
+      netChangeInCash: netChangeInCash.toFixed(2),
+      openingCash: openingCash.toFixed(2),
+      closingCash: closingCash.toFixed(2),
+      isReconciled: netChangeInCash.sub(actualCashMovement).abs().lt("0.01"),
     };
   }
 
@@ -746,4 +984,43 @@ export interface FinancialPositionReport {
   totalLiabilities: string;
   totalEquity: string;
   isBalanced: boolean;
+}
+
+export interface EquityChangeLine {
+  subClassCode: string;
+  subClassName: string;
+  opening: string;
+  profitForPeriod: string;
+  otherMovements: string;
+  closing: string;
+}
+
+export interface EquityChangesReport {
+  fromDate: string;
+  toDate: string;
+  lines: EquityChangeLine[];
+  totalOpening: string;
+  totalProfitForPeriod: string;
+  totalOtherMovements: string;
+  totalClosing: string;
+}
+
+export interface CashFlowReport {
+  fromDate: string;
+  toDate: string;
+  profitForPeriod: string;
+  depreciation: string;
+  disposalGainLossAdjustment: string;
+  financeCostsAddback: string;
+  workingCapitalItems: Array<{ label: string; amount: string }>;
+  netCashFromOperating: string;
+  equipmentPurchases: string;
+  disposalProceeds: string;
+  netCashFromInvesting: string;
+  financingItems: Array<{ label: string; amount: string }>;
+  netCashFromFinancing: string;
+  netChangeInCash: string;
+  openingCash: string;
+  closingCash: string;
+  isReconciled: boolean;
 }

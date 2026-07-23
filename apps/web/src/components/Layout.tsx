@@ -84,6 +84,8 @@ const NAV_SECTIONS: NavSection[] = [
       { to: "/trial-balance", label: "Trial Balance" },
       { to: "/profit-or-loss", label: "Profit or Loss" },
       { to: "/financial-position", label: "Financial Position" },
+      { to: "/changes-in-equity", label: "Changes in Equity" },
+      { to: "/cash-flow", label: "Cash Flow" },
       { to: "/journal-entries", label: "Journal Entries" },
     ],
   },

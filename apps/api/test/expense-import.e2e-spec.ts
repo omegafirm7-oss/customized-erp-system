@@ -37,19 +37,33 @@ describe("AP expense import from Excel (e2e)", () => {
     return { Authorization: `Bearer ${token}` };
   }
 
-  it("downloads a template with the correct content type and filename", async () => {
-    // Deep-parsing the binary xlsx body back out of supertest's response is
-    // unreliable (superagent's stream buffering mangles raw zip bytes) — the
-    // header contract itself is exercised for real by the "imports valid
-    // expense rows" test below, which round-trips through the same
-    // EXPENSE_XLSX_COLUMNS list and would fail on a header mismatch.
+  it("downloads a real, parseable xlsx template with the correct headers", async () => {
+    // Regression test for a real bug: the controller originally returned a
+    // raw Buffer from a normal handler, which Nest JSON-serializes into
+    // `{"type":"Buffer","data":[...]}` instead of sending binary content —
+    // the "template" was actually corrupt JSON, not a real spreadsheet.
+    // Fixed via StreamableFile. `.buffer(true).parse(...)` is required here
+    // because supertest doesn't buffer binary responses by default.
     const { accessToken } = await setupUserWithCompany(app);
     const res = await request(app.getHttpServer())
       .get("/ap/invoices/import/expenses/template")
       .set(auth(accessToken))
+      .buffer(true)
+      .parse((response, callback) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => chunks.push(chunk));
+        response.on("end", () => callback(null, Buffer.concat(chunks)));
+      })
       .expect(200);
     expect(res.headers["content-type"]).toContain("spreadsheetml");
     expect(res.headers["content-disposition"]).toContain("expenses_import_template.xlsx");
+
+    const body = res.body as Buffer;
+    expect(body.subarray(0, 2).toString()).toBe("PK"); // zip/xlsx magic bytes
+    const workbook = XLSX.read(body, { type: "buffer" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 });
+    expect(rows[0]).toEqual(EXPENSE_HEADER);
   });
 
   it("imports valid expense rows as DRAFT purchase invoices with computed VAT", async () => {

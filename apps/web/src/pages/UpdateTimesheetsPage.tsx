@@ -60,11 +60,20 @@ const STICKY_DATE_COL_STYLE: CSSProperties = {
 };
 
 // Keeps both header rows (employee code, then Day/Hrs) visible while
-// scrolling down a long month of days — the page scrolls at the document
-// level (no inner scroll container), so `position: sticky; top: <n>`
-// sticks relative to the viewport itself. The second row stacks right
+// scrolling down a long month of days. `position: sticky` resolves relative
+// to the nearest ancestor with a non-"visible" computed overflow on EITHER
+// axis — per the CSS overflow spec, setting only `overflowX: auto` still
+// forces the used value of overflow-y away from "visible" on that same
+// element, silently making the wrapping div itself the sticky-positioning
+// ancestor for `top`. Since that div had no bounded height, it never
+// actually scrolled, so the header row never stuck — only the Date column's
+// `left: 0` appeared to work, because horizontal scroll genuinely happens
+// inside that div. Fix: give the wrapper an explicit bounded height with
+// `overflow: auto` on both axes, so `top` and `left` stickiness resolve
+// against the same real scrollport. The second header row stacks right
 // below the first, using its measured height as the offset. zIndex 2 wins
 // over the sticky Date column (1) at their shared top-left corner cells.
+const GRID_SCROLL_STYLE: CSSProperties = { overflow: "auto", maxHeight: "calc(100vh - 320px)" };
 const HEADER_ROW_HEIGHT = 33; // px — matches th padding (8px 10px) + 11px uppercase label
 const STICKY_HEADER_ROW1_STYLE: CSSProperties = { position: "sticky", top: 0, background: "#fff", zIndex: 2 };
 const STICKY_HEADER_ROW2_STYLE: CSSProperties = {
@@ -345,7 +354,7 @@ export function UpdateTimesheetsPage() {
         ) : dates.length === 0 ? (
           <p>No days in this period yet.</p>
         ) : (
-          <div style={{ overflowX: "auto" }}>
+          <div style={GRID_SCROLL_STYLE}>
             <table>
               <thead>
                 <tr>
