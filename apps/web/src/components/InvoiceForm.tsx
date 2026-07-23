@@ -17,6 +17,13 @@ interface Item {
   isInventoryItem?: boolean;
 }
 
+interface Account {
+  id: string;
+  code: string;
+  name: string;
+  isPostable: boolean;
+}
+
 interface Warehouse {
   id: string;
   code: string;
@@ -47,6 +54,7 @@ interface LineForm {
   discountAmount: string;
   vatCategory: "STANDARD_15" | "ZERO_RATED" | "EXEMPT";
   taxMode: TaxMode;
+  accountId: string;
   warehouseId: string;
   projectId: string;
   wbsTaskId: string;
@@ -67,6 +75,7 @@ function emptyLine(side: "ar" | "ap"): LineForm {
     discountAmount: "0",
     vatCategory: "STANDARD_15",
     taxMode: side === "ap" ? "INCLUSIVE" : "EXCLUSIVE",
+    accountId: "",
     warehouseId: "",
     projectId: "",
     wbsTaskId: "",
@@ -103,6 +112,7 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [projects, setProjects] = useState<ProjectRef[]>([]);
   const [tasksByProject, setTasksByProject] = useState<Record<string, TaskRef[]>>({});
+  const [accounts, setAccounts] = useState<Account[]>([]);
 
   useEffect(() => {
     apiClient.get<Partner[]>("/partners").then((res) => {
@@ -116,6 +126,9 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
       const allowed = side === "ap" ? ["ACTIVE"] : ["ACTIVE", "COMPLETED"];
       setProjects(res.data.filter((p) => allowed.includes(p.status)));
     });
+    if (side === "ap") {
+      apiClient.get<Account[]>("/coa/accounts").then((res) => setAccounts(res.data.filter((a) => a.isPostable)));
+    }
   }, [side]);
 
   async function loadTasks(projectId: string) {
@@ -171,6 +184,7 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
           discountAmount: line.discountAmount || "0",
           vatCategory: line.vatCategory,
           taxMode: line.taxMode,
+          accountId: line.accountId || undefined,
           warehouseId: line.warehouseId || undefined,
           projectId: line.projectId || undefined,
           wbsTaskId: line.wbsTaskId || undefined,
@@ -231,6 +245,7 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
           <thead>
             <tr>
               <th>Item</th>
+              {side === "ap" && <th>Account</th>}
               <th>Description</th>
               <th>Qty</th>
               <th>Unit Price</th>
@@ -260,6 +275,24 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
                       ))}
                     </select>
                   </td>
+                  {side === "ap" && (
+                    <td>
+                      <select
+                        value={line.accountId}
+                        onChange={(e) => updateLine(index, { accountId: e.target.value })}
+                        required={!line.itemId}
+                      >
+                        <option value="">
+                          {line.itemId ? "(default from item)" : "Select account…"}
+                        </option>
+                        {accounts.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.code} — {a.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                  )}
                   <td>
                     <input value={line.description} onChange={(e) => updateLine(index, { description: e.target.value })} required />
                   </td>
