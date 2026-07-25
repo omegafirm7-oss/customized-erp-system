@@ -345,6 +345,14 @@ export class CreateEmployeePaymentDto {
   @IsUUID()
   bankCashAccountId!: string;
 
+  @ApiProperty({
+    required: false,
+    description: "Expense account to allocate this ALLOWANCE payment to; defaults to the company's ALLOWANCE_EXPENSE control account when omitted. Ignored for ADVANCE/OTHER.",
+  })
+  @IsOptional()
+  @IsUUID()
+  expenseAccountId?: string;
+
   @ApiProperty({ required: false })
   @IsOptional()
   @IsDateString()

@@ -1,4 +1,4 @@
-import type { ControlAccountType } from "@prisma/client";
+import type { ControlAccountType, ProjectCostCategory } from "@prisma/client";
 
 export interface DefaultCoaEntry {
   code: string;
@@ -10,6 +10,9 @@ export interface DefaultCoaEntry {
   // Typed off the Prisma enum so new control-account types can never drift
   // out of sync with the schema (same fix as coa.service.ts in Phase 5).
   controlAccountType?: ControlAccountType;
+  // Project Intelligence dashboard bucket — see ProjectCostCategory in
+  // schema.prisma. Undefined means uncategorized (shown as "Other").
+  costCategory?: ProjectCostCategory;
 }
 
 /**
@@ -77,15 +80,15 @@ export const DEFAULT_COA_TEMPLATE: DefaultCoaEntry[] = [
   // of sales (unlike a trading company where COGS is only merchandise
   // resold), since they're incurred specifically to execute a revenue-
   // generating contract. See project_expense_coa_and_import memory.
-  { code: "5101", name: "Direct Materials", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT" },
-  { code: "5102", name: "Machinery & Equipment Rental (Project)", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT" },
-  { code: "5103", name: "Fuel & Lubricants (Project)", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT" },
-  { code: "5104", name: "Site Tools & Consumables", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT" },
-  { code: "5105", name: "Safety Gear & PPEs", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT" },
-  { code: "5106", name: "Site Facilities (Office/Container/Shelter/Water)", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT" },
+  { code: "5101", name: "Direct Materials", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT", costCategory: "MATERIAL" },
+  { code: "5102", name: "Machinery & Equipment Rental (Project)", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT", costCategory: "MACHINERY" },
+  { code: "5103", name: "Fuel & Lubricants (Project)", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT", costCategory: "MACHINERY" },
+  { code: "5104", name: "Site Tools & Consumables", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT", costCategory: "MATERIAL" },
+  { code: "5105", name: "Safety Gear & PPEs", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT", costCategory: "MATERIAL" },
+  { code: "5106", name: "Site Facilities (Office/Container/Shelter/Water)", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT", costCategory: "MATERIAL" },
   { code: "5107", name: "Site Transportation", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT" },
   { code: "5108", name: "Site Welfare (Food & Petty Cash)", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT" },
-  { code: "5109", name: "Printing & Engineering (Project)", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT" },
+  { code: "5109", name: "Printing & Engineering (Project)", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT", costCategory: "MATERIAL" },
   { code: "5110", name: "Site Office Supplies", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT" },
   { code: "5150", name: "Inventory Adjustment Gain/Loss", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT", controlAccountType: "INVENTORY_ADJUSTMENT" },
   { code: "5200", name: "Salaries & Wages", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT", controlAccountType: "SALARY_EXPENSE" },
@@ -93,7 +96,7 @@ export const DEFAULT_COA_TEMPLATE: DefaultCoaEntry[] = [
   { code: "5250", name: "GOSI Expense", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT", controlAccountType: "GOSI_EXPENSE" },
   { code: "5260", name: "End-of-Service Benefits Expense", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT", controlAccountType: "EOSB_EXPENSE" },
   { code: "5270", name: "Leave Expense", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT", controlAccountType: "LEAVE_EXPENSE" },
-  { code: "5215", name: "Employee Allowances Expense", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT", controlAccountType: "ALLOWANCE_EXPENSE" },
+  { code: "5215", name: "Employee Allowances Expense", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT", controlAccountType: "ALLOWANCE_EXPENSE", costCategory: "LABOR" },
   { code: "5220", name: "Utilities Expense", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT" },
   { code: "5230", name: "Depreciation Expense", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT", controlAccountType: "DEPRECIATION_EXPENSE" },
   { code: "5240", name: "Office & Administrative Expense", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT" },

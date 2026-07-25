@@ -39,6 +39,15 @@ enum NormalBalance {
   CREDIT
 }
 
+// Which of the three Project Intelligence dashboard buckets an expense
+// account rolls up into. Null means "uncategorized" — shown as Other so
+// nothing is silently dropped from the dashboard's totals.
+enum ProjectCostCategory {
+  MATERIAL
+  MACHINERY
+  LABOR
+}
+
 enum ControlAccountType {
   AR
   AP
@@ -647,18 +656,23 @@ model Account {
   normalBalance      NormalBalance
   currencyCode       String?
   controlAccountType ControlAccountType?
+  // Project Intelligence dashboard bucket (Material/Machinery/Labor). Set
+  // via the same PATCH /coa/accounts/:id used for renaming — nullable and
+  // user-correctable, not a fixed mapping.
+  costCategory       ProjectCostCategory?
   isActive           Boolean             @default(true)
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
 
-  journalEntryLines         JournalEntryLine[]
-  salesInvoiceLines         SalesInvoiceLine[]
-  purchaseInvoiceLines      PurchaseInvoiceLine[]
-  payments                  Payment[]
-  employeeLoanDisbursements EmployeeLoan[]
-  settlementPayments        SettlementPayment[]
-  employeePayments          EmployeePayment[]
-  employeePaymentRecoveries EmployeePaymentRecovery[]
+  journalEntryLines           JournalEntryLine[]
+  salesInvoiceLines           SalesInvoiceLine[]
+  purchaseInvoiceLines        PurchaseInvoiceLine[]
+  payments                    Payment[]
+  employeeLoanDisbursements   EmployeeLoan[]
+  settlementPayments          SettlementPayment[]
+  employeePayments            EmployeePayment[]                @relation("EmployeePaymentBankCash")
+  employeePaymentExpenseFor   EmployeePayment[]                @relation("EmployeePaymentExpenseAccount")
+  employeePaymentRecoveries   EmployeePaymentRecovery[]
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -1953,7 +1967,14 @@ model EmployeePayment {
   amount            Decimal                 @db.Decimal(18, 4)
   paymentDate       DateTime
   bankCashAccountId String
-  bankCashAccount   Account                 @relation(fields: [bankCashAccountId], references: [id])
+  bankCashAccount   Account                 @relation("EmployeePaymentBankCash", fields: [bankCashAccountId], references: [id])
+  // The expense account this payment's debit leg actually hit — set for
+  // ALLOWANCE payments (either the user's chosen override or the resolved
+  // ALLOWANCE_EXPENSE control account). Null on ADVANCE/OTHER payments
+  // (those debit EMPLOYEE_LOANS, not an expense) and on rows created before
+  // this field existed.
+  expenseAccountId String?
+  expenseAccount    Account?                @relation("EmployeePaymentExpenseAccount", fields: [expenseAccountId], references: [id])
   memo              String?
   recoveredAmount   Decimal                 @default(0) @db.Decimal(18, 4)
   journalEntryId    String                  @unique

@@ -41,4 +41,19 @@ export class AccountResolutionService {
     }
     return account;
   }
+
+  /** Validates that the given account is a postable EXPENSE-class account of this company. */
+  async getExpenseAccount(tx: TxClient, companyId: string, accountId: string) {
+    const account = await tx.account.findFirst({
+      where: { id: accountId, companyId, isActive: true, isPostable: true },
+      include: { accountClass: true },
+    });
+    if (!account) {
+      throw new BadRequestException("Expense account not found in this company");
+    }
+    if (account.accountClass.code !== "EXPENSE") {
+      throw new BadRequestException(`Account ${account.code} is not an expense account`);
+    }
+    return account;
+  }
 }

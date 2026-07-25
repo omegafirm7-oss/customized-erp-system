@@ -4,9 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { PartnerType, Prisma, ProjectStatus } from "@prisma/client";
+import { ControlAccountType, PartnerType, Prisma, ProjectStatus } from "@prisma/client";
 import { PrismaService } from "../common/prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
+import { AccountResolutionService } from "../finance/account-resolution.service";
 import { CreateProjectDto, CreateWbsTaskDto, UpdateProjectDto, UpdateWbsTaskDto } from "./dto/project.dtos";
 
 /** Legal status transitions; CLOSED is terminal. */
@@ -22,6 +23,7 @@ export class ProjectsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly accountResolution: AccountResolutionService,
   ) {}
 
   // ── Projects ─────────────────────────────────────────────────────────
@@ -220,6 +222,153 @@ export class ProjectsService {
       paidAmount: totalCosts.sub(pendingAmount).toFixed(2),
       byAccount: byAccount.map((row) => ({ code: row.code, name: row.name, amount: new Prisma.Decimal(row.amount).toFixed(2) })),
     };
+  }
+
+  /**
+   * Project Intelligence dashboard: Material/Machinery/Labor/Other totals.
+   * Material & Machinery are sourced live from purchase-invoice lines
+   * (every non-cancelled status, drafts included — this is the "detailed
+   * expenses recorded in purchase invoices" view, distinct from
+   * getCostBreakdown's posted-GL-only totals above). Labor is sourced from
+   * EmployeePayment (ALLOWANCE category) instead, since allowances post
+   * straight to the GL via EmployeePaymentsService and never create a
+   * purchase-invoice line — the two sources never overlap, so nothing here
+   * needs deduping against getCostBreakdown or against each other.
+   */
+  async getProjectIntelligence(companyId: string, projectId: string) {
+    const project = await this.getOwned(companyId, projectId);
+
+    type Row = { id: string; code: string; name: string; costCategory: "MATERIAL" | "MACHINERY" | "LABOR" | null; amount: Prisma.Decimal };
+
+    const invoiceRows = await this.prisma.$queryRaw<Row[]>`
+      SELECT a."id", a."code", a."name", a."costCategory", SUM(pil."netAmount") AS "amount"
+      FROM "purchase_invoice_lines" pil
+      JOIN "purchase_invoices" pi ON pi."id" = pil."purchaseInvoiceId"
+      JOIN "accounts" a ON a."id" = pil."expenseAccountId"
+      WHERE pil."projectId" = ${projectId} AND pi."status" != 'CANCELLED'
+        AND (a."costCategory" IS NULL OR a."costCategory" != 'LABOR')
+      GROUP BY a."id", a."code", a."name", a."costCategory"
+      ORDER BY a."code"
+    `;
+
+    const defaultAllowanceAccount = await this.accountResolution
+      .getControlAccount(this.prisma, companyId, ControlAccountType.ALLOWANCE_EXPENSE)
+      .catch(() => null);
+
+    const laborRows = defaultAllowanceAccount
+      ? await this.prisma.$queryRaw<Row[]>`
+          SELECT a."id", a."code", a."name", a."costCategory", SUM(ep."amount") AS "amount"
+          FROM "employee_payments" ep
+          JOIN "employees" e ON e."id" = ep."employeeId"
+          JOIN "accounts" a ON a."id" = COALESCE(ep."expenseAccountId", ${defaultAllowanceAccount.id})
+          WHERE ep."companyId" = ${companyId} AND ep."category" = 'ALLOWANCE'
+            AND e."costCenterId" = ${project.costCenterId}
+          GROUP BY a."id", a."code", a."name", a."costCategory"
+          ORDER BY a."code"
+        `
+      : [];
+
+    const categories: Record<
+      "MATERIAL" | "MACHINERY" | "LABOR" | "OTHER",
+      { total: string; accounts: Array<{ id: string; code: string; name: string; amount: string }> }
+    > = {
+      MATERIAL: { total: "0.00", accounts: [] },
+      MACHINERY: { total: "0.00", accounts: [] },
+      LABOR: { total: "0.00", accounts: [] },
+      OTHER: { total: "0.00", accounts: [] },
+    };
+    const totals: Record<string, Prisma.Decimal> = {
+      MATERIAL: new Prisma.Decimal(0),
+      MACHINERY: new Prisma.Decimal(0),
+      LABOR: new Prisma.Decimal(0),
+      OTHER: new Prisma.Decimal(0),
+    };
+
+    // invoiceRows bucket by the account's own costCategory tag (Material/Machinery/Other);
+    // laborRows always land in LABOR regardless of the resolved account's tag — an allowance
+    // paid to an untagged (or even Material/Machinery-tagged) account is still a labor cost.
+    for (const row of invoiceRows) {
+      const bucket = row.costCategory ?? "OTHER";
+      const amount = new Prisma.Decimal(row.amount);
+      totals[bucket] = totals[bucket].add(amount);
+      categories[bucket as "MATERIAL" | "MACHINERY" | "OTHER"].accounts.push({
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        amount: amount.toFixed(2),
+      });
+    }
+    for (const row of laborRows) {
+      const amount = new Prisma.Decimal(row.amount);
+      totals.LABOR = totals.LABOR.add(amount);
+      categories.LABOR.accounts.push({ id: row.id, code: row.code, name: row.name, amount: amount.toFixed(2) });
+    }
+    for (const key of Object.keys(categories) as Array<keyof typeof categories>) {
+      categories[key].total = totals[key].toFixed(2);
+    }
+
+    const grandTotal = Object.values(totals)
+      .reduce((sum, t) => sum.add(t), new Prisma.Decimal(0))
+      .toFixed(2);
+
+    return { categories, grandTotal };
+  }
+
+  /** Drill-down: every purchase-invoice line recorded against this project on a given expense account. */
+  async getAccountInvoiceLines(companyId: string, projectId: string, accountId: string) {
+    await this.getOwned(companyId, projectId);
+    return this.prisma.$queryRaw<
+      Array<{
+        invoiceId: string;
+        invoiceNumber: string | null;
+        vendorInvoiceNumber: string;
+        partnerName: string;
+        postingDate: Date;
+        description: string;
+        netAmount: Prisma.Decimal;
+        vatAmount: Prisma.Decimal;
+        grossAmount: Prisma.Decimal;
+        status: string;
+      }>
+    >`
+      SELECT pi."id" AS "invoiceId", pi."invoiceNumber", pi."vendorInvoiceNumber", bp."name" AS "partnerName",
+             pi."postingDate", pil."description", pil."netAmount", pil."vatAmount", pil."grossAmount", pi."status"
+      FROM "purchase_invoice_lines" pil
+      JOIN "purchase_invoices" pi ON pi."id" = pil."purchaseInvoiceId"
+      JOIN "business_partners" bp ON bp."id" = pi."businessPartnerId"
+      WHERE pil."projectId" = ${projectId} AND pil."expenseAccountId" = ${accountId} AND pi."status" != 'CANCELLED'
+        AND pi."companyId" = ${companyId}
+      ORDER BY pi."postingDate" DESC
+    `;
+  }
+
+  /** Drill-down: every ALLOWANCE payment recorded against employees assigned to this project's cost center. */
+  async getLaborPayments(companyId: string, projectId: string) {
+    const project = await this.getOwned(companyId, projectId);
+    const defaultAllowanceAccount = await this.accountResolution
+      .getControlAccount(this.prisma, companyId, ControlAccountType.ALLOWANCE_EXPENSE)
+      .catch(() => null);
+
+    return this.prisma.$queryRaw<
+      Array<{
+        employeeId: string;
+        employeeCode: string;
+        employeeName: string;
+        accountCode: string | null;
+        accountName: string | null;
+        amount: Prisma.Decimal;
+        paymentDate: Date;
+        memo: string | null;
+      }>
+    >`
+      SELECT e."id" AS "employeeId", e."code" AS "employeeCode", e."nameEn" AS "employeeName",
+             a."code" AS "accountCode", a."name" AS "accountName", ep."amount", ep."paymentDate", ep."memo"
+      FROM "employee_payments" ep
+      JOIN "employees" e ON e."id" = ep."employeeId"
+      LEFT JOIN "accounts" a ON a."id" = COALESCE(ep."expenseAccountId", ${defaultAllowanceAccount?.id ?? null})
+      WHERE ep."companyId" = ${companyId} AND ep."category" = 'ALLOWANCE' AND e."costCenterId" = ${project.costCenterId}
+      ORDER BY ep."paymentDate" DESC
+    `;
   }
 
   // ── WBS tasks ────────────────────────────────────────────────────────

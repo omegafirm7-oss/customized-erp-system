@@ -101,6 +101,7 @@ interface Account {
   controlAccountType: string | null;
   isPostable: boolean;
   isActive: boolean;
+  accountClass?: { code: string; name: string };
 }
 
 interface CostCenter {
@@ -162,6 +163,7 @@ export function EmployeeDetailPage() {
   const navigate = useNavigate();
   const [employee, setEmployee] = useState<EmployeeDetail | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [expenseAccounts, setExpenseAccounts] = useState<Account[]>([]);
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -177,7 +179,14 @@ export function EmployeeDetailPage() {
   const [showPaidBreakdown, setShowPaidBreakdown] = useState(false);
   const [showPendingBreakdown, setShowPendingBreakdown] = useState(false);
   const [payments, setPayments] = useState<EmployeePayment[]>([]);
-  const [payForm, setPayForm] = useState({ category: "ALLOWANCE", amount: "", bankCashAccountId: "", paymentDate: new Date().toISOString().slice(0, 10), memo: "" });
+  const [payForm, setPayForm] = useState({
+    category: "ALLOWANCE",
+    amount: "",
+    bankCashAccountId: "",
+    expenseAccountId: "",
+    paymentDate: new Date().toISOString().slice(0, 10),
+    memo: "",
+  });
   const [recoveryOpenId, setRecoveryOpenId] = useState<string | null>(null);
   const [recoveryForm, setRecoveryForm] = useState({ amount: "", bankCashAccountId: "", recoveryDate: new Date().toISOString().slice(0, 10) });
 
@@ -225,6 +234,7 @@ export function EmployeeDetailPage() {
         (a) => a.isActive && a.isPostable && (a.controlAccountType === "BANK" || a.controlAccountType === "CASH"),
       ),
     );
+    setExpenseAccounts(accountsRes.data.filter((a) => a.isActive && a.isPostable && a.accountClass?.code === "EXPENSE"));
     setCostCenters(ccRes.data.filter((c) => c.isActive));
   }, [id]);
 
@@ -341,8 +351,19 @@ export function EmployeeDetailPage() {
     e.preventDefault();
     setError(null);
     try {
-      await apiClient.post(`/hr/employees/${id}/payments`, { ...payForm, memo: payForm.memo || undefined });
-      setPayForm({ category: "ALLOWANCE", amount: "", bankCashAccountId: "", paymentDate: new Date().toISOString().slice(0, 10), memo: "" });
+      await apiClient.post(`/hr/employees/${id}/payments`, {
+        ...payForm,
+        expenseAccountId: payForm.category === "ALLOWANCE" && payForm.expenseAccountId ? payForm.expenseAccountId : undefined,
+        memo: payForm.memo || undefined,
+      });
+      setPayForm({
+        category: "ALLOWANCE",
+        amount: "",
+        bankCashAccountId: "",
+        expenseAccountId: "",
+        paymentDate: new Date().toISOString().slice(0, 10),
+        memo: "",
+      });
       await load();
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "Failed to record payment");
@@ -771,6 +792,19 @@ export function EmployeeDetailPage() {
                   </option>
                 ))}
               </select>
+              {payForm.category === "ALLOWANCE" && (
+                <select
+                  value={payForm.expenseAccountId}
+                  onChange={(e) => setPayForm({ ...payForm, expenseAccountId: e.target.value })}
+                >
+                  <option value="">Expense account (default: Allowance Expense)</option>
+                  {expenseAccounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.code} — {a.name}
+                    </option>
+                  ))}
+                </select>
+              )}
               <input
                 type="date"
                 value={payForm.paymentDate}

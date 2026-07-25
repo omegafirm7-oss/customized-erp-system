@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { ControlAccountType, Prisma } from "@prisma/client";
+import { ControlAccountType, Prisma, ProjectCostCategory } from "@prisma/client";
 import { PrismaService } from "../common/prisma/prisma.service";
 import { DEFAULT_COA_TEMPLATE } from "../seed-data/default-coa";
 
@@ -44,6 +44,7 @@ export class CoaService {
           isPostable: entry.isPostable,
           normalBalance: entry.normalBalance,
           controlAccountType: entry.controlAccountType ?? null,
+          costCategory: entry.costCategory ?? null,
         },
       });
       codeToId.set(entry.code, created.id);
@@ -105,11 +106,15 @@ export class CoaService {
     return this.prisma.account.update({ where: { id: account.id }, data: { isActive: false } });
   }
 
-  async updateAccount(companyId: string, accountId: string, input: { name?: string; nameAr?: string }) {
+  async updateAccount(
+    companyId: string,
+    accountId: string,
+    input: { name?: string; nameAr?: string; costCategory?: ProjectCostCategory | null },
+  ) {
     const account = await this.getAccount(companyId, accountId);
     return this.prisma.account.update({
       where: { id: account.id },
-      data: { name: input.name, nameAr: input.nameAr },
+      data: { name: input.name, nameAr: input.nameAr, costCategory: input.costCategory },
     });
   }
 }

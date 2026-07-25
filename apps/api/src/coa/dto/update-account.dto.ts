@@ -1,5 +1,6 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { IsOptional, IsString } from "class-validator";
+import { ProjectCostCategory } from "@prisma/client";
+import { IsEnum, IsOptional, IsString } from "class-validator";
 
 export class UpdateAccountDto {
   @ApiProperty({ required: false })
@@ -11,4 +12,13 @@ export class UpdateAccountDto {
   @IsOptional()
   @IsString()
   nameAr?: string;
+
+  @ApiProperty({
+    required: false,
+    enum: ProjectCostCategory,
+    description: "Project Intelligence dashboard bucket; omit/null to clear (uncategorized → shown as Other)",
+  })
+  @IsOptional()
+  @IsEnum(ProjectCostCategory)
+  costCategory?: ProjectCostCategory | null;
 }

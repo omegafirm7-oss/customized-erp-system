@@ -47,11 +47,15 @@ export class EmployeePaymentsService {
           throw new BadRequestException("Amount must be positive");
         }
 
-        const controlType =
-          dto.category === EmployeePaymentCategory.ALLOWANCE
-            ? ControlAccountType.ALLOWANCE_EXPENSE
-            : ControlAccountType.EMPLOYEE_LOANS;
-        const debitAccount = await this.accountResolution.getControlAccount(tx, companyId, controlType);
+        const isAllowance = dto.category === EmployeePaymentCategory.ALLOWANCE;
+        const debitAccount =
+          isAllowance && dto.expenseAccountId
+            ? await this.accountResolution.getExpenseAccount(tx, companyId, dto.expenseAccountId)
+            : await this.accountResolution.getControlAccount(
+                tx,
+                companyId,
+                isAllowance ? ControlAccountType.ALLOWANCE_EXPENSE : ControlAccountType.EMPLOYEE_LOANS,
+              );
         const bankCashAccount = await this.accountResolution.getBankOrCashAccount(tx, companyId, dto.bankCashAccountId);
         const company = await tx.company.findUniqueOrThrow({ where: { id: companyId } });
         const paymentDate = dto.paymentDate ? new Date(dto.paymentDate) : new Date();
@@ -101,6 +105,7 @@ export class EmployeePaymentsService {
             amount,
             paymentDate,
             bankCashAccountId: bankCashAccount.id,
+            expenseAccountId: isAllowance ? debitAccount.id : null,
             memo: dto.memo,
             journalEntryId: entry.id,
             createdByUserId: userId,

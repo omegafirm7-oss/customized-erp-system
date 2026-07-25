@@ -49,6 +49,28 @@ export class ProjectsController {
     return this.projectsService.getCostBreakdown(companyId, id);
   }
 
+  @Get("projects/:id/intelligence")
+  @Permissions(PERMISSIONS.PROJECT_VIEW)
+  async getIntelligence(@CurrentCompanyId() companyId: string, @Param("id") id: string) {
+    return this.projectsService.getProjectIntelligence(companyId, id);
+  }
+
+  @Get("projects/:id/costs/accounts/:accountId/invoice-lines")
+  @Permissions(PERMISSIONS.PROJECT_VIEW)
+  async getAccountInvoiceLines(
+    @CurrentCompanyId() companyId: string,
+    @Param("id") id: string,
+    @Param("accountId") accountId: string,
+  ) {
+    return this.projectsService.getAccountInvoiceLines(companyId, id, accountId);
+  }
+
+  @Get("projects/:id/costs/labor")
+  @Permissions(PERMISSIONS.PROJECT_VIEW)
+  async getLaborPayments(@CurrentCompanyId() companyId: string, @Param("id") id: string) {
+    return this.projectsService.getLaborPayments(companyId, id);
+  }
+
   @Post("projects")
   @Permissions(PERMISSIONS.PROJECT_MANAGE)
   async create(@CurrentCompanyId() companyId: string, @CurrentUser() user: JwtPayload, @Body() dto: CreateProjectDto) {

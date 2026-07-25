@@ -31,6 +31,9 @@ import { StockTransferPage } from "./pages/StockTransferPage";
 import { StockAdjustmentPage } from "./pages/StockAdjustmentPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { ProjectDetailPage } from "./pages/ProjectDetailPage";
+import { ProjectCostCategoryPage } from "./pages/ProjectCostCategoryPage";
+import { ProjectCostAccountDetailPage } from "./pages/ProjectCostAccountDetailPage";
+import { ProjectLaborDetailPage } from "./pages/ProjectLaborDetailPage";
 import { ProjectProfitabilityPage } from "./pages/ProjectProfitabilityPage";
 import { WipSchedulePage } from "./pages/WipSchedulePage";
 import { EmployeesPage } from "./pages/EmployeesPage";
@@ -100,6 +103,9 @@ const companyRoutes: Array<{ path: string; element: JSX.Element }> = [
   { path: "/inventory/adjustments", element: <StockAdjustmentPage /> },
   { path: "/projects", element: <ProjectsPage /> },
   { path: "/projects/:id", element: <ProjectDetailPage /> },
+  { path: "/projects/:id/costs/labor", element: <ProjectLaborDetailPage /> },
+  { path: "/projects/:id/costs/accounts/:accountId", element: <ProjectCostAccountDetailPage /> },
+  { path: "/projects/:id/costs/:category", element: <ProjectCostCategoryPage /> },
   { path: "/reports/project-profitability", element: <ProjectProfitabilityPage /> },
   { path: "/reports/wip-schedule", element: <WipSchedulePage /> },
   { path: "/hr/employees", element: <EmployeesPage /> },

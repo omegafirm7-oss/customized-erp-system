@@ -377,4 +377,127 @@ describe("Projects — full job accounting (e2e)", () => {
       .set("Authorization", `Bearer ${b.accessToken}`)
       .expect(404);
   });
+
+  describe("Project Intelligence dashboard", () => {
+    async function postDraftInvoice(ctx: any, projectId: string, accountCode: string, gross: string, dateIso: string) {
+      const draft = await request(app.getHttpServer())
+        .post("/ap/invoices")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({
+          businessPartnerId: ctx.vendor.id,
+          vendorInvoiceNumber: `VND-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          postingDate: dateIso,
+          dueDate: dateIso,
+          lines: [
+            {
+              description: "Expense",
+              quantity: "1",
+              unitPrice: gross,
+              vatCategory: "ZERO_RATED",
+              accountId: ctx.accountByCode(accountCode).id,
+              projectId,
+            },
+          ],
+        })
+        .expect(201);
+      return draft.body;
+    }
+
+    it("buckets Material/Machinery costs from draft+posted invoices, leaves unmapped accounts in Other", async () => {
+      const ctx = await setupProjectContext();
+      const project = await createOverTimeProject(ctx);
+      const today = new Date().toISOString();
+
+      // 5104 Site Tools & Consumables → MATERIAL (stays DRAFT — must still count)
+      await postDraftInvoice(ctx, project.id, "5104", "300", today);
+      // 5103 Fuel & Lubricants → MACHINERY, posted this time
+      const fuelInvoice = await postDraftInvoice(ctx, project.id, "5103", "150", today);
+      await request(app.getHttpServer())
+        .post(`/ap/invoices/${fuelInvoice.id}/post`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(201);
+      // 5107 Site Transportation → unmapped → OTHER
+      await postDraftInvoice(ctx, project.id, "5107", "75", today);
+
+      const res = await request(app.getHttpServer())
+        .get(`/projects/${project.id}/intelligence`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+
+      expect(res.body.categories.MATERIAL.total).toBe("300.00");
+      expect(res.body.categories.MACHINERY.total).toBe("150.00");
+      expect(res.body.categories.OTHER.total).toBe("75.00");
+      expect(res.body.categories.LABOR.total).toBe("0.00");
+      expect(res.body.grandTotal).toBe("525.00");
+
+      const materialAccount = res.body.categories.MATERIAL.accounts.find((a: any) => a.code === "5104");
+      const lines = await request(app.getHttpServer())
+        .get(`/projects/${project.id}/costs/accounts/${materialAccount.id}/invoice-lines`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+      expect(lines.body).toHaveLength(1);
+      expect(lines.body[0].status).toBe("DRAFT");
+      expect(Number(lines.body[0].grossAmount)).toBe(300);
+    });
+
+    it("buckets Labor from ALLOWANCE employee payments, honoring an explicit expenseAccountId override", async () => {
+      const ctx = await setupProjectContext();
+      const project = await createOverTimeProject(ctx);
+
+      const employee = await request(app.getHttpServer())
+        .post("/hr/employees")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ code: "E1", nameEn: "Test Worker", joinDate: new Date().toISOString(), costCenterId: project.costCenterId })
+        .expect(201);
+
+      // Default: no expenseAccountId → falls to the ALLOWANCE_EXPENSE control account (5215)
+      await request(app.getHttpServer())
+        .post(`/hr/employees/${employee.body.id}/payments`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ category: "ALLOWANCE", amount: "80", bankCashAccountId: ctx.cashAccount.id })
+        .expect(201);
+
+      // Override: explicit expense account
+      const overrideAccount = ctx.accountByCode("5240");
+      await request(app.getHttpServer())
+        .post(`/hr/employees/${employee.body.id}/payments`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ category: "ALLOWANCE", amount: "20", bankCashAccountId: ctx.cashAccount.id, expenseAccountId: overrideAccount.id })
+        .expect(201);
+
+      const res = await request(app.getHttpServer())
+        .get(`/projects/${project.id}/intelligence`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+      expect(res.body.categories.LABOR.total).toBe("100.00");
+      const defaultRow = res.body.categories.LABOR.accounts.find((a: any) => a.code === "5215");
+      const overrideRow = res.body.categories.LABOR.accounts.find((a: any) => a.code === "5240");
+      expect(defaultRow.amount).toBe("80.00");
+      expect(overrideRow.amount).toBe("20.00");
+
+      const payments = await request(app.getHttpServer())
+        .get(`/projects/${project.id}/costs/labor`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+      expect(payments.body).toHaveLength(2);
+      expect(payments.body.every((p: any) => p.employeeCode === "E1")).toBe(true);
+    });
+
+    it("rejects an ADVANCE payment's expenseAccountId as irrelevant (ADVANCE ignores it) and rejects a non-expense override account", async () => {
+      const ctx = await setupProjectContext();
+      const employee = await request(app.getHttpServer())
+        .post("/hr/employees")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ code: "E2", nameEn: "Another Worker", joinDate: new Date().toISOString() })
+        .expect(201);
+
+      // A non-EXPENSE account (e.g. 1110 Petty Cash, an ASSET) must be rejected as an allowance override
+      const badOverride = await request(app.getHttpServer())
+        .post(`/hr/employees/${employee.body.id}/payments`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ category: "ALLOWANCE", amount: "10", bankCashAccountId: ctx.cashAccount.id, expenseAccountId: ctx.cashAccount.id })
+        .expect(400);
+      expect(badOverride.body.message).toContain("not an expense account");
+    });
+  });
 });

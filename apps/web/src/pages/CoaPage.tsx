@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useState } from "react";
 import { apiClient } from "../api/client";
 
+type CostCategory = "MATERIAL" | "MACHINERY" | "LABOR" | null;
+
 interface Account {
   id: string;
   code: string;
@@ -9,7 +11,14 @@ interface Account {
   isPostable: boolean;
   normalBalance: "DEBIT" | "CREDIT";
   accountClass: { code: string; name: string };
+  costCategory?: CostCategory;
 }
+
+const COST_CATEGORY_LABELS: Record<string, string> = {
+  MATERIAL: "Material",
+  MACHINERY: "Machinery",
+  LABOR: "Labor",
+};
 
 // The sub-classes a manually-added expense/revenue account would normally
 // use — asset/liability/equity sub-classes exist too but adding those
@@ -44,8 +53,10 @@ function AccountRow({
   depth,
   editingId,
   editName,
+  editCostCategory,
   onStartEdit,
   onChangeEditName,
+  onChangeEditCostCategory,
   onSaveEdit,
   onCancelEdit,
 }: {
@@ -53,8 +64,10 @@ function AccountRow({
   depth: number;
   editingId: string | null;
   editName: string;
+  editCostCategory: string;
   onStartEdit: (node: AccountNode) => void;
   onChangeEditName: (value: string) => void;
+  onChangeEditCostCategory: (value: string) => void;
   onSaveEdit: () => void;
   onCancelEdit: () => void;
 }) {
@@ -75,6 +88,14 @@ function AccountRow({
                   if (e.key === "Escape") onCancelEdit();
                 }}
               />
+              {node.isPostable && node.accountClass.code === "EXPENSE" && (
+                <select value={editCostCategory} onChange={(e) => onChangeEditCostCategory(e.target.value)}>
+                  <option value="">(uncategorized — Other)</option>
+                  <option value="MATERIAL">Material</option>
+                  <option value="MACHINERY">Machinery</option>
+                  <option value="LABOR">Labor</option>
+                </select>
+              )}
               <button type="button" onClick={onSaveEdit}>
                 Save
               </button>
@@ -91,6 +112,7 @@ function AccountRow({
         <td>{node.accountClass.name}</td>
         <td>{node.normalBalance}</td>
         <td>{node.isPostable ? "Postable" : "Header"}</td>
+        <td>{node.costCategory ? COST_CATEGORY_LABELS[node.costCategory] : node.accountClass.code === "EXPENSE" && node.isPostable ? "Other" : ""}</td>
         <td>
           {!isEditing && (
             <button type="button" className="secondary" onClick={() => onStartEdit(node)}>
@@ -106,8 +128,10 @@ function AccountRow({
           depth={depth + 1}
           editingId={editingId}
           editName={editName}
+          editCostCategory={editCostCategory}
           onStartEdit={onStartEdit}
           onChangeEditName={onChangeEditName}
+          onChangeEditCostCategory={onChangeEditCostCategory}
           onSaveEdit={onSaveEdit}
           onCancelEdit={onCancelEdit}
         />
@@ -129,15 +153,18 @@ export function CoaPage() {
   const [submitting, setSubmitting] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [editCostCategory, setEditCostCategory] = useState("");
 
   function startEdit(node: AccountNode) {
     setEditingId(node.id);
     setEditName(node.name);
+    setEditCostCategory(node.costCategory ?? "");
   }
 
   function cancelEdit() {
     setEditingId(null);
     setEditName("");
+    setEditCostCategory("");
   }
 
   async function saveEdit() {
@@ -145,9 +172,10 @@ export function CoaPage() {
     const trimmed = editName.trim();
     if (!trimmed) return;
     try {
-      await apiClient.patch(`/coa/accounts/${editingId}`, { name: trimmed });
+      await apiClient.patch(`/coa/accounts/${editingId}`, { name: trimmed, costCategory: editCostCategory || null });
       setEditingId(null);
       setEditName("");
+      setEditCostCategory("");
       await load();
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "Failed to rename account");
@@ -243,6 +271,7 @@ export function CoaPage() {
               <th>Class</th>
               <th>Normal Balance</th>
               <th>Type</th>
+              <th>Project Cost Category</th>
               <th></th>
             </tr>
           </thead>
@@ -254,8 +283,10 @@ export function CoaPage() {
                 depth={0}
                 editingId={editingId}
                 editName={editName}
+                editCostCategory={editCostCategory}
                 onStartEdit={startEdit}
                 onChangeEditName={setEditName}
+                onChangeEditCostCategory={setEditCostCategory}
                 onSaveEdit={saveEdit}
                 onCancelEdit={cancelEdit}
               />

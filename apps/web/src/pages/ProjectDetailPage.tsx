@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 
 interface WbsTask {
@@ -48,6 +48,11 @@ interface CostBreakdown {
   byAccount: CostBreakdownRow[];
 }
 
+interface IntelligenceSummary {
+  categories: Record<"MATERIAL" | "MACHINERY" | "LABOR" | "OTHER", { total: string; accounts: unknown[] }>;
+  grandTotal: string;
+}
+
 interface FiscalPeriod {
   id: string;
   periodNumber: number;
@@ -73,17 +78,20 @@ export function ProjectDetailPage() {
   const [taskForm, setTaskForm] = useState({ code: "", name: "", parentTaskId: "", costBudget: "" });
   const [estimates, setEstimates] = useState({ name: "", contractValue: "", estimatedTotalCost: "" });
   const [costBreakdown, setCostBreakdown] = useState<CostBreakdown | null>(null);
+  const [intelligence, setIntelligence] = useState<IntelligenceSummary | null>(null);
   const [costCenterForm, setCostCenterForm] = useState({ code: "", name: "" });
 
   const load = useCallback(async () => {
-    const [projectRes, periodsRes, breakdownRes] = await Promise.all([
+    const [projectRes, periodsRes, breakdownRes, intelligenceRes] = await Promise.all([
       apiClient.get<ProjectDetail>(`/projects/${id}`),
       apiClient.get<FiscalPeriod[]>("/companies/current/fiscal-periods"),
       apiClient.get<CostBreakdown>(`/projects/${id}/cost-breakdown`),
+      apiClient.get<IntelligenceSummary>(`/projects/${id}/intelligence`),
     ]);
     setProject(projectRes.data);
     setPeriods(periodsRes.data);
     setCostBreakdown(breakdownRes.data);
+    setIntelligence(intelligenceRes.data);
     setEstimates({
       name: projectRes.data.name,
       contractValue: projectRes.data.contractValue,
@@ -281,6 +289,22 @@ export function ProjectDetailPage() {
           </button>
         </form>
       </div>
+
+      {intelligence && (
+        <div className="card">
+          <h3>Project Intelligence</h3>
+          <div className="form-row">
+            {(["MATERIAL", "MACHINERY", "LABOR", "OTHER"] as const).map((cat) => (
+              <Link key={cat} to={`/projects/${id}/costs/${cat.toLowerCase()}`} style={{ textDecoration: "none" }}>
+                <div className="kpi-tile" style={{ cursor: "pointer" }}>
+                  <div>{cat === "MATERIAL" ? "Material" : cat === "MACHINERY" ? "Machinery" : cat === "LABOR" ? "Labor" : "Other"}</div>
+                  <strong>{Number(intelligence.categories[cat]?.total ?? 0).toFixed(2)}</strong>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {costBreakdown && (
         <div className="card">
