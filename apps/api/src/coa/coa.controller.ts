@@ -1,10 +1,11 @@
-import { Body, Controller, Delete, Get, Param, Post } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { Permissions } from "../common/decorators/permissions.decorator";
 import { CurrentCompanyId } from "../common/decorators/current-company-id.decorator";
 import { PERMISSIONS } from "@erp/shared-constants";
 import { CoaService } from "./coa.service";
 import { CreateAccountDto } from "./dto/create-account.dto";
+import { UpdateAccountDto } from "./dto/update-account.dto";
 
 // JwtAuthGuard + PermissionsGuard are registered globally in AppModule.
 @ApiTags("chart-of-accounts")
@@ -29,6 +30,12 @@ export class CoaController {
   @Permissions(PERMISSIONS.COA_ACCOUNT_MANAGE)
   async create(@CurrentCompanyId() companyId: string, @Body() dto: CreateAccountDto) {
     return this.coaService.createAccount(companyId, dto);
+  }
+
+  @Patch(":id")
+  @Permissions(PERMISSIONS.COA_ACCOUNT_MANAGE)
+  async update(@CurrentCompanyId() companyId: string, @Param("id") id: string, @Body() dto: UpdateAccountDto) {
+    return this.coaService.updateAccount(companyId, id, dto);
   }
 
   @Delete(":id")

@@ -39,18 +39,78 @@ function buildTree(accounts: Account[]): AccountNode[] {
   return roots;
 }
 
-function AccountRow({ node, depth }: { node: AccountNode; depth: number }) {
+function AccountRow({
+  node,
+  depth,
+  editingId,
+  editName,
+  onStartEdit,
+  onChangeEditName,
+  onSaveEdit,
+  onCancelEdit,
+}: {
+  node: AccountNode;
+  depth: number;
+  editingId: string | null;
+  editName: string;
+  onStartEdit: (node: AccountNode) => void;
+  onChangeEditName: (value: string) => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
+}) {
+  const isEditing = editingId === node.id;
   return (
     <>
       <tr>
         <td style={{ paddingLeft: 10 + depth * 20 }}>{node.code}</td>
-        <td>{node.isPostable ? node.name : <strong>{node.name}</strong>}</td>
+        <td>
+          {isEditing ? (
+            <div className="form-row" style={{ margin: 0 }}>
+              <input
+                value={editName}
+                onChange={(e) => onChangeEditName(e.target.value)}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") onSaveEdit();
+                  if (e.key === "Escape") onCancelEdit();
+                }}
+              />
+              <button type="button" onClick={onSaveEdit}>
+                Save
+              </button>
+              <button type="button" className="secondary" onClick={onCancelEdit}>
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <span onDoubleClick={() => onStartEdit(node)}>
+              {node.isPostable ? node.name : <strong>{node.name}</strong>}
+            </span>
+          )}
+        </td>
         <td>{node.accountClass.name}</td>
         <td>{node.normalBalance}</td>
         <td>{node.isPostable ? "Postable" : "Header"}</td>
+        <td>
+          {!isEditing && (
+            <button type="button" className="secondary" onClick={() => onStartEdit(node)}>
+              Rename
+            </button>
+          )}
+        </td>
       </tr>
       {node.children.map((child) => (
-        <AccountRow key={child.id} node={child} depth={depth + 1} />
+        <AccountRow
+          key={child.id}
+          node={child}
+          depth={depth + 1}
+          editingId={editingId}
+          editName={editName}
+          onStartEdit={onStartEdit}
+          onChangeEditName={onChangeEditName}
+          onSaveEdit={onSaveEdit}
+          onCancelEdit={onCancelEdit}
+        />
       ))}
     </>
   );
@@ -67,6 +127,32 @@ export function CoaPage() {
   });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+
+  function startEdit(node: AccountNode) {
+    setEditingId(node.id);
+    setEditName(node.name);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditName("");
+  }
+
+  async function saveEdit() {
+    if (!editingId) return;
+    const trimmed = editName.trim();
+    if (!trimmed) return;
+    try {
+      await apiClient.patch(`/coa/accounts/${editingId}`, { name: trimmed });
+      setEditingId(null);
+      setEditName("");
+      await load();
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to rename account");
+    }
+  }
 
   function load() {
     setLoading(true);
@@ -157,11 +243,22 @@ export function CoaPage() {
               <th>Class</th>
               <th>Normal Balance</th>
               <th>Type</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
             {tree.map((root) => (
-              <AccountRow key={root.id} node={root} depth={0} />
+              <AccountRow
+                key={root.id}
+                node={root}
+                depth={0}
+                editingId={editingId}
+                editName={editName}
+                onStartEdit={startEdit}
+                onChangeEditName={setEditName}
+                onSaveEdit={saveEdit}
+                onCancelEdit={cancelEdit}
+              />
             ))}
           </tbody>
         </table>

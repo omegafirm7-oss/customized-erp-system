@@ -104,4 +104,12 @@ export class CoaService {
     const account = await this.getAccount(companyId, accountId);
     return this.prisma.account.update({ where: { id: account.id }, data: { isActive: false } });
   }
+
+  async updateAccount(companyId: string, accountId: string, input: { name?: string; nameAr?: string }) {
+    const account = await this.getAccount(companyId, accountId);
+    return this.prisma.account.update({
+      where: { id: account.id },
+      data: { name: input.name, nameAr: input.nameAr },
+    });
+  }
 }
