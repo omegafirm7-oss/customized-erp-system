@@ -328,3 +328,266 @@ button.danger:hover:not(:disabled) {
   color: #912018;
   font-weight: 600;
 }
+
+/* Project Intelligence dashboard — bigger, glassy premium tiles meant to be
+   presented to leadership, distinct from the plain .kpi-tile grid used
+   elsewhere. Each category gets its own gradient identity. */
+.intelligence-board {
+  background: linear-gradient(135deg, #0b1220 0%, #101828 55%, #14203a 100%);
+  border-radius: 20px;
+  padding: 28px 28px 24px;
+  margin-bottom: 20px;
+  box-shadow: 0 20px 50px rgba(16, 24, 40, 0.28);
+}
+
+.intelligence-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.intelligence-title {
+  color: #fff;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  margin: 0;
+}
+
+.intelligence-subtitle {
+  color: #9aa7bd;
+  font-size: 13px;
+  margin: 2px 0 0;
+}
+
+.intelligence-grandtotal {
+  color: #fff;
+  text-align: right;
+}
+
+.intelligence-grandtotal .label {
+  color: #9aa7bd;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+
+.intelligence-grandtotal .value {
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.intelligence-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 18px;
+}
+
+.intelligence-tile {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  padding: 22px 22px 20px;
+  min-height: 148px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  text-decoration: none;
+  color: #fff;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(6px);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+}
+
+.intelligence-tile::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 85% -10%, rgba(255, 255, 255, 0.22), transparent 55%);
+  pointer-events: none;
+}
+
+.intelligence-tile:hover {
+  transform: translateY(-4px) scale(1.015);
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.32);
+}
+
+.intelligence-tile .icon {
+  font-size: 26px;
+  opacity: 0.9;
+}
+
+.intelligence-tile .label {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.92;
+  margin-top: 10px;
+}
+
+.intelligence-tile .value {
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1.1;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.intelligence-tile .hint {
+  font-size: 12px;
+  opacity: 0.85;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.intelligence-tile.material {
+  background: linear-gradient(160deg, #b45309 0%, #92400e 60%, #78350f 100%);
+}
+
+.intelligence-tile.machinery {
+  background: linear-gradient(160deg, #1d4ed8 0%, #1e40af 60%, #1e3a8a 100%);
+}
+
+.intelligence-tile.labor {
+  background: linear-gradient(160deg, #7c3aed 0%, #6d28d9 60%, #5b21b6 100%);
+}
+
+.intelligence-tile.other {
+  background: linear-gradient(160deg, #475569 0%, #334155 60%, #1e293b 100%);
+}
+
+/* Drill-down pages reuse the dark header treatment for a consistent feel. */
+.intelligence-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #475569;
+  font-size: 13px;
+  text-decoration: none;
+  margin-bottom: 14px;
+}
+
+.intelligence-crumb:hover {
+  color: #1e4fa3;
+}
+
+.intelligence-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.intelligence-panel-title {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+  color: #101828;
+}
+
+.intelligence-total-pill {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  background: linear-gradient(135deg, #101828, #1e293b);
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.intelligence-total-pill .label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.75;
+  font-weight: 600;
+}
+
+.intelligence-total-pill .value {
+  font-size: 18px;
+}
+
+.intelligence-account-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.intelligence-account-card {
+  background: #fff;
+  border: 1px solid #e4e7ec;
+  border-radius: 14px;
+  padding: 18px 20px;
+  text-decoration: none;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: box-shadow 0.15s, transform 0.15s, border-color 0.15s;
+}
+
+.intelligence-account-card:hover {
+  box-shadow: 0 10px 24px rgba(16, 24, 40, 0.12);
+  transform: translateY(-2px);
+  border-color: #c7d2e0;
+}
+
+.intelligence-account-card .code {
+  font-size: 11px;
+  font-weight: 700;
+  color: #667085;
+  letter-spacing: 0.04em;
+}
+
+.intelligence-account-card .name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #101828;
+}
+
+.intelligence-account-card .amount {
+  font-size: 22px;
+  font-weight: 800;
+  color: #101828;
+  margin-top: 4px;
+}
+
+.intelligence-account-card .arrow {
+  font-size: 12px;
+  color: #1e4fa3;
+  font-weight: 600;
+  margin-top: 6px;
+}
+
+.source-pill {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.source-pill.allowance {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.source-pill.payroll {
+  background: #dbeafe;
+  color: #1e40af;
+}

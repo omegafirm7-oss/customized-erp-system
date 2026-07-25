@@ -416,8 +416,8 @@ describe("Projects — full job accounting (e2e)", () => {
         .post(`/ap/invoices/${fuelInvoice.id}/post`)
         .set("Authorization", `Bearer ${ctx.accessToken}`)
         .expect(201);
-      // 5107 Site Transportation → unmapped → OTHER
-      await postDraftInvoice(ctx, project.id, "5107", "75", today);
+      // 5220 Utilities Expense → unmapped → OTHER
+      await postDraftInvoice(ctx, project.id, "5220", "75", today);
 
       const res = await request(app.getHttpServer())
         .get(`/projects/${project.id}/intelligence`)

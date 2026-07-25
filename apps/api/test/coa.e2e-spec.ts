@@ -20,7 +20,15 @@ describe("Chart of Accounts — rename & Project Intelligence category (e2e)", (
     expect(ctx.accountByCode("5102").costCategory).toBe("MACHINERY");
     expect(ctx.accountByCode("5103").costCategory).toBe("MACHINERY");
     expect(ctx.accountByCode("5215").costCategory).toBe("LABOR");
-    expect(ctx.accountByCode("5107").costCategory).toBeNull();
+    expect(ctx.accountByCode("5107").costCategory).toBe("MACHINERY");
+    expect(ctx.accountByCode("5108").costCategory).toBe("MATERIAL");
+    expect(ctx.accountByCode("5109").costCategory).toBe("MATERIAL");
+    expect(ctx.accountByCode("5110").costCategory).toBe("MATERIAL");
+    expect(ctx.accountByCode("5200").costCategory).toBe("LABOR");
+    expect(ctx.accountByCode("5250").costCategory).toBe("LABOR");
+    expect(ctx.accountByCode("5260").costCategory).toBe("LABOR");
+    expect(ctx.accountByCode("5270").costCategory).toBe("LABOR");
+    expect(ctx.accountByCode("5220").costCategory).toBeNull();
   });
 
   it("renames an account and sets/clears its cost category via PATCH", async () => {

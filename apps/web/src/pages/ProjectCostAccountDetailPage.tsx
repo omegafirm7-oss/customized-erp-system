@@ -32,19 +32,21 @@ export function ProjectCostAccountDetailPage() {
   const totalGross = lines.reduce((sum, l) => sum + Number(l.grossAmount), 0);
 
   return (
-    <div className="card">
-      <p>
-        <Link to={`/projects/${id}`}>← Back to project</Link>
-      </p>
-      <h2>Recorded purchase invoice lines</h2>
-      <div className="form-row">
-        <div className="kpi-tile">
-          <div>Net</div>
-          <strong>{totalNet.toFixed(2)}</strong>
-        </div>
-        <div className="kpi-tile">
-          <div>Gross</div>
-          <strong>{totalGross.toFixed(2)}</strong>
+    <div className="intelligence-board">
+      <Link to={`/projects/${id}`} className="intelligence-crumb">
+        ← Back to project
+      </Link>
+      <div className="intelligence-panel-header">
+        <div className="intelligence-panel-title">Recorded purchase invoice lines</div>
+        <div style={{ display: "flex", gap: 12 }}>
+          <div className="intelligence-total-pill">
+            <div className="label">Net</div>
+            <div className="value">{totalNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          </div>
+          <div className="intelligence-total-pill">
+            <div className="label">Gross</div>
+            <div className="value">{totalGross.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          </div>
         </div>
       </div>
       <table>

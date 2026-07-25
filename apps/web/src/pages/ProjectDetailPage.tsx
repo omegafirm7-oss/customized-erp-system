@@ -291,17 +291,36 @@ export function ProjectDetailPage() {
       </div>
 
       {intelligence && (
-        <div className="card">
-          <h3>Project Intelligence</h3>
-          <div className="form-row">
-            {(["MATERIAL", "MACHINERY", "LABOR", "OTHER"] as const).map((cat) => (
-              <Link key={cat} to={`/projects/${id}/costs/${cat.toLowerCase()}`} style={{ textDecoration: "none" }}>
-                <div className="kpi-tile" style={{ cursor: "pointer" }}>
-                  <div>{cat === "MATERIAL" ? "Material" : cat === "MACHINERY" ? "Machinery" : cat === "LABOR" ? "Labor" : "Other"}</div>
-                  <strong>{Number(intelligence.categories[cat]?.total ?? 0).toFixed(2)}</strong>
-                </div>
-              </Link>
-            ))}
+        <div className="intelligence-board">
+          <div className="intelligence-header">
+            <div>
+              <div className="intelligence-title">Project Intelligence</div>
+              <div className="intelligence-subtitle">Live cost breakdown across every purchase invoice and payroll posting for this project</div>
+            </div>
+            <div className="intelligence-grandtotal">
+              <div className="label">Grand total</div>
+              <div className="value">{Number(intelligence.grandTotal ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            </div>
+          </div>
+          <div className="intelligence-grid">
+            {(["MATERIAL", "MACHINERY", "LABOR", "OTHER"] as const).map((cat) => {
+              const meta = {
+                MATERIAL: { label: "Material", icon: "\u{1F4E6}", hint: "Consumables, PPE, welfare, supplies" },
+                MACHINERY: { label: "Machinery", icon: "\u{1F69C}", hint: "Rental, fuel & equipment costs" },
+                LABOR: { label: "Labor", icon: "\u{1F477}", hint: "Allowances, salaries & payroll costs" },
+                OTHER: { label: "Other", icon: "\u{1F4CB}", hint: "Uncategorized project expenses" },
+              }[cat];
+              return (
+                <Link key={cat} to={`/projects/${id}/costs/${cat.toLowerCase()}`} style={{ textDecoration: "none" }}>
+                  <div className={`intelligence-tile ${cat.toLowerCase()}`}>
+                    <div className="icon">{meta.icon}</div>
+                    <div className="label">{meta.label}</div>
+                    <div className="value">{Number(intelligence.categories[cat]?.total ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    <div className="hint">{meta.hint}</div>
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         </div>
       )}

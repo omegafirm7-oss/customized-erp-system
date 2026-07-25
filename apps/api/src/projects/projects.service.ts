@@ -229,11 +229,16 @@ export class ProjectsService {
    * Material & Machinery are sourced live from purchase-invoice lines
    * (every non-cancelled status, drafts included — this is the "detailed
    * expenses recorded in purchase invoices" view, distinct from
-   * getCostBreakdown's posted-GL-only totals above). Labor is sourced from
-   * EmployeePayment (ALLOWANCE category) instead, since allowances post
-   * straight to the GL via EmployeePaymentsService and never create a
-   * purchase-invoice line — the two sources never overlap, so nothing here
-   * needs deduping against getCostBreakdown or against each other.
+   * getCostBreakdown's posted-GL-only totals above).
+   *
+   * Labor is sourced from TWO places that never overlap:
+   *  (a) EmployeePayment (ALLOWANCE category) — posts straight to GL, never
+   *      creates a purchase-invoice line.
+   *  (b) Salaries/GOSI/EOSB/Leave GL postings from posted Payroll runs,
+   *      tagged with the employee's (project's) cost center — explicitly
+   *      excluding any journal entry that belongs to an EmployeePayment, so
+   *      an allowance overridden onto e.g. the Salaries account is still
+   *      only counted once.
    */
   async getProjectIntelligence(companyId: string, projectId: string) {
     const project = await this.getOwned(companyId, projectId);
@@ -255,7 +260,7 @@ export class ProjectsService {
       .getControlAccount(this.prisma, companyId, ControlAccountType.ALLOWANCE_EXPENSE)
       .catch(() => null);
 
-    const laborRows = defaultAllowanceAccount
+    const allowanceRows = defaultAllowanceAccount
       ? await this.prisma.$queryRaw<Row[]>`
           SELECT a."id", a."code", a."name", a."costCategory", SUM(ep."amount") AS "amount"
           FROM "employee_payments" ep
@@ -267,6 +272,22 @@ export class ProjectsService {
           ORDER BY a."code"
         `
       : [];
+
+    const payrollRows = await this.prisma.$queryRaw<Row[]>`
+      SELECT a."id", a."code", a."name", a."costCategory", SUM(jel."debit" - jel."credit") AS "amount"
+      FROM "journal_entry_lines" jel
+      JOIN "journal_entries" je ON je."id" = jel."journalEntryId"
+      JOIN "accounts" a ON a."id" = jel."accountId"
+      WHERE jel."costCenterId" = ${project.costCenterId}
+        AND je."status" IN ('POSTED', 'REVERSED')
+        AND a."controlAccountType" IN ('SALARY_EXPENSE', 'GOSI_EXPENSE', 'EOSB_EXPENSE', 'LEAVE_EXPENSE')
+        AND je."id" NOT IN (
+          SELECT "journalEntryId" FROM "employee_payments"
+          WHERE "companyId" = ${companyId} AND "journalEntryId" IS NOT NULL
+        )
+      GROUP BY a."id", a."code", a."name", a."costCategory"
+      ORDER BY a."code"
+    `;
 
     const categories: Record<
       "MATERIAL" | "MACHINERY" | "LABOR" | "OTHER",
@@ -285,8 +306,9 @@ export class ProjectsService {
     };
 
     // invoiceRows bucket by the account's own costCategory tag (Material/Machinery/Other);
-    // laborRows always land in LABOR regardless of the resolved account's tag — an allowance
-    // paid to an untagged (or even Material/Machinery-tagged) account is still a labor cost.
+    // Labor rows (allowance + payroll) always land in LABOR regardless of the resolved
+    // account's tag, and are merged by account id first so the same account appearing in
+    // both sources (edge case) still produces one row.
     for (const row of invoiceRows) {
       const bucket = row.costCategory ?? "OTHER";
       const amount = new Prisma.Decimal(row.amount);
@@ -298,11 +320,21 @@ export class ProjectsService {
         amount: amount.toFixed(2),
       });
     }
-    for (const row of laborRows) {
+    const laborByAccount = new Map<string, { code: string; name: string; amount: Prisma.Decimal }>();
+    for (const row of [...allowanceRows, ...payrollRows]) {
+      const existing = laborByAccount.get(row.id);
       const amount = new Prisma.Decimal(row.amount);
-      totals.LABOR = totals.LABOR.add(amount);
-      categories.LABOR.accounts.push({ id: row.id, code: row.code, name: row.name, amount: amount.toFixed(2) });
+      laborByAccount.set(row.id, {
+        code: row.code,
+        name: row.name,
+        amount: existing ? existing.amount.add(amount) : amount,
+      });
     }
+    for (const [id, row] of laborByAccount) {
+      totals.LABOR = totals.LABOR.add(row.amount);
+      categories.LABOR.accounts.push({ id, code: row.code, name: row.name, amount: row.amount.toFixed(2) });
+    }
+    categories.LABOR.accounts.sort((a, b) => a.code.localeCompare(b.code));
     for (const key of Object.keys(categories) as Array<keyof typeof categories>) {
       categories[key].total = totals[key].toFixed(2);
     }
@@ -349,26 +381,53 @@ export class ProjectsService {
       .getControlAccount(this.prisma, companyId, ControlAccountType.ALLOWANCE_EXPENSE)
       .catch(() => null);
 
-    return this.prisma.$queryRaw<
-      Array<{
-        employeeId: string;
-        employeeCode: string;
-        employeeName: string;
-        accountCode: string | null;
-        accountName: string | null;
-        amount: Prisma.Decimal;
-        paymentDate: Date;
-        memo: string | null;
-      }>
-    >`
-      SELECT e."id" AS "employeeId", e."code" AS "employeeCode", e."nameEn" AS "employeeName",
-             a."code" AS "accountCode", a."name" AS "accountName", ep."amount", ep."paymentDate", ep."memo"
+    type Row = {
+      source: "ALLOWANCE" | "PAYROLL";
+      employeeId: string | null;
+      employeeCode: string | null;
+      employeeName: string | null;
+      accountCode: string | null;
+      accountName: string | null;
+      amount: Prisma.Decimal;
+      date: Date;
+      memo: string | null;
+      payrollRunId: string | null;
+      payrollRunNumber: string | null;
+    };
+
+    const allowancePayments = await this.prisma.$queryRaw<Row[]>`
+      SELECT 'ALLOWANCE' AS "source", e."id" AS "employeeId", e."code" AS "employeeCode", e."nameEn" AS "employeeName",
+             a."code" AS "accountCode", a."name" AS "accountName", ep."amount", ep."paymentDate" AS "date", ep."memo",
+             NULL AS "payrollRunId", NULL AS "payrollRunNumber"
       FROM "employee_payments" ep
       JOIN "employees" e ON e."id" = ep."employeeId"
       LEFT JOIN "accounts" a ON a."id" = COALESCE(ep."expenseAccountId", ${defaultAllowanceAccount?.id ?? null})
       WHERE ep."companyId" = ${companyId} AND ep."category" = 'ALLOWANCE' AND e."costCenterId" = ${project.costCenterId}
-      ORDER BY ep."paymentDate" DESC
     `;
+
+    // Payroll runs stamp costCenterId at the line level (per employee), but
+    // the debit legs on the GL entry only carry it at the JE-line level —
+    // group by (run, account) rather than trying to attribute to one
+    // employee, and link out to the payroll run's own full breakdown.
+    const payrollPostings = await this.prisma.$queryRaw<Row[]>`
+      SELECT 'PAYROLL' AS "source", NULL AS "employeeId", NULL AS "employeeCode", NULL AS "employeeName",
+             a."code" AS "accountCode", a."name" AS "accountName", SUM(jel."debit" - jel."credit") AS "amount",
+             pr."runDate" AS "date", NULL AS "memo", pr."id" AS "payrollRunId", pr."runNumber" AS "payrollRunNumber"
+      FROM "journal_entry_lines" jel
+      JOIN "journal_entries" je ON je."id" = jel."journalEntryId"
+      JOIN "accounts" a ON a."id" = jel."accountId"
+      JOIN "payroll_runs" pr ON pr."id" = je."sourceDocumentId" AND pr."companyId" = ${companyId}
+      WHERE jel."costCenterId" = ${project.costCenterId}
+        AND je."status" IN ('POSTED', 'REVERSED')
+        AND a."controlAccountType" IN ('SALARY_EXPENSE', 'GOSI_EXPENSE', 'EOSB_EXPENSE', 'LEAVE_EXPENSE')
+        AND je."id" NOT IN (
+          SELECT "journalEntryId" FROM "employee_payments"
+          WHERE "companyId" = ${companyId} AND "journalEntryId" IS NOT NULL
+        )
+      GROUP BY a."code", a."name", pr."id", pr."runDate", pr."runNumber"
+    `;
+
+    return [...allowancePayments, ...payrollPostings].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }
 
   // ── WBS tasks ────────────────────────────────────────────────────────
