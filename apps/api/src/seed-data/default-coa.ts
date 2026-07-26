@@ -90,6 +90,7 @@ export const DEFAULT_COA_TEMPLATE: DefaultCoaEntry[] = [
   { code: "5108", name: "Site Welfare (Food & Petty Cash)", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT", costCategory: "MATERIAL" },
   { code: "5109", name: "Printing & Engineering (Project)", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT", costCategory: "MATERIAL" },
   { code: "5110", name: "Site Office Supplies", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT", costCategory: "MATERIAL" },
+  { code: "5112", name: "Project Salaries & Wages", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT", controlAccountType: "PROJECT_SALARY_EXPENSE", costCategory: "LABOR" },
   { code: "5150", name: "Inventory Adjustment Gain/Loss", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT", controlAccountType: "INVENTORY_ADJUSTMENT" },
   { code: "5200", name: "Salaries & Wages", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT", controlAccountType: "SALARY_EXPENSE", costCategory: "LABOR" },
   { code: "5210", name: "Rent Expense", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT" },

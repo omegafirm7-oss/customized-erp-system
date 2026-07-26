@@ -280,7 +280,7 @@ export class ProjectsService {
       JOIN "accounts" a ON a."id" = jel."accountId"
       WHERE jel."costCenterId" = ${project.costCenterId}
         AND je."status" IN ('POSTED', 'REVERSED')
-        AND a."controlAccountType" IN ('SALARY_EXPENSE', 'GOSI_EXPENSE', 'EOSB_EXPENSE', 'LEAVE_EXPENSE')
+        AND a."controlAccountType" IN ('SALARY_EXPENSE', 'PROJECT_SALARY_EXPENSE', 'GOSI_EXPENSE', 'EOSB_EXPENSE', 'LEAVE_EXPENSE')
         AND je."id" NOT IN (
           SELECT "journalEntryId" FROM "employee_payments"
           WHERE "companyId" = ${companyId} AND "journalEntryId" IS NOT NULL
@@ -419,7 +419,7 @@ export class ProjectsService {
       JOIN "payroll_runs" pr ON pr."id" = je."sourceDocumentId" AND pr."companyId" = ${companyId}
       WHERE jel."costCenterId" = ${project.costCenterId}
         AND je."status" IN ('POSTED', 'REVERSED')
-        AND a."controlAccountType" IN ('SALARY_EXPENSE', 'GOSI_EXPENSE', 'EOSB_EXPENSE', 'LEAVE_EXPENSE')
+        AND a."controlAccountType" IN ('SALARY_EXPENSE', 'PROJECT_SALARY_EXPENSE', 'GOSI_EXPENSE', 'EOSB_EXPENSE', 'LEAVE_EXPENSE')
         AND je."id" NOT IN (
           SELECT "journalEntryId" FROM "employee_payments"
           WHERE "companyId" = ${companyId} AND "journalEntryId" IS NOT NULL

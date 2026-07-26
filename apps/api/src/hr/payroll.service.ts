@@ -597,9 +597,12 @@ export class PayrollService {
     lines: ComputedLine[],
     runNumber: string,
   ): Promise<PostedEntryLineInput[]> {
-    const [salaryExp, gosiExp, eosbExp, leaveExp, gosiPay, salariesPay, loansCtl, eosbProv, leaveProv] =
+    const [salaryExp, projectSalaryExp, gosiExp, eosbExp, leaveExp, gosiPay, salariesPay, loansCtl, eosbProv, leaveProv] =
       await Promise.all([
         this.accountResolution.getControlAccount(tx, companyId, ControlAccountType.SALARY_EXPENSE),
+        this.accountResolution
+          .getControlAccount(tx, companyId, ControlAccountType.PROJECT_SALARY_EXPENSE)
+          .catch(() => null),
         this.accountResolution.getControlAccount(tx, companyId, ControlAccountType.GOSI_EXPENSE),
         this.accountResolution.getControlAccount(tx, companyId, ControlAccountType.EOSB_EXPENSE),
         this.accountResolution.getControlAccount(tx, companyId, ControlAccountType.LEAVE_EXPENSE),
@@ -609,6 +612,13 @@ export class PayrollService {
         this.accountResolution.getControlAccount(tx, companyId, ControlAccountType.EOSB_PROVISION),
         this.accountResolution.getControlAccount(tx, companyId, ControlAccountType.LEAVE_PROVISION),
       ]);
+
+    // Cost centers that belong to a project post gross salary to the
+    // project-labor account instead of the general salary-expense account,
+    // when that control account is configured for this company.
+    const projectCostCenterIds = projectSalaryExp
+      ? new Set((await tx.project.findMany({ where: { companyId }, select: { costCenterId: true } })).map((p) => p.costCenterId))
+      : new Set<string>();
 
     // Signed per-CC sums for the dimensioned expense legs
     const byCC = new Map<string, { gross: Prisma.Decimal; gosi: Prisma.Decimal; eosb: Prisma.Decimal; leave: Prisma.Decimal }>();
@@ -650,7 +660,8 @@ export class PayrollService {
 
     for (const [ccKey, sums] of byCC) {
       const cc = ccKey || null;
-      pushSigned(salaryExp.id, sums.gross, cc, `${runNumber} gross salaries`);
+      const salaryAccountId = cc && projectCostCenterIds.has(cc) && projectSalaryExp ? projectSalaryExp.id : salaryExp.id;
+      pushSigned(salaryAccountId, sums.gross, cc, `${runNumber} gross salaries`);
       pushSigned(gosiExp.id, sums.gosi, cc, `${runNumber} employer GOSI`);
       pushSigned(eosbExp.id, sums.eosb, cc, `${runNumber} EOSB accrual`);
       pushSigned(leaveExp.id, sums.leave, cc, `${runNumber} leave accrual`);

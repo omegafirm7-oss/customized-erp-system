@@ -483,6 +483,67 @@ describe("Projects — full job accounting (e2e)", () => {
       expect(payments.body.every((p: any) => p.employeeCode === "E1")).toBe(true);
     });
 
+    it("routes payroll gross salary to the Project Salaries account (5112) for a project cost center, not 5200", async () => {
+      const ctx = await setupProjectContext();
+      const project = await createOverTimeProject(ctx);
+      const now = Date.now();
+      const period = ctx.periods.find(
+        (p: any) => new Date(p.startDate).getTime() <= now && now <= new Date(p.endDate).getTime(),
+      );
+      const joinDate = new Date(period.startDate).toISOString().slice(0, 10);
+
+      const csvHeader =
+        "code,nameEn,nameAr,designation,nationality,isSaudi,iqamaOrNationalId,iqamaExpiry,passportNumber,passportExpiry,gosiNumber,joinDate,contractType,bankCode,iban,costCenterCode,annualLeaveDays,basicSalary,housingAllowance,transportAllowance,otherAllowance,gosiExempt";
+      const csv = [
+        csvHeader,
+        `PE1,Project Worker,,Mason,SA,true,1099999999,2027-06-30,,,50099999,${joinDate},UNLIMITED,80,SA4420000001234567891234,${project.costCenter.code},21,6000,1000,0,0,false`,
+      ].join("\n");
+      await request(app.getHttpServer())
+        .post("/hr/employees/import")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ csv })
+        .expect(201);
+
+      const run = (
+        await request(app.getHttpServer())
+          .post("/hr/payroll-runs")
+          .set("Authorization", `Bearer ${ctx.accessToken}`)
+          .send({ fiscalPeriodId: period.id })
+          .expect(201)
+      ).body;
+      expect(run.lines).toHaveLength(1);
+
+      const posted = (
+        await request(app.getHttpServer())
+          .post(`/hr/payroll-runs/${run.id}/post`)
+          .set("Authorization", `Bearer ${ctx.accessToken}`)
+          .expect(201)
+      ).body;
+      expect(posted.status).toBe("POSTED");
+
+      const projectSalaryAccount = ctx.accountByCode("5112");
+      const salaryAccount = ctx.accountByCode("5200");
+      const gross = run.lines[0].grossPay;
+
+      const lines = await request(app.getHttpServer())
+        .get(`/projects/${project.id}/costs/labor`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+      const payrollLine = lines.body.find((l: any) => l.source === "PAYROLL" && l.accountCode === "5112");
+      expect(payrollLine).toBeDefined();
+      expect(payrollLine.accountCode).toBe(projectSalaryAccount.code);
+      expect(Number(payrollLine.amount)).toBe(Number(gross));
+
+      const intel = await request(app.getHttpServer())
+        .get(`/projects/${project.id}/intelligence`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+      const laborRow = intel.body.categories.LABOR.accounts.find((a: any) => a.code === "5112");
+      expect(laborRow).toBeDefined();
+      expect(Number(laborRow.amount)).toBe(Number(gross));
+      expect(intel.body.categories.LABOR.accounts.find((a: any) => a.code === salaryAccount.code)).toBeUndefined();
+    });
+
     it("rejects an ADVANCE payment's expenseAccountId as irrelevant (ADVANCE ignores it) and rejects a non-expense override account", async () => {
       const ctx = await setupProjectContext();
       const employee = await request(app.getHttpServer())

@@ -94,8 +94,11 @@ export class TerminationService {
 
         const figures = await this.computeFigures(tx, companyId, employeeId, reason, lastWorkingDay);
 
-        const [salaryExp, eosbExp, leaveExp, eosbProv, leaveProv, loansCtl, salariesPay] = await Promise.all([
+        const [salaryExp, projectSalaryExp, eosbExp, leaveExp, eosbProv, leaveProv, loansCtl, salariesPay] = await Promise.all([
           this.accountResolution.getControlAccount(tx, companyId, ControlAccountType.SALARY_EXPENSE),
+          this.accountResolution
+            .getControlAccount(tx, companyId, ControlAccountType.PROJECT_SALARY_EXPENSE)
+            .catch(() => null),
           this.accountResolution.getControlAccount(tx, companyId, ControlAccountType.EOSB_EXPENSE),
           this.accountResolution.getControlAccount(tx, companyId, ControlAccountType.LEAVE_EXPENSE),
           this.accountResolution.getControlAccount(tx, companyId, ControlAccountType.EOSB_PROVISION),
@@ -105,6 +108,11 @@ export class TerminationService {
         ]);
 
         const cc = employee.costCenterId;
+        let salaryAccountId = salaryExp.id;
+        if (cc && projectSalaryExp) {
+          const project = await tx.project.findFirst({ where: { companyId, costCenterId: cc } });
+          if (project) salaryAccountId = projectSalaryExp.id;
+        }
         const lines: PostedEntryLineInput[] = [];
         const pushSigned = (
           accountId: string,
@@ -125,7 +133,7 @@ export class TerminationService {
         };
 
         // Final month worked days — straight salary expense
-        pushSigned(salaryExp.id, figures.finalSalaryAmount, cc, "Final salary days");
+        pushSigned(salaryAccountId, figures.finalSalaryAmount, cc, "Final salary days");
         // EOSB: clear the provision built to date; the gap between the
         // amount payable (with Art. 85 factor) and the provision is a
         // catch-up expense (or credit for forfeited resignations).
