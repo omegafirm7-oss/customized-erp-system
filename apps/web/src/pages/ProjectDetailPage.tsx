@@ -48,8 +48,15 @@ interface CostBreakdown {
   byAccount: CostBreakdownRow[];
 }
 
+interface IntelligenceAccountRow {
+  id: string;
+  code: string;
+  name: string;
+  amount: string;
+}
+
 interface IntelligenceSummary {
-  categories: Record<"MATERIAL" | "MACHINERY" | "LABOR" | "OTHER", { total: string; accounts: unknown[] }>;
+  categories: Record<"MATERIAL" | "MACHINERY" | "LABOR" | "OTHER", { total: string; accounts: IntelligenceAccountRow[] }>;
   grandTotal: string;
 }
 
@@ -59,6 +66,10 @@ interface FiscalPeriod {
   startDate: string;
   endDate: string;
   status: string;
+}
+
+function formatMoney(value: string | number | undefined | null): string {
+  return Number(value ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 const NEXT_STATUS: Record<string, string[]> = {
@@ -297,28 +308,86 @@ export function ProjectDetailPage() {
               <div className="intelligence-title">Project Intelligence</div>
               <div className="intelligence-subtitle">Live cost breakdown across every purchase invoice and payroll posting for this project</div>
             </div>
-            <div className="intelligence-grandtotal">
-              <div className="label">Grand total</div>
-              <div className="value">{Number(intelligence.grandTotal ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          </div>
+
+          <div className="pi-kpi-strip">
+            <div className="pi-kpi-card">
+              <div className="pi-kpi-label">Total Cost</div>
+              <div className="pi-kpi-value">{formatMoney(intelligence.grandTotal)}</div>
+            </div>
+            <div className="pi-kpi-card">
+              <div className="pi-kpi-label">Material Cost</div>
+              <div className="pi-kpi-value">{formatMoney(intelligence.categories.MATERIAL?.total)}</div>
+            </div>
+            <div className="pi-kpi-card">
+              <div className="pi-kpi-label">Machinery Cost</div>
+              <div className="pi-kpi-value">{formatMoney(intelligence.categories.MACHINERY?.total)}</div>
+            </div>
+            <div className="pi-kpi-card">
+              <div className="pi-kpi-label">Labor Cost</div>
+              <div className="pi-kpi-value">{formatMoney(intelligence.categories.LABOR?.total)}</div>
+            </div>
+            <div className="pi-kpi-card">
+              <div className="pi-kpi-label">Contract Value</div>
+              <div className="pi-kpi-value accent-blue">{formatMoney(project.contractValue)}</div>
             </div>
           </div>
-          <div className="intelligence-grid">
-            {(["MATERIAL", "MACHINERY", "LABOR", "OTHER"] as const).map((cat) => {
-              const meta = {
-                MATERIAL: { label: "Material", icon: "\u{1F4E6}", hint: "Consumables, PPE, welfare, supplies" },
-                MACHINERY: { label: "Machinery", icon: "\u{1F69C}", hint: "Rental, fuel & equipment costs" },
-                LABOR: { label: "Labor", icon: "\u{1F477}", hint: "Allowances, salaries & payroll costs" },
-                OTHER: { label: "Other", icon: "\u{1F4CB}", hint: "Uncategorized project expenses" },
-              }[cat];
-              return (
-                <Link key={cat} to={`/projects/${id}/costs/${cat.toLowerCase()}`} style={{ textDecoration: "none" }}>
-                  <div className={`intelligence-tile ${cat.toLowerCase()}`}>
-                    <div className="icon">{meta.icon}</div>
-                    <div className="label">{meta.label}</div>
-                    <div className="value">{Number(intelligence.categories[cat]?.total ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                    <div className="hint">{meta.hint}</div>
+
+          <div className="pi-chart-card">
+            <h3>Cost by category</h3>
+            {(() => {
+              const cats = ["MATERIAL", "MACHINERY", "LABOR", "OTHER"] as const;
+              const values = cats.map((c) => Number(intelligence.categories[c]?.total ?? 0));
+              const max = Math.max(1, ...values);
+              const labels: Record<(typeof cats)[number], string> = {
+                MATERIAL: "Material",
+                MACHINERY: "Machinery",
+                LABOR: "Labor",
+                OTHER: "Other",
+              };
+              return cats.map((c, i) => (
+                <Link key={c} to={`/projects/${id}/costs/${c.toLowerCase()}`} className="pi-bar-row">
+                  <div className="pi-bar-label">{labels[c]}</div>
+                  <div className="pi-bar-track">
+                    <div className={`pi-bar-fill ${c.toLowerCase()}`} style={{ width: `${(values[i] / max) * 100}%` }} />
                   </div>
+                  <div className="pi-bar-value">{formatMoney(values[i])}</div>
                 </Link>
+              ));
+            })()}
+          </div>
+
+          <div className="pi-tables-grid">
+            {(["MATERIAL", "MACHINERY", "LABOR"] as const).map((cat) => {
+              const bucket = intelligence.categories[cat];
+              const label = cat === "MATERIAL" ? "Material Cost by Account" : cat === "MACHINERY" ? "Machinery Cost by Account" : "Labor Cost by Account";
+              return (
+                <div key={cat} className={`pi-table-card ${cat.toLowerCase()}`}>
+                  <h4>
+                    <span>{label}</span>
+                    <span className="total">{formatMoney(bucket?.total)}</span>
+                  </h4>
+                  <table>
+                    <tbody>
+                      {(bucket?.accounts ?? [])
+                        .slice()
+                        .sort((a, b) => Number(b.amount) - Number(a.amount))
+                        .map((a) => (
+                          <tr key={a.id}>
+                            <td>
+                              {a.code} — {a.name}
+                            </td>
+                            <td style={{ textAlign: "right", fontWeight: 600 }}>{formatMoney(a.amount)}</td>
+                          </tr>
+                        ))}
+                      {(!bucket || bucket.accounts.length === 0) && (
+                        <tr>
+                          <td style={{ color: "#98a2b3" }}>No costs recorded yet</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               );
             })}
           </div>

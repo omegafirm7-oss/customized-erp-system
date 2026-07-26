@@ -591,3 +591,155 @@ button.danger:hover:not(:disabled) {
   background: #dbeafe;
   color: #1e40af;
 }
+
+/* --- Project Intelligence: KPI strip, bar chart, breakdown tables --- */
+
+.pi-kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.pi-kpi-card {
+  background: linear-gradient(160deg, #101828 0%, #1d2939 100%);
+  border-radius: 14px;
+  padding: 18px 20px;
+  box-shadow: 0 6px 18px rgba(16, 24, 40, 0.25);
+}
+
+.pi-kpi-label {
+  color: #98a2b3;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+
+.pi-kpi-value {
+  color: #3ddc97;
+  font-size: 26px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.pi-kpi-value.accent-blue {
+  color: #60a5fa;
+}
+
+.pi-chart-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 20px 24px;
+  box-shadow: 0 4px 14px rgba(16, 24, 40, 0.08);
+  margin-bottom: 20px;
+}
+
+.pi-chart-card h3 {
+  margin: 0 0 16px;
+  font-size: 15px;
+}
+
+.pi-bar-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 100px;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.pi-bar-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #344054;
+}
+
+.pi-bar-track {
+  background: #f2f4f7;
+  border-radius: 8px;
+  height: 20px;
+  overflow: hidden;
+}
+
+.pi-bar-fill {
+  height: 100%;
+  border-radius: 8px;
+  transition: width 0.4s ease;
+}
+
+.pi-bar-fill.material {
+  background: linear-gradient(90deg, #22c55e, #16a34a);
+}
+
+.pi-bar-fill.machinery {
+  background: linear-gradient(90deg, #3b82f6, #1d4ed8);
+}
+
+.pi-bar-fill.labor {
+  background: linear-gradient(90deg, #a855f7, #7e22ce);
+}
+
+.pi-bar-fill.other {
+  background: linear-gradient(90deg, #9ca3af, #6b7280);
+}
+
+.pi-bar-value {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.pi-tables-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+.pi-table-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 18px 20px;
+  box-shadow: 0 4px 14px rgba(16, 24, 40, 0.08);
+  border-top: 4px solid #d0d5dd;
+}
+
+.pi-table-card.material {
+  border-top-color: #22c55e;
+}
+
+.pi-table-card.machinery {
+  border-top-color: #3b82f6;
+}
+
+.pi-table-card.labor {
+  border-top-color: #a855f7;
+}
+
+.pi-table-card h4 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.pi-table-card h4 .total {
+  font-size: 13px;
+  font-weight: 700;
+  color: #667085;
+}
+
+.pi-table-card table {
+  width: 100%;
+}
+
+.pi-table-card td,
+.pi-table-card th {
+  padding: 6px 4px;
+}
