@@ -47,10 +47,14 @@ export class EmployeePaymentsService {
           throw new BadRequestException("Amount must be positive");
         }
 
+        // FOOD is tracked separately from ALLOWANCE purely for reporting
+        // (paidFood vs paidAllowance) — both are the same straight-expense
+        // shape and default to the same control account.
         const isAllowance = dto.category === EmployeePaymentCategory.ALLOWANCE;
+        const isFood = dto.category === EmployeePaymentCategory.FOOD;
         const isSalary = dto.category === EmployeePaymentCategory.SALARY;
         let debitAccount: { id: string };
-        if (isAllowance) {
+        if (isAllowance || isFood) {
           debitAccount = dto.expenseAccountId
             ? await this.accountResolution.getExpenseAccount(tx, companyId, dto.expenseAccountId)
             : await this.accountResolution.getControlAccount(tx, companyId, ControlAccountType.ALLOWANCE_EXPENSE);
@@ -117,7 +121,7 @@ export class EmployeePaymentsService {
             amount,
             paymentDate,
             bankCashAccountId: bankCashAccount.id,
-            expenseAccountId: isAllowance || isSalary ? debitAccount.id : null,
+            expenseAccountId: isAllowance || isFood || isSalary ? debitAccount.id : null,
             memo: dto.memo,
             journalEntryId: entry.id,
             createdByUserId: userId,
@@ -151,8 +155,15 @@ export class EmployeePaymentsService {
         if (!payment) {
           throw new NotFoundException("Payment not found");
         }
-        if (payment.category === EmployeePaymentCategory.ALLOWANCE || payment.category === EmployeePaymentCategory.SALARY) {
-          throw new ConflictException("Allowance/Salary payments are a straight expense — nothing to recover");
+        if (
+          payment.category === EmployeePaymentCategory.ALLOWANCE ||
+          payment.category === EmployeePaymentCategory.SALARY ||
+          payment.category === EmployeePaymentCategory.FOOD
+        ) {
+          throw new ConflictException("Allowance/Salary/Food payments are a straight expense — nothing to recover");
+        }
+        if (payment.reversedAt) {
+          throw new ConflictException("This payment was reversed");
         }
         const amount = new Prisma.Decimal(dto.amount);
         const pending = payment.amount.sub(payment.recoveredAmount);
@@ -225,6 +236,46 @@ export class EmployeePaymentsService {
       entityName: "EmployeePaymentRecovery",
       entityId: result.id,
       action: "CREATE",
+      changedByUserId: userId,
+      afterSnapshot: result,
+    });
+
+    return result;
+  }
+
+  /**
+   * Corrects a wrongly-recorded payment (wrong category/amount/employee)
+   * via a reversing JE, rather than a hard delete — keeps the audit trail
+   * and stays consistent with how PayrollRun/FinalSettlement are reversed.
+   * Reversed payments are excluded from every paid/pending aggregation.
+   */
+  async reversePayment(companyId: string, paymentId: string, userId: string) {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const payment = await tx.employeePayment.findFirst({ where: { id: paymentId, companyId } });
+      if (!payment) {
+        throw new NotFoundException("Payment not found");
+      }
+      if (payment.reversedAt) {
+        throw new ConflictException("Payment already reversed");
+      }
+      if (payment.recoveredAmount.gt(0)) {
+        throw new ConflictException("Cannot reverse a payment that already has recoveries recorded against it");
+      }
+
+      await this.glPostingService.reverseEntryInTx(tx, companyId, payment.journalEntryId, userId);
+
+      return tx.employeePayment.update({
+        where: { id: payment.id },
+        data: { reversedAt: new Date() },
+        include: { recoveries: true },
+      });
+    });
+
+    await this.auditService.log({
+      companyId,
+      entityName: "EmployeePayment",
+      entityId: result.id,
+      action: "REVERSE",
       changedByUserId: userId,
       afterSnapshot: result,
     });

@@ -33,6 +33,7 @@ interface EmployeePayment {
   recoveredAmount: string;
   paymentDate: string;
   memo: string | null;
+  reversedAt: string | null;
   recoveries: PaymentRecovery[];
 }
 
@@ -81,9 +82,11 @@ interface EmployeeSummary {
   paidSalary: string;
   paidAdvance: string;
   paidAllowance: string;
+  paidFood: string;
   totalPaid: string;
   pendingSalary: string;
   pendingAllowance: string;
+  pendingFood: string;
   pendingLaborAccrual: string;
   loanBalance: string;
   settlementPending: string;
@@ -353,7 +356,10 @@ export function EmployeeDetailPage() {
     try {
       await apiClient.post(`/hr/employees/${id}/payments`, {
         ...payForm,
-        expenseAccountId: payForm.category === "ALLOWANCE" && payForm.expenseAccountId ? payForm.expenseAccountId : undefined,
+        expenseAccountId:
+          (payForm.category === "ALLOWANCE" || payForm.category === "FOOD") && payForm.expenseAccountId
+            ? payForm.expenseAccountId
+            : undefined,
         memo: payForm.memo || undefined,
       });
       setPayForm({
@@ -379,6 +385,19 @@ export function EmployeeDetailPage() {
       await load();
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "Failed to record recovery");
+    }
+  }
+
+  async function reversePayment(paymentId: string) {
+    if (!confirm("Reverse this payment? This posts a reversing journal entry and removes it from paid/pending totals — it cannot be undone.")) {
+      return;
+    }
+    setError(null);
+    try {
+      await apiClient.post(`/hr/employee-payments/${paymentId}/reverse`);
+      await load();
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to reverse payment");
     }
   }
 
@@ -461,6 +480,10 @@ export function EmployeeDetailPage() {
                 <span>Paid — allowances</span>
                 <strong>{money(summary.paidAllowance)}</strong>
               </div>
+              <div className="form-row" style={{ justifyContent: "space-between" }}>
+                <span>Paid — food</span>
+                <strong>{money(summary.paidFood)}</strong>
+              </div>
             </div>
           )}
           {showPendingBreakdown && (
@@ -482,6 +505,10 @@ export function EmployeeDetailPage() {
               <div className="form-row" style={{ justifyContent: "space-between" }}>
                 <span>Pending — advance/other (unrecovered)</span>
                 <strong>{money(summary.pendingAllowance)}</strong>
+              </div>
+              <div className="form-row" style={{ justifyContent: "space-between" }}>
+                <span>Pending — food (0 — food is a straight expense, paid the moment it's recorded)</span>
+                <strong>{money(summary.pendingFood)}</strong>
               </div>
               <div className="form-row" style={{ justifyContent: "space-between" }}>
                 <span>Pending — active loans (see Loans &amp; advances below)</span>
@@ -679,21 +706,35 @@ export function EmployeeDetailPage() {
             <tbody>
               {payments.map((p) => {
                 const pending = (Number(p.amount) - Number(p.recoveredAmount)).toFixed(2);
-                const recoverable = (p.category === "ADVANCE" || p.category === "OTHER") && Number(pending) > 0;
+                const straightExpense = p.category === "ALLOWANCE" || p.category === "SALARY" || p.category === "FOOD";
+                const recoverable = !p.reversedAt && (p.category === "ADVANCE" || p.category === "OTHER") && Number(pending) > 0;
+                const reversible = !p.reversedAt && Number(p.recoveredAmount) === 0;
                 return (
                   <>
-                    <tr key={p.id}>
+                    <tr key={p.id} style={p.reversedAt ? { opacity: 0.5, textDecoration: "line-through" } : undefined}>
                       <td>{p.paymentNumber ?? "—"}</td>
-                      <td>{p.category}</td>
+                      <td>
+                        {p.category}
+                        {p.reversedAt && (
+                          <span className="badge reversed" style={{ marginLeft: 6, textDecoration: "none" }}>
+                            REVERSED
+                          </span>
+                        )}
+                      </td>
                       <td>{Number(p.amount).toFixed(2)}</td>
                       <td>{Number(p.recoveredAmount).toFixed(2)}</td>
-                      <td>{p.category === "ALLOWANCE" || p.category === "SALARY" ? "—" : pending}</td>
+                      <td>{straightExpense ? "—" : pending}</td>
                       <td>{new Date(p.paymentDate).toLocaleDateString()}</td>
                       <td>{p.memo ?? "—"}</td>
                       <td>
                         {recoverable && (
                           <button className="secondary" onClick={() => setRecoveryOpenId(recoveryOpenId === p.id ? null : p.id)}>
                             {recoveryOpenId === p.id ? "Cancel" : "Record recovery"}
+                          </button>
+                        )}
+                        {reversible && (
+                          <button className="danger" onClick={() => reversePayment(p.id)}>
+                            Reverse
                           </button>
                         )}
                       </td>
@@ -765,6 +806,7 @@ export function EmployeeDetailPage() {
             <div className="form-row" style={{ marginTop: 10 }}>
               <select value={payForm.category} onChange={(e) => setPayForm({ ...payForm, category: e.target.value })}>
                 <option value="ALLOWANCE">Allowance</option>
+                <option value="FOOD">Food</option>
                 <option value="SALARY">Salary (pays down pending salary)</option>
                 <option value="ADVANCE">Advance</option>
                 <option value="OTHER">Other</option>
@@ -793,7 +835,7 @@ export function EmployeeDetailPage() {
                   </option>
                 ))}
               </select>
-              {payForm.category === "ALLOWANCE" && (
+              {(payForm.category === "ALLOWANCE" || payForm.category === "FOOD") && (
                 <select
                   value={payForm.expenseAccountId}
                   onChange={(e) => setPayForm({ ...payForm, expenseAccountId: e.target.value })}

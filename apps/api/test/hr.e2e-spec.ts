@@ -1060,6 +1060,90 @@ describe("HR & Saudi Payroll (e2e)", () => {
       .expect(400);
   });
 
+  it("FOOD payments post to Allowance Expense like ALLOWANCE (tracked separately), and reversal excludes a payment from paid/pending", async () => {
+    const ctx = await setupUserWithCompany(app);
+    const { period } = await currentPeriod(ctx);
+    const joinDate = new Date(period.startDate).toISOString().slice(0, 10);
+    const csv = [CSV_HEADER, `EMPF,Food Test,,Helper,SA,true,,,,,,${joinDate},UNLIMITED,,,,21,4000,0,0,0,false`].join("\n");
+    await request(app.getHttpServer()).post("/hr/employees/import").set(auth(ctx.accessToken)).send({ csv }).expect(201);
+    const employee = (
+      await request(app.getHttpServer()).get("/hr/employees").set(auth(ctx.accessToken)).expect(200)
+    ).body[0];
+
+    const food = (
+      await request(app.getHttpServer())
+        .post(`/hr/employees/${employee.id}/payments`)
+        .set(auth(ctx.accessToken))
+        .send({ category: "FOOD", amount: "200", bankCashAccountId: ctx.cashAccount.id, memo: "Monthly food" })
+        .expect(201)
+    ).body;
+    expect(food.category).toBe("FOOD");
+    expect(Number(food.recoveredAmount)).toBe(0);
+
+    const prisma = getPrisma(app);
+    const foodJe = await prisma.employeePayment.findUniqueOrThrow({
+      where: { id: food.id },
+      include: { journalEntry: { include: { lines: { include: { account: true } } } } },
+    });
+    // Same control account as ALLOWANCE (5215), tracked separately only in the app layer
+    expect(foodJe.journalEntry.lines.find((l) => l.account.code === "5215")!.debit.toString()).toBe("200");
+
+    // Straight expense — nothing to recover
+    await request(app.getHttpServer())
+      .post(`/hr/employee-payments/${food.id}/recoveries`)
+      .set(auth(ctx.accessToken))
+      .send({ amount: "1", bankCashAccountId: ctx.cashAccount.id })
+      .expect(409);
+
+    const summaryBefore = (
+      await request(app.getHttpServer())
+        .get(`/hr/employees/${employee.id}/summary`)
+        .set(auth(ctx.accessToken))
+        .expect(200)
+    ).body;
+    expect(Number(summaryBefore.paidFood)).toBe(200);
+    expect(Number(summaryBefore.pendingFood)).toBe(0);
+    // Food never counts as pending advance/other
+    expect(Number(summaryBefore.pendingAllowance)).toBe(0);
+
+    // Now correct a wrongly-recorded ALLOWANCE payment via reversal
+    const wrongAllowance = (
+      await request(app.getHttpServer())
+        .post(`/hr/employees/${employee.id}/payments`)
+        .set(auth(ctx.accessToken))
+        .send({ category: "ALLOWANCE", amount: "100", bankCashAccountId: ctx.cashAccount.id, memo: "wrong entry" })
+        .expect(201)
+    ).body;
+
+    const reversed = (
+      await request(app.getHttpServer())
+        .post(`/hr/employee-payments/${wrongAllowance.id}/reverse`)
+        .set(auth(ctx.accessToken))
+        .expect(201)
+    ).body;
+    expect(reversed.reversedAt).not.toBeNull();
+
+    // The original JE is now REVERSED and a balancing reversing JE exists
+    const originalJe = await prisma.journalEntry.findUniqueOrThrow({ where: { id: wrongAllowance.journalEntryId } });
+    expect(originalJe.status).toBe("REVERSED");
+
+    // Reversed payment is excluded from paidAllowance
+    const summaryAfter = (
+      await request(app.getHttpServer())
+        .get(`/hr/employees/${employee.id}/summary`)
+        .set(auth(ctx.accessToken))
+        .expect(200)
+    ).body;
+    expect(Number(summaryAfter.paidAllowance)).toBe(0);
+    expect(Number(summaryAfter.paidFood)).toBe(200);
+
+    // Double-reversal rejected
+    await request(app.getHttpServer())
+      .post(`/hr/employee-payments/${wrongAllowance.id}/reverse`)
+      .set(auth(ctx.accessToken))
+      .expect(409);
+  });
+
   it("blocks employee deletion once an employee payment exists", async () => {
     const ctx = await setupUserWithCompany(app);
     const { period } = await currentPeriod(ctx);

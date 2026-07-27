@@ -306,12 +306,17 @@ export class HrReportsService {
         // same period as payrollNetPay/grandTotal above via dateFilter.
         this.prisma.employeePayment
           .aggregate({
-            where: { companyId, category: EmployeePaymentCategory.SALARY, ...(dateFilter ? { paymentDate: dateFilter } : {}) },
+            where: {
+              companyId,
+              category: EmployeePaymentCategory.SALARY,
+              reversedAt: null,
+              ...(dateFilter ? { paymentDate: dateFilter } : {}),
+            },
             _sum: { amount: true },
           })
           .then((r) => r._sum.amount ?? ZERO),
         this.prisma.employeePayment.aggregate({
-          where: { companyId, ...(dateFilter ? { paymentDate: dateFilter } : {}) },
+          where: { companyId, reversedAt: null, ...(dateFilter ? { paymentDate: dateFilter } : {}) },
           _sum: { amount: true },
         }),
         this.prisma.settlementPayment.aggregate({
@@ -319,7 +324,11 @@ export class HrReportsService {
           _sum: { amount: true },
         }),
         this.prisma.employeePayment.findMany({
-          where: { companyId, category: { in: [EmployeePaymentCategory.ADVANCE, EmployeePaymentCategory.OTHER] } },
+          where: {
+            companyId,
+            reversedAt: null,
+            category: { in: [EmployeePaymentCategory.ADVANCE, EmployeePaymentCategory.OTHER] },
+          },
           select: { amount: true, recoveredAmount: true },
         }),
         this.prisma.finalSettlement.findMany({
@@ -390,7 +399,7 @@ export class HrReportsService {
           where: dateFilter ? { date: dateFilter } : undefined,
           orderBy: { date: "asc" },
         },
-        payments: { select: { category: true, amount: true, recoveredAmount: true } },
+        payments: { where: { reversedAt: null }, select: { category: true, amount: true, recoveredAmount: true } },
       },
     });
 

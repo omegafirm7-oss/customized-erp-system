@@ -370,6 +370,16 @@ export class HrController {
     return this.employeePaymentsService.recordRecovery(companyId, paymentId, user.sub, dto);
   }
 
+  @Post("employee-payments/:paymentId/reverse")
+  @Permissions(PERMISSIONS.HR_EMPLOYEE_MANAGE)
+  async reverseEmployeePayment(
+    @CurrentCompanyId() companyId: string,
+    @Param("paymentId") paymentId: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.employeePaymentsService.reversePayment(companyId, paymentId, user.sub);
+  }
+
   // ── Reports ──────────────────────────────────────────────────────────
 
   @Get("reports/gosi-summary")

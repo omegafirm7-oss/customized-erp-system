@@ -244,7 +244,7 @@ export class EmployeesService {
 
     const [payments, timesheetAgg, actualWorkedDays, paidSalaryAgg] = await Promise.all([
       this.prisma.employeePayment.findMany({
-        where: { employeeId },
+        where: { employeeId, reversedAt: null },
         select: { category: true, amount: true, recoveredAmount: true },
       }),
       this.prisma.employeeTimesheetEntry.groupBy({
@@ -272,6 +272,11 @@ export class EmployeesService {
     const paidAllowance = payments
       .filter((p) => p.category === EmployeePaymentCategory.ALLOWANCE)
       .reduce((sum, p) => sum.add(p.amount), ZERO);
+    // FOOD is tracked separately from ALLOWANCE purely for reporting — both
+    // are the same straight-expense shape (recoveredAmount always 0).
+    const paidFood = payments
+      .filter((p) => p.category === EmployeePaymentCategory.FOOD)
+      .reduce((sum, p) => sum.add(p.amount), ZERO);
     // SALARY payments are a direct cash payoff of pending timesheet-accrued
     // salary (outside formal payroll) — fold into paidSalary alongside
     // posted payroll net pay so pendingLaborAccrual drops accordingly.
@@ -279,7 +284,7 @@ export class EmployeesService {
       .filter((p) => p.category === EmployeePaymentCategory.SALARY)
       .reduce((sum, p) => sum.add(p.amount), ZERO);
     const paidSalary = (paidSalaryAgg._sum.netPay ?? ZERO).add(paidSalaryDirect);
-    const totalPaid = paidSalary.add(paidAdvance).add(paidAllowance);
+    const totalPaid = paidSalary.add(paidAdvance).add(paidAllowance).add(paidFood);
 
     const pendingAllowance = payments
       .filter((p) => p.category === EmployeePaymentCategory.ADVANCE || p.category === EmployeePaymentCategory.OTHER)
@@ -313,9 +318,14 @@ export class EmployeesService {
       paidSalary,
       paidAdvance,
       paidAllowance,
+      paidFood,
       totalPaid,
       pendingSalary,
       pendingAllowance,
+      // FOOD is a straight expense like ALLOWANCE — paid the moment it's
+      // recorded, so this is always 0. Exposed for UI symmetry with
+      // pendingSalary/pendingAllowance.
+      pendingFood: ZERO,
       pendingLaborAccrual,
       loanBalance,
       settlementPending,
