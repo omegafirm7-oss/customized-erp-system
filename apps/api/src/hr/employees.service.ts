@@ -267,16 +267,22 @@ export class EmployeesService {
     ]);
 
     const paidAdvance = payments
-      .filter((p) => p.category !== EmployeePaymentCategory.ALLOWANCE)
+      .filter((p) => p.category === EmployeePaymentCategory.ADVANCE || p.category === EmployeePaymentCategory.OTHER)
       .reduce((sum, p) => sum.add(p.amount), ZERO);
     const paidAllowance = payments
       .filter((p) => p.category === EmployeePaymentCategory.ALLOWANCE)
       .reduce((sum, p) => sum.add(p.amount), ZERO);
-    const paidSalary = paidSalaryAgg._sum.netPay ?? ZERO;
+    // SALARY payments are a direct cash payoff of pending timesheet-accrued
+    // salary (outside formal payroll) — fold into paidSalary alongside
+    // posted payroll net pay so pendingLaborAccrual drops accordingly.
+    const paidSalaryDirect = payments
+      .filter((p) => p.category === EmployeePaymentCategory.SALARY)
+      .reduce((sum, p) => sum.add(p.amount), ZERO);
+    const paidSalary = (paidSalaryAgg._sum.netPay ?? ZERO).add(paidSalaryDirect);
     const totalPaid = paidSalary.add(paidAdvance).add(paidAllowance);
 
     const pendingAllowance = payments
-      .filter((p) => p.category !== EmployeePaymentCategory.ALLOWANCE)
+      .filter((p) => p.category === EmployeePaymentCategory.ADVANCE || p.category === EmployeePaymentCategory.OTHER)
       .reduce((sum, p) => sum.add(p.amount.sub(p.recoveredAmount)), ZERO);
     const loanBalance = employee.loans
       .filter((l) => l.status === LoanStatus.ACTIVE)

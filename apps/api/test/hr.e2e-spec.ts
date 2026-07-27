@@ -1201,6 +1201,74 @@ describe("HR & Saudi Payroll (e2e)", () => {
     expect(summary.unpaidLeaveDays).toBe(1);
   });
 
+  it("SALARY-category payment pays down pending timesheet-accrued salary directly, without formal payroll", async () => {
+    const ctx = await setupUserWithCompany(app);
+    const { period } = await currentPeriod(ctx);
+    const joinDate = new Date(period.startDate).toISOString().slice(0, 10);
+    // Basic 2600 → hourlyRate 2600/260 = 10.00 exactly
+    const csv = [CSV_HEADER, `EMPSAL,Salary Pay,,Helper,SA,true,,,,,,${joinDate},UNLIMITED,,,,21,2600,0,0,0,false`].join("\n");
+    await request(app.getHttpServer()).post("/hr/employees/import").set(auth(ctx.accessToken)).send({ csv }).expect(201);
+    const employee = (
+      await request(app.getHttpServer()).get("/hr/employees").set(auth(ctx.accessToken)).expect(200)
+    ).body[0];
+
+    // 10 hours × 10.00 = 100.00 accrued, nothing paid via payroll yet
+    await request(app.getHttpServer())
+      .post("/hr/employee-timesheet/entry")
+      .set(auth(ctx.accessToken))
+      .send({ employeeId: employee.id, date: joinDate, dayType: "WORKED", hoursWorked: "10" })
+      .expect(201);
+
+    const before = (
+      await request(app.getHttpServer())
+        .get(`/hr/employees/${employee.id}/summary`)
+        .set(auth(ctx.accessToken))
+        .expect(200)
+    ).body;
+    expect(Number(before.pendingSalary)).toBe(100);
+    expect(Number(before.paidSalary)).toBe(0);
+
+    // Pay 60 directly against the pending salary — no formal payroll run
+    const payment = (
+      await request(app.getHttpServer())
+        .post(`/hr/employees/${employee.id}/payments`)
+        .set(auth(ctx.accessToken))
+        .send({ category: "SALARY", amount: "60", bankCashAccountId: ctx.cashAccount.id })
+        .expect(201)
+    ).body;
+    expect(payment.category).toBe("SALARY");
+    expect(Number(payment.recoveredAmount)).toBe(0);
+
+    const after = (
+      await request(app.getHttpServer())
+        .get(`/hr/employees/${employee.id}/summary`)
+        .set(auth(ctx.accessToken))
+        .expect(200)
+    ).body;
+    expect(Number(after.paidSalary)).toBe(60);
+    expect(Number(after.pendingSalary)).toBe(40);
+    // SALARY is a straight expense like ALLOWANCE — must never land in the
+    // advance/other "pendingAllowance" bucket.
+    expect(Number(after.pendingAllowance)).toBe(0);
+
+    // GL: posted to SALARY_EXPENSE (5200), no cost center (employee has none) — not EMPLOYEE_LOANS
+    const prisma = getPrisma(app);
+    const je = await prisma.journalEntry.findFirst({
+      where: { companyId: ctx.companyId, sourceDocumentId: payment.id },
+      include: { lines: { include: { account: true } } },
+    });
+    expect(je).not.toBeNull();
+    const debitLeg = je!.lines.find((l) => l.debit.gt(0))!;
+    expect(debitLeg.account.code).toBe("5200");
+
+    // A recovery attempt against a SALARY payment must be rejected
+    await request(app.getHttpServer())
+      .post(`/hr/employee-payments/${payment.id}/recoveries`)
+      .set(auth(ctx.accessToken))
+      .send({ amount: "10", bankCashAccountId: ctx.cashAccount.id })
+      .expect(409);
+  });
+
   it("employee timesheet-detail returns overall vs period-scoped day records with per-day cost", async () => {
     const ctx = await setupUserWithCompany(app);
     const { period, periods } = await currentPeriod(ctx);

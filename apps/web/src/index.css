@@ -743,3 +743,33 @@ button.danger:hover:not(:disabled) {
 .pi-table-card th {
   padding: 6px 4px;
 }
+
+.pi-table-row-link {
+  cursor: pointer;
+}
+
+.pi-table-row-link:hover {
+  background: #f9fafb;
+}
+
+/* A plain <table> placed directly on the dark .intelligence-board gradient
+   (drill-down pages) needs light text — the global table/td/th rules assume
+   a white .card background and are invisible here otherwise. */
+.intelligence-board > table,
+.intelligence-board > table th,
+.intelligence-board > table td {
+  color: #e4e7ec;
+}
+
+.intelligence-board > table th {
+  color: #9aa7bd;
+}
+
+.intelligence-board > table td,
+.intelligence-board > table th {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.intelligence-board > table tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}

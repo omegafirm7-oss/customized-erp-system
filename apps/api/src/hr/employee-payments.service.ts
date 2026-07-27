@@ -48,14 +48,26 @@ export class EmployeePaymentsService {
         }
 
         const isAllowance = dto.category === EmployeePaymentCategory.ALLOWANCE;
-        const debitAccount =
-          isAllowance && dto.expenseAccountId
+        const isSalary = dto.category === EmployeePaymentCategory.SALARY;
+        let debitAccount: { id: string };
+        if (isAllowance) {
+          debitAccount = dto.expenseAccountId
             ? await this.accountResolution.getExpenseAccount(tx, companyId, dto.expenseAccountId)
-            : await this.accountResolution.getControlAccount(
-                tx,
-                companyId,
-                isAllowance ? ControlAccountType.ALLOWANCE_EXPENSE : ControlAccountType.EMPLOYEE_LOANS,
-              );
+            : await this.accountResolution.getControlAccount(tx, companyId, ControlAccountType.ALLOWANCE_EXPENSE);
+        } else if (isSalary) {
+          const project = employee.costCenterId
+            ? await tx.project.findFirst({ where: { companyId, costCenterId: employee.costCenterId } })
+            : null;
+          const projectSalaryExp = project
+            ? await this.accountResolution
+                .getControlAccount(tx, companyId, ControlAccountType.PROJECT_SALARY_EXPENSE)
+                .catch(() => null)
+            : null;
+          debitAccount =
+            projectSalaryExp ?? (await this.accountResolution.getControlAccount(tx, companyId, ControlAccountType.SALARY_EXPENSE));
+        } else {
+          debitAccount = await this.accountResolution.getControlAccount(tx, companyId, ControlAccountType.EMPLOYEE_LOANS);
+        }
         const bankCashAccount = await this.accountResolution.getBankOrCashAccount(tx, companyId, dto.bankCashAccountId);
         const company = await tx.company.findUniqueOrThrow({ where: { id: companyId } });
         const paymentDate = dto.paymentDate ? new Date(dto.paymentDate) : new Date();
@@ -105,7 +117,7 @@ export class EmployeePaymentsService {
             amount,
             paymentDate,
             bankCashAccountId: bankCashAccount.id,
-            expenseAccountId: isAllowance ? debitAccount.id : null,
+            expenseAccountId: isAllowance || isSalary ? debitAccount.id : null,
             memo: dto.memo,
             journalEntryId: entry.id,
             createdByUserId: userId,
@@ -139,8 +151,8 @@ export class EmployeePaymentsService {
         if (!payment) {
           throw new NotFoundException("Payment not found");
         }
-        if (payment.category === EmployeePaymentCategory.ALLOWANCE) {
-          throw new ConflictException("Allowances are a straight expense — nothing to recover");
+        if (payment.category === EmployeePaymentCategory.ALLOWANCE || payment.category === EmployeePaymentCategory.SALARY) {
+          throw new ConflictException("Allowance/Salary payments are a straight expense — nothing to recover");
         }
         const amount = new Prisma.Decimal(dto.amount);
         const pending = payment.amount.sub(payment.recoveredAmount);

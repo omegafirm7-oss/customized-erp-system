@@ -292,39 +292,49 @@ export class HrReportsService {
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, cost]) => ({ date, cost }));
 
-    const [payrollNetPay, periodPayments, periodSettlementPayments, pendingPayments, pendingSettlements] = await Promise.all([
-      fiscalPeriodId
-        ? this.prisma.payrollRun
-            .findFirst({ where: { companyId, fiscalPeriodId, status: PayrollRunStatus.POSTED } })
-            .then((run) => run?.totalNetPay ?? ZERO)
-        : this.prisma.payrollRun
-            .aggregate({ where: { companyId, status: PayrollRunStatus.POSTED }, _sum: { totalNetPay: true } })
-            .then((r) => r._sum.totalNetPay ?? ZERO),
-      this.prisma.employeePayment.aggregate({
-        where: { companyId, ...(dateFilter ? { paymentDate: dateFilter } : {}) },
-        _sum: { amount: true },
-      }),
-      this.prisma.settlementPayment.aggregate({
-        where: { companyId, ...(dateFilter ? { paymentDate: dateFilter } : {}) },
-        _sum: { amount: true },
-      }),
-      this.prisma.employeePayment.findMany({
-        where: { companyId, category: { not: EmployeePaymentCategory.ALLOWANCE } },
-        select: { amount: true, recoveredAmount: true },
-      }),
-      this.prisma.finalSettlement.findMany({
-        where: { companyId, status: SettlementStatus.POSTED },
-        select: { netAmount: true, paidAmount: true },
-      }),
-    ]);
+    const [payrollNetPay, directSalaryPayments, periodPayments, periodSettlementPayments, pendingPayments, pendingSettlements] =
+      await Promise.all([
+        fiscalPeriodId
+          ? this.prisma.payrollRun
+              .findFirst({ where: { companyId, fiscalPeriodId, status: PayrollRunStatus.POSTED } })
+              .then((run) => run?.totalNetPay ?? ZERO)
+          : this.prisma.payrollRun
+              .aggregate({ where: { companyId, status: PayrollRunStatus.POSTED }, _sum: { totalNetPay: true } })
+              .then((r) => r._sum.totalNetPay ?? ZERO),
+        // SALARY-category payments pay down pending labor accrual directly,
+        // the same way a posted payroll run's net pay does — scoped to the
+        // same period as payrollNetPay/grandTotal above via dateFilter.
+        this.prisma.employeePayment
+          .aggregate({
+            where: { companyId, category: EmployeePaymentCategory.SALARY, ...(dateFilter ? { paymentDate: dateFilter } : {}) },
+            _sum: { amount: true },
+          })
+          .then((r) => r._sum.amount ?? ZERO),
+        this.prisma.employeePayment.aggregate({
+          where: { companyId, ...(dateFilter ? { paymentDate: dateFilter } : {}) },
+          _sum: { amount: true },
+        }),
+        this.prisma.settlementPayment.aggregate({
+          where: { companyId, ...(dateFilter ? { paymentDate: dateFilter } : {}) },
+          _sum: { amount: true },
+        }),
+        this.prisma.employeePayment.findMany({
+          where: { companyId, category: { in: [EmployeePaymentCategory.ADVANCE, EmployeePaymentCategory.OTHER] } },
+          select: { amount: true, recoveredAmount: true },
+        }),
+        this.prisma.finalSettlement.findMany({
+          where: { companyId, status: SettlementStatus.POSTED },
+          select: { netAmount: true, paidAmount: true },
+        }),
+      ]);
 
     // Wages accrued via logged hours that haven't been covered by a posted
-    // payroll run yet (in this scope) — the company's actual current state
-    // is "hours logged, nothing paid via payroll", so until a payroll run
-    // (or other payment) catches up, the full accrued cost is genuinely
-    // owed. Floored at zero so a payroll run that already covers (or
-    // exceeds) the accrued cost never shows a negative "pending" amount.
-    const pendingLaborAccrual = Prisma.Decimal.max(ZERO, grandTotal.sub(payrollNetPay));
+    // payroll run (or a direct SALARY cash payment) yet — the company's
+    // actual current state is "hours logged, nothing paid", so until either
+    // catches up, the full accrued cost is genuinely owed. Floored at zero
+    // so coverage that already meets/exceeds the accrued cost never shows a
+    // negative "pending" amount.
+    const pendingLaborAccrual = Prisma.Decimal.max(ZERO, grandTotal.sub(payrollNetPay).sub(directSalaryPayments));
 
     const totalPaidActive = payrollNetPay.add(periodPayments._sum.amount ?? ZERO);
     const totalPaidReleased = periodSettlementPayments._sum.amount ?? ZERO;
@@ -400,7 +410,7 @@ export class HrReportsService {
         .filter((p) => p.category === EmployeePaymentCategory.ALLOWANCE)
         .reduce((sum, p) => sum.add(p.amount), ZERO);
       const pendingAdvances = employee.payments
-        .filter((p) => p.category !== EmployeePaymentCategory.ALLOWANCE)
+        .filter((p) => p.category === EmployeePaymentCategory.ADVANCE || p.category === EmployeePaymentCategory.OTHER)
         .reduce((sum, p) => sum.add(p.amount.sub(p.recoveredAmount)), ZERO);
       return {
         employeeId: employee.id,

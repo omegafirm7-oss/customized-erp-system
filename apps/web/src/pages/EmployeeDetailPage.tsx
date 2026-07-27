@@ -450,11 +450,11 @@ export function EmployeeDetailPage() {
           {showPaidBreakdown && (
             <div className="card" style={{ marginTop: -10 }}>
               <div className="form-row" style={{ justifyContent: "space-between" }}>
-                <span>Paid — salary (posted payroll net pay)</span>
+                <span>Paid — salary (posted payroll net pay + direct salary payments)</span>
                 <strong>{money(summary.paidSalary)}</strong>
               </div>
               <div className="form-row" style={{ justifyContent: "space-between" }}>
-                <span>Paid — advances</span>
+                <span>Paid — advances/other</span>
                 <strong>{money(summary.paidAdvance)}</strong>
               </div>
               <div className="form-row" style={{ justifyContent: "space-between" }}>
@@ -480,7 +480,7 @@ export function EmployeeDetailPage() {
                 </div>
               )}
               <div className="form-row" style={{ justifyContent: "space-between" }}>
-                <span>Pending — allowance/advance (unrecovered)</span>
+                <span>Pending — advance/other (unrecovered)</span>
                 <strong>{money(summary.pendingAllowance)}</strong>
               </div>
               <div className="form-row" style={{ justifyContent: "space-between" }}>
@@ -679,7 +679,7 @@ export function EmployeeDetailPage() {
             <tbody>
               {payments.map((p) => {
                 const pending = (Number(p.amount) - Number(p.recoveredAmount)).toFixed(2);
-                const recoverable = p.category !== "ALLOWANCE" && Number(pending) > 0;
+                const recoverable = (p.category === "ADVANCE" || p.category === "OTHER") && Number(pending) > 0;
                 return (
                   <>
                     <tr key={p.id}>
@@ -687,7 +687,7 @@ export function EmployeeDetailPage() {
                       <td>{p.category}</td>
                       <td>{Number(p.amount).toFixed(2)}</td>
                       <td>{Number(p.recoveredAmount).toFixed(2)}</td>
-                      <td>{p.category === "ALLOWANCE" ? "—" : pending}</td>
+                      <td>{p.category === "ALLOWANCE" || p.category === "SALARY" ? "—" : pending}</td>
                       <td>{new Date(p.paymentDate).toLocaleDateString()}</td>
                       <td>{p.memo ?? "—"}</td>
                       <td>
@@ -765,6 +765,7 @@ export function EmployeeDetailPage() {
             <div className="form-row" style={{ marginTop: 10 }}>
               <select value={payForm.category} onChange={(e) => setPayForm({ ...payForm, category: e.target.value })}>
                 <option value="ALLOWANCE">Allowance</option>
+                <option value="SALARY">Salary (pays down pending salary)</option>
                 <option value="ADVANCE">Advance</option>
                 <option value="OTHER">Other</option>
               </select>

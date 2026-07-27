@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 
 interface WbsTask {
@@ -81,6 +81,7 @@ const NEXT_STATUS: Record<string, string[]> = {
 
 export function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [periods, setPeriods] = useState<FiscalPeriod[]>([]);
   const [selectedPeriodId, setSelectedPeriodId] = useState("");
@@ -373,7 +374,13 @@ export function ProjectDetailPage() {
                         .slice()
                         .sort((a, b) => Number(b.amount) - Number(a.amount))
                         .map((a) => (
-                          <tr key={a.id}>
+                          <tr
+                            key={a.id}
+                            className="pi-table-row-link"
+                            onClick={() =>
+                              navigate(cat === "LABOR" ? `/projects/${id}/costs/labor` : `/projects/${id}/costs/accounts/${a.id}`)
+                            }
+                          >
                             <td>
                               {a.code} — {a.name}
                             </td>

@@ -224,13 +224,17 @@ enum TimesheetDayType {
 
 // Informal, manually-settled cash paid to an employee outside payroll —
 // distinct from EmployeeLoan (formal, installment-scheduled advances).
-// ALLOWANCE is a straight expense (nothing pending); ADVANCE/OTHER post to
+// ALLOWANCE and SALARY are straight expenses (nothing pending); SALARY
+// specifically pays down the timesheet-accrued "pending salary" figure
+// (reducing it the same way a posted PayrollRun's net pay does), routed to
+// SALARY_EXPENSE/PROJECT_SALARY_EXPENSE like payroll. ADVANCE/OTHER post to
 // the same employee-loans control account as Loans and stay pending until
 // recovered.
 enum EmployeePaymentCategory {
   ALLOWANCE
   ADVANCE
   OTHER
+  SALARY
 }
 
 enum StockMovementType {

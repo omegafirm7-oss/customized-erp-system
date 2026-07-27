@@ -232,13 +232,13 @@ export class ProjectsService {
    * getCostBreakdown's posted-GL-only totals above).
    *
    * Labor is sourced from TWO places that never overlap:
-   *  (a) EmployeePayment (ALLOWANCE category) — posts straight to GL, never
-   *      creates a purchase-invoice line.
+   *  (a) EmployeePayment (ALLOWANCE/SALARY categories) — posts straight to
+   *      GL, never creates a purchase-invoice line.
    *  (b) Salaries/GOSI/EOSB/Leave GL postings from posted Payroll runs,
    *      tagged with the employee's (project's) cost center — explicitly
    *      excluding any journal entry that belongs to an EmployeePayment, so
-   *      an allowance overridden onto e.g. the Salaries account is still
-   *      only counted once.
+   *      an allowance/salary payment overridden onto e.g. the Salaries
+   *      account is still only counted once.
    */
   async getProjectIntelligence(companyId: string, projectId: string) {
     const project = await this.getOwned(companyId, projectId);
@@ -266,7 +266,7 @@ export class ProjectsService {
           FROM "employee_payments" ep
           JOIN "employees" e ON e."id" = ep."employeeId"
           JOIN "accounts" a ON a."id" = COALESCE(ep."expenseAccountId", ${defaultAllowanceAccount.id})
-          WHERE ep."companyId" = ${companyId} AND ep."category" = 'ALLOWANCE'
+          WHERE ep."companyId" = ${companyId} AND ep."category" IN ('ALLOWANCE', 'SALARY')
             AND e."costCenterId" = ${project.costCenterId}
           GROUP BY a."id", a."code", a."name", a."costCategory"
           ORDER BY a."code"
@@ -382,7 +382,7 @@ export class ProjectsService {
       .catch(() => null);
 
     type Row = {
-      source: "ALLOWANCE" | "PAYROLL";
+      source: "ALLOWANCE" | "SALARY" | "PAYROLL";
       employeeId: string | null;
       employeeCode: string | null;
       employeeName: string | null;
@@ -396,13 +396,13 @@ export class ProjectsService {
     };
 
     const allowancePayments = await this.prisma.$queryRaw<Row[]>`
-      SELECT 'ALLOWANCE' AS "source", e."id" AS "employeeId", e."code" AS "employeeCode", e."nameEn" AS "employeeName",
+      SELECT ep."category" AS "source", e."id" AS "employeeId", e."code" AS "employeeCode", e."nameEn" AS "employeeName",
              a."code" AS "accountCode", a."name" AS "accountName", ep."amount", ep."paymentDate" AS "date", ep."memo",
              NULL AS "payrollRunId", NULL AS "payrollRunNumber"
       FROM "employee_payments" ep
       JOIN "employees" e ON e."id" = ep."employeeId"
       LEFT JOIN "accounts" a ON a."id" = COALESCE(ep."expenseAccountId", ${defaultAllowanceAccount?.id ?? null})
-      WHERE ep."companyId" = ${companyId} AND ep."category" = 'ALLOWANCE' AND e."costCenterId" = ${project.costCenterId}
+      WHERE ep."companyId" = ${companyId} AND ep."category" IN ('ALLOWANCE', 'SALARY') AND e."costCenterId" = ${project.costCenterId}
     `;
 
     // Payroll runs stamp costCenterId at the line level (per employee), but
