@@ -1144,16 +1144,13 @@ describe("HR & Saudi Payroll (e2e)", () => {
       .expect(409);
   });
 
-  it("food entitlement accrues monthly from the salary structure's Other field, and a FOOD payment pays it down", async () => {
+  it("food is never auto-accrued from the salary structure's Other field — pendingFood stays 0 regardless, only paidFood moves when a FOOD payment is recorded", async () => {
     const ctx = await setupUserWithCompany(app);
-    // Same day-of-month, exactly 2 calendar months back, so serviceYears'
-    // day-fraction component is exactly 0 and months land on a clean 2.00.
-    const now = new Date();
-    const joinDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 2, now.getUTCDate()))
-      .toISOString()
-      .slice(0, 10);
-    // otherAllowance = 100 → 2 months of service → 200 entitled to date
-    const csv = [CSV_HEADER, `EMPFA,Food Accrual,,Helper,SA,true,,,,,,${joinDate},UNLIMITED,,,,21,3000,0,0,100,false`].join(
+    const { period } = await currentPeriod(ctx);
+    const joinDate = new Date(period.startDate).toISOString().slice(0, 10);
+    // otherAllowance = 100, but "Pending" is timesheet-only — this must never
+    // generate a pending food balance on its own.
+    const csv = [CSV_HEADER, `EMPFA,Food No Accrual,,Helper,SA,true,,,,,,${joinDate},UNLIMITED,,,,21,3000,0,0,100,false`].join(
       "\n",
     );
     await request(app.getHttpServer()).post("/hr/employees/import").set(auth(ctx.accessToken)).send({ csv }).expect(201);
@@ -1167,11 +1164,10 @@ describe("HR & Saudi Payroll (e2e)", () => {
         .set(auth(ctx.accessToken))
         .expect(200)
     ).body;
-    expect(Number(before.foodEntitledToDate)).toBeCloseTo(200, 2);
-    expect(Number(before.pendingFood)).toBeCloseTo(200, 2);
+    expect(Number(before.pendingFood)).toBe(0);
     expect(Number(before.paidFood)).toBe(0);
+    expect(before.foodEntitledToDate).toBeUndefined();
 
-    // Pay 150 of the 200 entitled
     await request(app.getHttpServer())
       .post(`/hr/employees/${employee.id}/payments`)
       .set(auth(ctx.accessToken))
@@ -1185,25 +1181,9 @@ describe("HR & Saudi Payroll (e2e)", () => {
         .expect(200)
     ).body;
     expect(Number(after.paidFood)).toBe(150);
-    expect(Number(after.pendingFood)).toBeCloseTo(50, 2);
+    expect(Number(after.pendingFood)).toBe(0);
 
-    // Overpaying beyond the entitlement is allowed (advance food payment) but floors pending at 0
-    await request(app.getHttpServer())
-      .post(`/hr/employees/${employee.id}/payments`)
-      .set(auth(ctx.accessToken))
-      .send({ category: "FOOD", amount: "100", bankCashAccountId: ctx.cashAccount.id })
-      .expect(201);
-    const afterOverpay = (
-      await request(app.getHttpServer())
-        .get(`/hr/employees/${employee.id}/summary`)
-        .set(auth(ctx.accessToken))
-        .expect(200)
-    ).body;
-    expect(Number(afterOverpay.paidFood)).toBe(250);
-    expect(Number(afterOverpay.pendingFood)).toBe(0);
-
-    // Also reflected in the main employees list — never miscounted as an
-    // unrecovered advance (only ADVANCE/OTHER contribute to pendingAmount there)
+    // Never miscounted as an unrecovered advance on the main employees list either
     const list = (
       await request(app.getHttpServer()).get("/hr/employees").set(auth(ctx.accessToken)).expect(200)
     ).body;

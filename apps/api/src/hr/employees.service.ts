@@ -17,7 +17,6 @@ import { PrismaService } from "../common/prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { HrSettingsService } from "./hr-settings.service";
 import { CreateEmployeeDto, UpdateEmployeeDto } from "./dto/hr.dtos";
-import { serviceYears } from "./payroll-math";
 
 /**
  * Column order of the CSV import template. Kept flat and WPS-shaped on
@@ -311,18 +310,15 @@ export class EmployeesService {
     // payroll run yet — floored at zero so a payroll run that already
     // covers (or exceeds) the accrued cost never shows negative "pending".
     const pendingLaborAccrual = Prisma.Decimal.max(ZERO, accruedLaborCost.sub(paidSalary));
+    // "Pending" is deliberately timesheet-driven only: pendingSalary comes
+    // from logged hours, pendingAllowance from unrecovered ADVANCE/OTHER,
+    // loanBalance from active loans. FOOD is never auto-accrued — it's a
+    // straight expense the moment it's recorded (see paidFood), with no
+    // pending balance of its own.
     const pendingSalary = pendingLaborAccrual.add(settlementPending);
+    const pendingFood = ZERO;
 
-    // Food entitlement accrues monthly from the "Other" salary-structure
-    // field (otherAllowance) — same fractional-month methodology as
-    // leave/EOSB accrual — until it's paid off via a FOOD-category payment.
-    // Stops accruing at termination like the other statutory accruals.
-    const foodAccrualAsOf = employee.terminationDate ?? new Date();
-    const foodMonthsElapsed = serviceYears(employee.joinDate, foodAccrualAsOf).mul(12);
-    const foodEntitledToDate = employee.otherAllowance.mul(foodMonthsElapsed).toDecimalPlaces(2);
-    const pendingFood = Prisma.Decimal.max(ZERO, foodEntitledToDate.sub(paidFood));
-
-    const totalPending = pendingSalary.add(pendingAllowance).add(pendingFood).add(loanBalance);
+    const totalPending = pendingSalary.add(pendingAllowance).add(loanBalance);
 
     return {
       paidSalary,
@@ -333,7 +329,6 @@ export class EmployeesService {
       pendingSalary,
       pendingAllowance,
       pendingFood,
-      foodEntitledToDate,
       pendingLaborAccrual,
       loanBalance,
       settlementPending,

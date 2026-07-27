@@ -87,7 +87,6 @@ interface EmployeeSummary {
   pendingSalary: string;
   pendingAllowance: string;
   pendingFood: string;
-  foodEntitledToDate: string;
   pendingLaborAccrual: string;
   loanBalance: string;
   settlementPending: string;
@@ -508,14 +507,6 @@ export function EmployeeDetailPage() {
                 <strong>{money(summary.pendingAllowance)}</strong>
               </div>
               <div className="form-row" style={{ justifyContent: "space-between" }}>
-                <span>Pending — food</span>
-                <strong>{money(summary.pendingFood)}</strong>
-              </div>
-              <div className="form-row" style={{ justifyContent: "space-between", paddingLeft: 20, fontSize: 13, color: "#667085" }}>
-                <span>— entitled to date (monthly "Other" allowance × months of service)</span>
-                <span>{money(summary.foodEntitledToDate)}</span>
-              </div>
-              <div className="form-row" style={{ justifyContent: "space-between" }}>
                 <span>Pending — active loans (see Loans &amp; advances below)</span>
                 <strong>{money(summary.loanBalance)}</strong>
               </div>
@@ -617,7 +608,7 @@ export function EmployeeDetailPage() {
               <input type="number" min="0" step="0.01" value={detailsForm.transportAllowance} onChange={set("transportAllowance")} disabled={!active} />
             </div>
             <div>
-              <label>Other (monthly food allowance) </label>
+              <label>Other </label>
               <input type="number" min="0" step="0.01" value={detailsForm.otherAllowance} onChange={set("otherAllowance")} disabled={!active} />
             </div>
             <button type="submit" disabled={!active}>
