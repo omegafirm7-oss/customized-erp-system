@@ -17,6 +17,7 @@ import { PrismaService } from "../common/prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { HrSettingsService } from "./hr-settings.service";
 import { CreateEmployeeDto, UpdateEmployeeDto } from "./dto/hr.dtos";
+import { serviceYears } from "./payroll-math";
 
 /**
  * Column order of the CSV import template. Kept flat and WPS-shaped on
@@ -76,7 +77,7 @@ export class EmployeesService {
         costCenter: { select: { code: true, name: true } },
         loans: { where: { status: "ACTIVE" }, select: { id: true, loanNumber: true, balance: true } },
         payments: {
-          where: { category: { not: EmployeePaymentCategory.ALLOWANCE } },
+          where: { category: { in: [EmployeePaymentCategory.ADVANCE, EmployeePaymentCategory.OTHER] }, reversedAt: null },
           select: { amount: true, recoveredAmount: true },
         },
         finalSettlement: { select: { netAmount: true, paidAmount: true, status: true } },
@@ -312,7 +313,16 @@ export class EmployeesService {
     const pendingLaborAccrual = Prisma.Decimal.max(ZERO, accruedLaborCost.sub(paidSalary));
     const pendingSalary = pendingLaborAccrual.add(settlementPending);
 
-    const totalPending = pendingSalary.add(pendingAllowance).add(loanBalance);
+    // Food entitlement accrues monthly from the "Other" salary-structure
+    // field (otherAllowance) — same fractional-month methodology as
+    // leave/EOSB accrual — until it's paid off via a FOOD-category payment.
+    // Stops accruing at termination like the other statutory accruals.
+    const foodAccrualAsOf = employee.terminationDate ?? new Date();
+    const foodMonthsElapsed = serviceYears(employee.joinDate, foodAccrualAsOf).mul(12);
+    const foodEntitledToDate = employee.otherAllowance.mul(foodMonthsElapsed).toDecimalPlaces(2);
+    const pendingFood = Prisma.Decimal.max(ZERO, foodEntitledToDate.sub(paidFood));
+
+    const totalPending = pendingSalary.add(pendingAllowance).add(pendingFood).add(loanBalance);
 
     return {
       paidSalary,
@@ -322,10 +332,8 @@ export class EmployeesService {
       totalPaid,
       pendingSalary,
       pendingAllowance,
-      // FOOD is a straight expense like ALLOWANCE — paid the moment it's
-      // recorded, so this is always 0. Exposed for UI symmetry with
-      // pendingSalary/pendingAllowance.
-      pendingFood: ZERO,
+      pendingFood,
+      foodEntitledToDate,
       pendingLaborAccrual,
       loanBalance,
       settlementPending,
