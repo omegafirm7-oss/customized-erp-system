@@ -319,6 +319,12 @@ button.danger:hover:not(:disabled) {
   font-size: 13px;
 }
 
+.button-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .balance-ok {
   color: #05603a;
   font-weight: 600;

@@ -281,6 +281,13 @@ export class ProjectsService {
     // nets to zero rather than double-counting — but that leaves a phantom
     // zero-amount row for the account. HAVING drops those before they ever
     // reach the response.
+    //
+    // The exclusion (avoid double-counting JEs already represented by an
+    // EmployeePayment row) must also cover the *reversal* of an excluded JE,
+    // not just the JE itself: reversing an EmployeePayment-linked entry
+    // creates a second, unlinked JE (linked only via reversalOfEntryId) that
+    // would otherwise sneak through as an unmatched debit/credit leg and
+    // throw the account's total off by that amount.
     const payrollRows = await this.prisma.$queryRaw<Row[]>`
       SELECT a."id", a."code", a."name", a."costCategory", SUM(jel."debit" - jel."credit") AS "amount"
       FROM "journal_entry_lines" jel
@@ -288,11 +295,15 @@ export class ProjectsService {
       JOIN "accounts" a ON a."id" = jel."accountId"
       WHERE jel."costCenterId" = ${project.costCenterId}
         AND je."status" IN ('POSTED', 'REVERSED')
-        AND a."controlAccountType" IN ('SALARY_EXPENSE', 'PROJECT_SALARY_EXPENSE', 'GOSI_EXPENSE', 'EOSB_EXPENSE', 'LEAVE_EXPENSE')
+        AND a."controlAccountType" IN ('SALARY_EXPENSE', 'PROJECT_SALARY_EXPENSE', 'GOSI_EXPENSE', 'EOSB_EXPENSE')
         AND je."id" NOT IN (
           SELECT "journalEntryId" FROM "employee_payments"
           WHERE "companyId" = ${companyId} AND "journalEntryId" IS NOT NULL
         )
+        AND (je."reversalOfEntryId" IS NULL OR je."reversalOfEntryId" NOT IN (
+          SELECT "journalEntryId" FROM "employee_payments"
+          WHERE "companyId" = ${companyId} AND "journalEntryId" IS NOT NULL
+        ))
       GROUP BY a."id", a."code", a."name", a."costCategory"
       HAVING SUM(jel."debit" - jel."credit") != 0
       ORDER BY a."code"
@@ -441,7 +452,7 @@ export class ProjectsService {
       WHERE jel."costCenterId" = ${project.costCenterId}
         ${accountFilter}
         AND je."status" IN ('POSTED', 'REVERSED')
-        AND a."controlAccountType" IN ('SALARY_EXPENSE', 'PROJECT_SALARY_EXPENSE', 'GOSI_EXPENSE', 'EOSB_EXPENSE', 'LEAVE_EXPENSE')
+        AND a."controlAccountType" IN ('SALARY_EXPENSE', 'PROJECT_SALARY_EXPENSE', 'GOSI_EXPENSE', 'EOSB_EXPENSE')
         AND je."id" NOT IN (
           SELECT "journalEntryId" FROM "employee_payments"
           WHERE "companyId" = ${companyId} AND "journalEntryId" IS NOT NULL

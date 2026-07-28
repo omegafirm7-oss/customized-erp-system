@@ -585,6 +585,47 @@ describe("Projects — full job accounting (e2e)", () => {
       expect(Number(filtered.body[0].amount)).toBe(40);
     });
 
+    it("a reversed SALARY-category payment leaves no phantom debit/credit leg on its account (reversal JE isn't linked via employee_payments)", async () => {
+      const ctx = await setupProjectContext();
+      const project = await createOverTimeProject(ctx);
+
+      const employee = await request(app.getHttpServer())
+        .post("/hr/employees")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ code: "E3", nameEn: "Salary Worker", joinDate: new Date().toISOString(), costCenterId: project.costCenterId })
+        .expect(201);
+
+      const wrongSalary = (
+        await request(app.getHttpServer())
+          .post(`/hr/employees/${employee.body.id}/payments`)
+          .set("Authorization", `Bearer ${ctx.accessToken}`)
+          .send({ category: "SALARY", amount: "100", bankCashAccountId: ctx.cashAccount.id })
+          .expect(201)
+      ).body;
+      await request(app.getHttpServer())
+        .post(`/hr/employee-payments/${wrongSalary.id}/reverse`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(201);
+
+      // The reversal posts its own JE (linked to the original only via
+      // reversalOfEntryId, not via any employee_payments row) — that JE's
+      // lone credit leg must not leak into the account total as a phantom
+      // negative amount, and the account must not appear at all once its
+      // only activity nets to zero.
+      const intel = await request(app.getHttpServer())
+        .get(`/projects/${project.id}/intelligence`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+      expect(intel.body.categories.LABOR.total).toBe("0.00");
+      expect(intel.body.categories.LABOR.accounts.find((a: any) => a.code === "5112")).toBeUndefined();
+
+      const labor = await request(app.getHttpServer())
+        .get(`/projects/${project.id}/costs/labor`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+      expect(labor.body.some((p: any) => p.accountCode === "5112")).toBe(false);
+    });
+
     it("routes payroll gross salary to the Project Salaries account (5112) for a project cost center, not 5200", async () => {
       const ctx = await setupProjectContext();
       const project = await createOverTimeProject(ctx);

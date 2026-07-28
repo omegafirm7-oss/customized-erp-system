@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { downloadCsv } from "../utils/csv";
+import { downloadPdf } from "../utils/pdf";
 
 interface FiscalPeriod {
   id: string;
@@ -195,6 +196,50 @@ export function EmployeesOverviewPage() {
     );
   }
 
+  function downloadTradeBreakdownPdf() {
+    const totalCost = tradeBreakdown.reduce((sum, t) => sum + t.cost, 0);
+    downloadPdf(
+      `employees-by-trade-${scope}${scope === "period" ? `-${periodId}` : ""}.pdf`,
+      "Employees by Trade",
+      [
+        {
+          kpis: [{ label: "Grand total", value: totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }],
+        },
+        {
+          headers: ["Trade", "Headcount", "Cost (SAR)", "% of total"],
+          rows: tradeBreakdown.map((t) => [
+            t.trade,
+            t.headcount,
+            t.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+            totalCost > 0 ? `${((t.cost / totalCost) * 100).toFixed(1)}%` : "0.0%",
+          ]),
+        },
+      ],
+    );
+  }
+
+  function downloadEmployeeCostReportPdf() {
+    const rows = (dashboard?.groups ?? []).flatMap((g) =>
+      g.rows.map((r) => [
+        r.code,
+        r.nameEn,
+        r.designation?.trim() || "Unspecified",
+        Number(r.hoursWorked),
+        Number(r.cost).toFixed(2),
+      ]),
+    );
+    downloadPdf(
+      `employee-cost-report-${scope}${scope === "period" ? `-${periodId}` : ""}.pdf`,
+      "Employee Cost Report",
+      [
+        {
+          headers: ["Code", "Name", "Trade", "Hours worked", "Cost (SAR)"],
+          rows,
+        },
+      ],
+    );
+  }
+
   return (
     <div>
       <div className="card">
@@ -203,6 +248,9 @@ export function EmployeesOverviewPage() {
           <span>
             <button className="secondary" onClick={downloadEmployeeCostReport} disabled={!dashboard}>
               Download cost report (CSV)
+            </button>{" "}
+            <button className="secondary" onClick={downloadEmployeeCostReportPdf} disabled={!dashboard}>
+              Download cost report (PDF)
             </button>{" "}
             <button
               className="secondary"
@@ -325,9 +373,14 @@ export function EmployeesOverviewPage() {
                   cost-allocation decisions. {dailyCostCaption}
                 </p>
               </div>
-              <button className="secondary" onClick={downloadTradeBreakdown} disabled={tradeBreakdown.length === 0}>
-                Download (CSV)
-              </button>
+              <div className="button-group">
+                <button className="secondary" onClick={downloadTradeBreakdown} disabled={tradeBreakdown.length === 0}>
+                  Download (CSV)
+                </button>
+                <button className="secondary" onClick={downloadTradeBreakdownPdf} disabled={tradeBreakdown.length === 0}>
+                  Download (PDF)
+                </button>
+              </div>
             </div>
             {tradeBreakdown.length === 0 ? (
               <p>No active employees.</p>

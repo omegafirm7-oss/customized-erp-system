@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { downloadCsv } from "../utils/csv";
+import { downloadPdf } from "../utils/pdf";
 
 interface WbsTask {
   id: string;
@@ -223,6 +224,42 @@ export function ProjectDetailPage() {
     downloadCsv(`${project.code}-project-intelligence.csv`, ["Category", "Account code", "Account name", "Amount (SAR, gross of VAT)"], rows);
   }
 
+  function downloadIntelligencePdf() {
+    if (!intelligence || !project) return;
+    const cats = ["MATERIAL", "MACHINERY", "LABOR", "OTHER"] as const;
+    const labels: Record<(typeof cats)[number], string> = {
+      MATERIAL: "Material",
+      MACHINERY: "Machinery",
+      LABOR: "Labor",
+      OTHER: "Other",
+    };
+    const rows: Array<Array<string | number>> = [];
+    for (const cat of cats) {
+      const bucket = intelligence.categories[cat];
+      if (!bucket || bucket.accounts.length === 0) continue;
+      for (const account of bucket.accounts) {
+        rows.push([labels[cat], `${account.code} — ${account.name}`, formatMoney(account.amount)]);
+      }
+    }
+    downloadPdf(`${project.code}-project-intelligence.pdf`, `Project Intelligence — ${project.code} (${project.name})`, [
+      {
+        heading: "Summary (amounts gross of VAT — the real amount paid/payable to vendors)",
+        kpis: [
+          { label: "Total cost", value: formatMoney(intelligence.grandTotal) },
+          { label: "Material cost", value: formatMoney(intelligence.categories.MATERIAL?.total) },
+          { label: "Machinery cost", value: formatMoney(intelligence.categories.MACHINERY?.total) },
+          { label: "Labor cost", value: formatMoney(intelligence.categories.LABOR?.total) },
+          { label: "Contract value", value: formatMoney(project.contractValue) },
+        ],
+      },
+      {
+        heading: "Cost by account",
+        headers: ["Category", "Account", "Amount (SAR)"],
+        rows,
+      },
+    ]);
+  }
+
   /** Render tasks as an indented tree (roots first, DFS). */
   function taskTree(): Array<WbsTask & { depth: number }> {
     if (!project) return [];
@@ -330,9 +367,14 @@ export function ProjectDetailPage() {
                 gross of VAT (the real amount paid/payable to vendors)
               </div>
             </div>
-            <button className="secondary" onClick={downloadIntelligenceCsv}>
-              Download (CSV)
-            </button>
+            <div className="button-group">
+              <button className="secondary" onClick={downloadIntelligenceCsv}>
+                Download (CSV)
+              </button>
+              <button className="secondary" onClick={downloadIntelligencePdf}>
+                Download (PDF)
+              </button>
+            </div>
           </div>
 
           <div className="pi-kpi-strip">
