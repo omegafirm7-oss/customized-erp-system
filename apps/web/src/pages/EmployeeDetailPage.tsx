@@ -1,4 +1,4 @@
-import { FormEvent, WheelEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, WheelEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 
@@ -204,6 +204,8 @@ export function EmployeeDetailPage() {
   const [recoveryForm, setRecoveryForm] = useState({ amount: "", bankCashAccountId: "", recoveryDate: new Date().toISOString().slice(0, 10) });
   const [receiptViewer, setReceiptViewer] = useState<{ url: string; mimeType: string; filename: string } | null>(null);
   const [receiptZoom, setReceiptZoom] = useState(1);
+  const [receiptOffset, setReceiptOffset] = useState({ x: 0, y: 0 });
+  const receiptImgRef = useRef<HTMLImageElement | null>(null);
   const [receiptUploadingFor, setReceiptUploadingFor] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -418,6 +420,7 @@ export function EmployeeDetailPage() {
       const res = await apiClient.get(`/hr/employee-payments/${payment.id}/receipt`, { responseType: "blob" });
       const url = URL.createObjectURL(res.data as Blob);
       setReceiptZoom(1);
+      setReceiptOffset({ x: 0, y: 0 });
       setReceiptViewer({ url, mimeType: payment.attachment.mimeType, filename: payment.attachment.filename });
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "Failed to load receipt");
@@ -429,13 +432,44 @@ export function EmployeeDetailPage() {
     setReceiptViewer(null);
   }
 
-  function zoomReceipt(delta: number) {
-    setReceiptZoom((z) => Math.min(4, Math.max(0.5, +(z + delta).toFixed(2))));
+  /** Zooms in/out anchored to a screen point (defaults to the image's own center) so the
+   * area under the cursor stays put — the same feel as Google Maps/Figma zoom — instead of
+   * scaling from the top-left, which used to make the image drift as you scrolled.
+   *
+   * Reads `receiptZoom` from the closure rather than a setState updater: updater functions
+   * run twice under React StrictMode to catch impurity, and the previous version called
+   * setReceiptOffset as a side effect from inside the zoom updater, which doubled the pan
+   * offset in dev. Both setters here are now plain/pure. */
+  function zoomReceiptAt(factor: number, clientX?: number, clientY?: number) {
+    const prevZoom = receiptZoom;
+    const newZoom = Math.min(4, Math.max(1, prevZoom * factor));
+    if (newZoom === prevZoom) return;
+    if (newZoom <= 1) {
+      setReceiptZoom(1);
+      setReceiptOffset({ x: 0, y: 0 });
+      return;
+    }
+    const imgEl = receiptImgRef.current;
+    if (imgEl) {
+      const rect = imgEl.getBoundingClientRect();
+      const cx = (clientX ?? rect.left + rect.width / 2) - rect.left;
+      const cy = (clientY ?? rect.top + rect.height / 2) - rect.top;
+      setReceiptOffset((prevOffset) => ({
+        x: prevOffset.x + cx * (1 - newZoom / prevZoom),
+        y: prevOffset.y + cy * (1 - newZoom / prevZoom),
+      }));
+    }
+    setReceiptZoom(newZoom);
+  }
+
+  function resetReceiptZoom() {
+    setReceiptZoom(1);
+    setReceiptOffset({ x: 0, y: 0 });
   }
 
   function handleReceiptWheel(e: WheelEvent) {
     e.preventDefault();
-    zoomReceipt(e.deltaY < 0 ? 0.15 : -0.15);
+    zoomReceiptAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY);
   }
 
   async function recordRecovery(paymentId: string) {
@@ -1155,16 +1189,16 @@ export function EmployeeDetailPage() {
               <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 {receiptViewer.mimeType.startsWith("image/") && (
                   <>
-                    <button className="secondary" onClick={() => zoomReceipt(-0.25)} title="Zoom out">
+                    <button className="secondary" onClick={() => zoomReceiptAt(1 / 1.25)} title="Zoom out">
                       −
                     </button>
                     <span style={{ color: "#667085", fontSize: 13, minWidth: 42, textAlign: "center" }}>
                       {Math.round(receiptZoom * 100)}%
                     </span>
-                    <button className="secondary" onClick={() => zoomReceipt(0.25)} title="Zoom in">
+                    <button className="secondary" onClick={() => zoomReceiptAt(1.25)} title="Zoom in">
                       +
                     </button>
-                    <button className="secondary" onClick={() => setReceiptZoom(1)} title="Reset zoom">
+                    <button className="secondary" onClick={resetReceiptZoom} title="Reset zoom">
                       Reset
                     </button>
                   </>
@@ -1176,21 +1210,30 @@ export function EmployeeDetailPage() {
             </div>
             <div
               onWheel={receiptViewer.mimeType.startsWith("image/") ? handleReceiptWheel : undefined}
-              style={{ overflow: "auto", flex: 1, width: "85vw", height: "75vh" }}
+              style={{
+                overflow: "hidden",
+                flex: 1,
+                width: "85vw",
+                height: "75vh",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
             >
               {receiptViewer.mimeType.startsWith("image/") ? (
                 <img
+                  ref={receiptImgRef}
                   src={receiptViewer.url}
                   alt={receiptViewer.filename}
                   style={{
-                    maxWidth: "none",
-                    width: `${receiptZoom * 100}%`,
+                    maxWidth: "100%",
+                    maxHeight: "100%",
                     display: "block",
-                    margin: "0 auto",
-                    transition: "width 0.08s ease-out",
+                    transform: `translate(${receiptOffset.x}px, ${receiptOffset.y}px) scale(${receiptZoom})`,
+                    transformOrigin: "0 0",
                     cursor: receiptZoom < 4 ? "zoom-in" : "default",
                   }}
-                  onClick={() => zoomReceipt(0.25)}
+                  onClick={(e) => zoomReceiptAt(1.5, e.clientX, e.clientY)}
                 />
               ) : (
                 <iframe
