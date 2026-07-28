@@ -25,6 +25,14 @@ interface PaymentRecovery {
   memo: string | null;
 }
 
+interface PaymentAttachment {
+  id: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  createdAt: string;
+}
+
 interface EmployeePayment {
   id: string;
   paymentNumber: string | null;
@@ -35,6 +43,7 @@ interface EmployeePayment {
   memo: string | null;
   reversedAt: string | null;
   recoveries: PaymentRecovery[];
+  attachment: PaymentAttachment | null;
 }
 
 interface EmployeeDetail {
@@ -190,8 +199,11 @@ export function EmployeeDetailPage() {
     paymentDate: new Date().toISOString().slice(0, 10),
     memo: "",
   });
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [recoveryOpenId, setRecoveryOpenId] = useState<string | null>(null);
   const [recoveryForm, setRecoveryForm] = useState({ amount: "", bankCashAccountId: "", recoveryDate: new Date().toISOString().slice(0, 10) });
+  const [receiptViewer, setReceiptViewer] = useState<{ url: string; mimeType: string; filename: string } | null>(null);
+  const [receiptUploadingFor, setReceiptUploadingFor] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [empRes, accountsRes, ccRes, paymentsRes, summaryRes] = await Promise.all([
@@ -354,14 +366,19 @@ export function EmployeeDetailPage() {
     e.preventDefault();
     setError(null);
     try {
-      await apiClient.post(`/hr/employees/${id}/payments`, {
-        ...payForm,
-        expenseAccountId:
-          (payForm.category === "ALLOWANCE" || payForm.category === "FOOD") && payForm.expenseAccountId
-            ? payForm.expenseAccountId
-            : undefined,
-        memo: payForm.memo || undefined,
-      });
+      const created = (
+        await apiClient.post(`/hr/employees/${id}/payments`, {
+          ...payForm,
+          expenseAccountId:
+            (payForm.category === "ALLOWANCE" || payForm.category === "FOOD") && payForm.expenseAccountId
+              ? payForm.expenseAccountId
+              : undefined,
+          memo: payForm.memo || undefined,
+        })
+      ).data;
+      if (receiptFile) {
+        await uploadReceipt(created.id, receiptFile);
+      }
       setPayForm({
         category: "ALLOWANCE",
         amount: "",
@@ -370,10 +387,44 @@ export function EmployeeDetailPage() {
         paymentDate: new Date().toISOString().slice(0, 10),
         memo: "",
       });
+      setReceiptFile(null);
       await load();
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "Failed to record payment");
     }
+  }
+
+  async function uploadReceipt(paymentId: string, file: File) {
+    setReceiptUploadingFor(paymentId);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      await apiClient.post(`/hr/employee-payments/${paymentId}/receipt`, form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      await load();
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to attach receipt");
+    } finally {
+      setReceiptUploadingFor(null);
+    }
+  }
+
+  async function viewReceipt(payment: EmployeePayment) {
+    if (!payment.attachment) return;
+    setError(null);
+    try {
+      const res = await apiClient.get(`/hr/employee-payments/${payment.id}/receipt`, { responseType: "blob" });
+      const url = URL.createObjectURL(res.data as Blob);
+      setReceiptViewer({ url, mimeType: payment.attachment.mimeType, filename: payment.attachment.filename });
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to load receipt");
+    }
+  }
+
+  function closeReceiptViewer() {
+    if (receiptViewer) URL.revokeObjectURL(receiptViewer.url);
+    setReceiptViewer(null);
   }
 
   async function recordRecovery(paymentId: string) {
@@ -696,6 +747,7 @@ export function EmployeeDetailPage() {
                 <th>Pending</th>
                 <th>Date</th>
                 <th>Memo</th>
+                <th>Receipt</th>
                 <th></th>
               </tr>
             </thead>
@@ -723,6 +775,30 @@ export function EmployeeDetailPage() {
                       <td>{new Date(p.paymentDate).toLocaleDateString()}</td>
                       <td>{p.memo ?? "—"}</td>
                       <td>
+                        {p.attachment ? (
+                          <button className="secondary" onClick={() => viewReceipt(p)}>
+                            View
+                          </button>
+                        ) : !p.reversedAt ? (
+                          <label style={{ cursor: "pointer", color: "#1e4fa3", fontSize: 13 }}>
+                            {receiptUploadingFor === p.id ? "Uploading…" : "Attach"}
+                            <input
+                              type="file"
+                              accept="image/*,.pdf"
+                              style={{ display: "none" }}
+                              disabled={receiptUploadingFor === p.id}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) uploadReceipt(p.id, file);
+                                e.target.value = "";
+                              }}
+                            />
+                          </label>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td>
                         {recoverable && (
                           <button className="secondary" onClick={() => setRecoveryOpenId(recoveryOpenId === p.id ? null : p.id)}>
                             {recoveryOpenId === p.id ? "Cancel" : "Record recovery"}
@@ -737,7 +813,7 @@ export function EmployeeDetailPage() {
                     </tr>
                     {recoveryOpenId === p.id && (
                       <tr>
-                        <td colSpan={8}>
+                        <td colSpan={9}>
                           <div className="form-row" style={{ margin: "6px 0" }}>
                             <input
                               type="number"
@@ -856,6 +932,15 @@ export function EmployeeDetailPage() {
                 onChange={(e) => setPayForm({ ...payForm, memo: e.target.value })}
                 style={{ flex: 1 }}
               />
+              <label style={{ fontSize: 13, color: "#667085" }}>
+                Receipt{" "}
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)}
+                  style={{ width: 160 }}
+                />
+              </label>
               <button type="submit">Record payment</button>
             </div>
           </form>
@@ -1025,6 +1110,57 @@ export function EmployeeDetailPage() {
           ) : !employee.finalSettlement ? (
             <p>Terminated on {employee.terminationDate ? new Date(employee.terminationDate).toLocaleDateString() : "—"}.</p>
           ) : null}
+        </div>
+      )}
+
+      {receiptViewer && (
+        <div
+          onClick={closeReceiptViewer}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#fff",
+              borderRadius: 8,
+              padding: 16,
+              maxWidth: "90vw",
+              maxHeight: "90vh",
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 24 }}>
+              <strong style={{ color: "#101828" }}>{receiptViewer.filename}</strong>
+              <button className="secondary" onClick={closeReceiptViewer}>
+                Close
+              </button>
+            </div>
+            <div style={{ overflow: "auto", flex: 1 }}>
+              {receiptViewer.mimeType.startsWith("image/") ? (
+                <img
+                  src={receiptViewer.url}
+                  alt={receiptViewer.filename}
+                  style={{ maxWidth: "85vw", maxHeight: "75vh", display: "block", margin: "0 auto" }}
+                />
+              ) : (
+                <iframe
+                  src={receiptViewer.url}
+                  title={receiptViewer.filename}
+                  style={{ width: "85vw", height: "75vh", border: "none" }}
+                />
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

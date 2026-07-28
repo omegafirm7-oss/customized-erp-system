@@ -31,8 +31,74 @@ export class EmployeePaymentsService {
     return this.prisma.employeePayment.findMany({
       where: { companyId, employeeId },
       orderBy: { paymentDate: "desc" },
-      include: { recoveries: { orderBy: { recoveryDate: "desc" } } },
+      include: {
+        recoveries: { orderBy: { recoveryDate: "desc" } },
+        // Metadata only — the actual bytes are fetched on demand via the
+        // dedicated receipt endpoint, never inlined into the list payload.
+        attachment: { select: { id: true, filename: true, mimeType: true, size: true, createdAt: true } },
+      },
     });
+  }
+
+  private static readonly ALLOWED_RECEIPT_MIME_TYPES = new Set([
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+    "application/pdf",
+  ]);
+
+  /** Attaches (or replaces) the receipt/evidence file for a payment. */
+  async uploadReceipt(companyId: string, paymentId: string, userId: string, file: Express.Multer.File) {
+    if (!EmployeePaymentsService.ALLOWED_RECEIPT_MIME_TYPES.has(file.mimetype)) {
+      throw new BadRequestException("Receipt must be an image (JPEG/PNG/WEBP/GIF) or a PDF");
+    }
+    const payment = await this.prisma.employeePayment.findFirst({ where: { id: paymentId, companyId } });
+    if (!payment) {
+      throw new NotFoundException("Payment not found");
+    }
+
+    const attachment = await this.prisma.employeePaymentAttachment.upsert({
+      where: { employeePaymentId: paymentId },
+      create: {
+        companyId,
+        employeePaymentId: paymentId,
+        filename: file.originalname,
+        mimeType: file.mimetype,
+        size: file.size,
+        data: file.buffer,
+        uploadedByUserId: userId,
+      },
+      update: {
+        filename: file.originalname,
+        mimeType: file.mimetype,
+        size: file.size,
+        data: file.buffer,
+        uploadedByUserId: userId,
+      },
+      select: { id: true, filename: true, mimeType: true, size: true, createdAt: true },
+    });
+
+    await this.auditService.log({
+      companyId,
+      entityName: "EmployeePaymentAttachment",
+      entityId: attachment.id,
+      action: "CREATE",
+      changedByUserId: userId,
+      afterSnapshot: attachment,
+    });
+
+    return attachment;
+  }
+
+  async getReceipt(companyId: string, paymentId: string) {
+    const attachment = await this.prisma.employeePaymentAttachment.findFirst({
+      where: { employeePaymentId: paymentId, companyId },
+    });
+    if (!attachment) {
+      throw new NotFoundException("No receipt attached to this payment");
+    }
+    return attachment;
   }
 
   async create(companyId: string, employeeId: string, userId: string, dto: CreateEmployeePaymentDto) {

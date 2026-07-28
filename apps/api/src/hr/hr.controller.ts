@@ -1,5 +1,22 @@
-import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, Res } from "@nestjs/common";
-import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Header,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Res,
+  StreamableFile,
+  UploadedFile,
+  UseInterceptors,
+} from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { ApiBearerAuth, ApiConsumes, ApiTags } from "@nestjs/swagger";
+import { memoryStorage } from "multer";
 import { Response } from "express";
 import { EmployeeStatus } from "@prisma/client";
 import { PERMISSIONS } from "@erp/shared-constants";
@@ -378,6 +395,37 @@ export class HrController {
     @CurrentUser() user: JwtPayload,
   ) {
     return this.employeePaymentsService.reversePayment(companyId, paymentId, user.sub);
+  }
+
+  @Post("employee-payments/:paymentId/receipt")
+  @Permissions(PERMISSIONS.HR_EMPLOYEE_MANAGE)
+  @ApiConsumes("multipart/form-data")
+  @UseInterceptors(FileInterceptor("file", { storage: memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }))
+  async uploadEmployeePaymentReceipt(
+    @CurrentCompanyId() companyId: string,
+    @Param("paymentId") paymentId: string,
+    @CurrentUser() user: JwtPayload,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException("No file uploaded");
+    }
+    return this.employeePaymentsService.uploadReceipt(companyId, paymentId, user.sub, file);
+  }
+
+  @Get("employee-payments/:paymentId/receipt")
+  @Permissions(PERMISSIONS.HR_EMPLOYEE_VIEW)
+  async getEmployeePaymentReceipt(
+    @CurrentCompanyId() companyId: string,
+    @Param("paymentId") paymentId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const attachment = await this.employeePaymentsService.getReceipt(companyId, paymentId);
+    res.set({
+      "Content-Type": attachment.mimeType,
+      "Content-Disposition": `inline; filename="${attachment.filename}"`,
+    });
+    return new StreamableFile(attachment.data);
   }
 
   // ── Reports ──────────────────────────────────────────────────────────

@@ -1144,6 +1144,99 @@ describe("HR & Saudi Payroll (e2e)", () => {
       .expect(409);
   });
 
+  it("a receipt can be attached to a payment, replaced by re-upload, fetched back with matching bytes, and is included in payment listings", async () => {
+    const ctx = await setupUserWithCompany(app);
+    const { period } = await currentPeriod(ctx);
+    const joinDate = new Date(period.startDate).toISOString().slice(0, 10);
+    const csv = [CSV_HEADER, `EMPR,Receipt Test,,Helper,SA,true,,,,,,${joinDate},UNLIMITED,,,,21,4000,0,0,0,false`].join("\n");
+    await request(app.getHttpServer()).post("/hr/employees/import").set(auth(ctx.accessToken)).send({ csv }).expect(201);
+    const employee = (
+      await request(app.getHttpServer()).get("/hr/employees").set(auth(ctx.accessToken)).expect(200)
+    ).body[0];
+
+    const payment = (
+      await request(app.getHttpServer())
+        .post(`/hr/employees/${employee.id}/payments`)
+        .set(auth(ctx.accessToken))
+        .send({ category: "FOOD", amount: "75", bankCashAccountId: ctx.cashAccount.id })
+        .expect(201)
+    ).body;
+
+    const firstBytes = Buffer.from("first-receipt-bytes");
+    const uploaded = (
+      await request(app.getHttpServer())
+        .post(`/hr/employee-payments/${payment.id}/receipt`)
+        .set(auth(ctx.accessToken))
+        .attach("file", firstBytes, { filename: "receipt1.png", contentType: "image/png" })
+        .expect(201)
+    ).body;
+    expect(uploaded.filename).toBe("receipt1.png");
+    expect(uploaded.mimeType).toBe("image/png");
+
+    const fetched1 = await request(app.getHttpServer())
+      .get(`/hr/employee-payments/${payment.id}/receipt`)
+      .set(auth(ctx.accessToken))
+      .buffer(true)
+      .parse((response, callback) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => chunks.push(chunk));
+        response.on("end", () => callback(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    expect(fetched1.headers["content-type"]).toBe("image/png");
+    expect((fetched1.body as Buffer).equals(firstBytes)).toBe(true);
+
+    // Re-uploading replaces the attachment rather than accumulating a second one
+    const secondBytes = Buffer.from("%PDF-1.4 second-receipt-bytes");
+    await request(app.getHttpServer())
+      .post(`/hr/employee-payments/${payment.id}/receipt`)
+      .set(auth(ctx.accessToken))
+      .attach("file", secondBytes, { filename: "receipt2.pdf", contentType: "application/pdf" })
+      .expect(201);
+
+    const fetched2 = await request(app.getHttpServer())
+      .get(`/hr/employee-payments/${payment.id}/receipt`)
+      .set(auth(ctx.accessToken))
+      .buffer(true)
+      .parse((response, callback) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => chunks.push(chunk));
+        response.on("end", () => callback(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    expect(fetched2.headers["content-type"]).toBe("application/pdf");
+    expect((fetched2.body as Buffer).equals(secondBytes)).toBe(true);
+
+    const list = (
+      await request(app.getHttpServer())
+        .get(`/hr/employees/${employee.id}/payments`)
+        .set(auth(ctx.accessToken))
+        .expect(200)
+    ).body;
+    const listed = list.find((p: any) => p.id === payment.id);
+    expect(listed.attachment.filename).toBe("receipt2.pdf");
+
+    // Unsupported mime types are rejected
+    await request(app.getHttpServer())
+      .post(`/hr/employee-payments/${payment.id}/receipt`)
+      .set(auth(ctx.accessToken))
+      .attach("file", Buffer.from("not-a-receipt"), { filename: "notes.txt", contentType: "text/plain" })
+      .expect(400);
+
+    // A payment with no attachment reports 404 for the receipt fetch
+    const bare = (
+      await request(app.getHttpServer())
+        .post(`/hr/employees/${employee.id}/payments`)
+        .set(auth(ctx.accessToken))
+        .send({ category: "FOOD", amount: "10", bankCashAccountId: ctx.cashAccount.id })
+        .expect(201)
+    ).body;
+    await request(app.getHttpServer())
+      .get(`/hr/employee-payments/${bare.id}/receipt`)
+      .set(auth(ctx.accessToken))
+      .expect(404);
+  });
+
   it("food is never auto-accrued from the salary structure's Other field — pendingFood stays 0 regardless, only paidFood moves when a FOOD payment is recorded", async () => {
     const ctx = await setupUserWithCompany(app);
     const { period } = await currentPeriod(ctx);

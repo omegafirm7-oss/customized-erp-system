@@ -440,6 +440,7 @@ model Company {
   employeeTimesheetEntries  EmployeeTimesheetEntry[]
   employeePayments          EmployeePayment[]
   employeePaymentRecoveries EmployeePaymentRecovery[]
+  employeePaymentAttachments EmployeePaymentAttachment[]
   joinRequests              CompanyJoinRequest[]
 
   @@map("companies")
@@ -1994,10 +1995,32 @@ model EmployeePayment {
   reversedAt DateTime?
 
   recoveries EmployeePaymentRecovery[]
+  attachment EmployeePaymentAttachment?
 
   @@unique([companyId, paymentNumber])
   @@index([employeeId, category])
   @@map("employee_payments")
+}
+
+// A single receipt/evidence file attached to a payment — stored as bytes in
+// the database (no separate file-storage infra exists yet, and this keeps
+// receipts safely inside the same backed-up Postgres data, immune to
+// deploy-time git operations on the app checkout). Uploading again replaces
+// the existing attachment rather than accumulating duplicates.
+model EmployeePaymentAttachment {
+  id                String          @id @default(uuid())
+  companyId         String
+  company           Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employeePaymentId String          @unique
+  employeePayment   EmployeePayment @relation(fields: [employeePaymentId], references: [id], onDelete: Cascade)
+  filename          String
+  mimeType          String
+  size              Int
+  data              Bytes
+  uploadedByUserId  String
+  createdAt         DateTime        @default(now())
+
+  @@map("employee_payment_attachments")
 }
 
 // One or more recoveries recorded against an ADVANCE/OTHER EmployeePayment
