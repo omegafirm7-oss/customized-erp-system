@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 
 interface LaborPayment {
-  source: "ALLOWANCE" | "FOOD" | "SALARY" | "PAYROLL";
+  source: "ALLOWANCE" | "FOOD" | "SALARY" | "PAYROLL" | "SETTLEMENT";
   employeeId: string | null;
   employeeCode: string | null;
   employeeName: string | null;
@@ -64,14 +64,16 @@ export function ProjectLaborDetailPage() {
           {payments.map((p, i) => (
             <tr key={i}>
               <td>
-                <span className={`source-pill ${p.source === "PAYROLL" ? "payroll" : "allowance"}`}>
+                <span className={`source-pill ${p.source === "PAYROLL" || p.source === "SETTLEMENT" ? "payroll" : "allowance"}`}>
                   {p.source === "ALLOWANCE"
                     ? "Allowance"
                     : p.source === "FOOD"
                       ? "Food"
                       : p.source === "SALARY"
                         ? "Salary"
-                        : "Payroll"}
+                        : p.source === "SETTLEMENT"
+                          ? "Settlement"
+                          : "Payroll"}
                 </span>
               </td>
               <td>

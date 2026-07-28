@@ -412,7 +412,7 @@ export class ProjectsService {
     const accountFilter = accountId ? Prisma.sql`AND a."id" = ${accountId}` : Prisma.empty;
 
     type Row = {
-      source: "ALLOWANCE" | "FOOD" | "SALARY" | "PAYROLL";
+      source: "ALLOWANCE" | "FOOD" | "SALARY" | "PAYROLL" | "SETTLEMENT";
       employeeId: string | null;
       employeeCode: string | null;
       employeeName: string | null;
@@ -461,7 +461,32 @@ export class ProjectsService {
       HAVING SUM(jel."debit" - jel."credit") != 0
     `;
 
-    return [...allowancePayments, ...payrollPostings].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    // Final settlements (release/termination payouts) post their own JE —
+    // "Final salary days" lands on the same PROJECT_SALARY_EXPENSE account as
+    // an ordinary SALARY payment — that isn't sourced from a payroll run, so
+    // it's a separate query from payrollPostings above. Only 'POSTED' (not
+    // 'REVERSED') is included: unlike payrollPostings this lists individual
+    // transactions rather than summing both legs of a reversal to net zero,
+    // and a reversed settlement's reversal JE carries no sourceDocumentId of
+    // its own to join back to, so it would never appear here anyway.
+    const settlementPostings = await this.prisma.$queryRaw<Row[]>`
+      SELECT 'SETTLEMENT' AS "source", e."id" AS "employeeId", e."code" AS "employeeCode", e."nameEn" AS "employeeName",
+             a."code" AS "accountCode", a."name" AS "accountName", jel."debit" - jel."credit" AS "amount",
+             fs."lastWorkingDay" AS "date", je."memo" AS "memo", NULL AS "payrollRunId", NULL AS "payrollRunNumber"
+      FROM "journal_entry_lines" jel
+      JOIN "journal_entries" je ON je."id" = jel."journalEntryId"
+      JOIN "accounts" a ON a."id" = jel."accountId"
+      JOIN "final_settlements" fs ON fs."id" = je."sourceDocumentId" AND fs."companyId" = ${companyId}
+      JOIN "employees" e ON e."id" = fs."employeeId"
+      WHERE jel."costCenterId" = ${project.costCenterId}
+        ${accountFilter}
+        AND je."status" = 'POSTED'
+        AND a."controlAccountType" IN ('SALARY_EXPENSE', 'PROJECT_SALARY_EXPENSE', 'GOSI_EXPENSE', 'EOSB_EXPENSE')
+    `;
+
+    return [...allowancePayments, ...payrollPostings, ...settlementPostings].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+    );
   }
 
   // ── WBS tasks ────────────────────────────────────────────────────────
