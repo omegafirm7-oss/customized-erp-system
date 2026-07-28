@@ -1,7 +1,7 @@
-import { Body, Controller, ForbiddenException, Get, Param, Patch, Post } from "@nestjs/common";
+import { Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { PERMISSIONS } from "@erp/shared-constants";
-import { Permissions } from "../common/decorators/permissions.decorator";
+import { Permissions, SensitivePermission } from "../common/decorators/permissions.decorator";
 import { CurrentCompanyId } from "../common/decorators/current-company-id.decorator";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { JwtPayload } from "../auth/types/jwt-payload.type";
@@ -11,6 +11,7 @@ import { UsersService } from "./users.service";
 import { CompanyJoinRequestsService } from "./company-join-requests.service";
 import { ResetPasswordDto } from "./dto/iam.dtos";
 import { ApproveJoinRequestDto } from "./dto/company-join-request.dtos";
+import { CreateRoleDto, UpdateCompanyUserRoleDto, UpdateRoleDto } from "./dto/role.dtos";
 
 // JwtAuthGuard + PermissionsGuard are registered globally in AppModule.
 // Separate from IamController ("iam/me") since these routes are company-
@@ -36,6 +37,45 @@ export class IamAdminController {
   @Permissions(PERMISSIONS.IAM_USER_MANAGE)
   async listRoles(@CurrentCompanyId() companyId: string) {
     return this.rolesService.listRoles(companyId);
+  }
+
+  @Get("permissions")
+  @Permissions(PERMISSIONS.IAM_ROLE_MANAGE)
+  async listPermissions() {
+    return this.rolesService.getPermissionCatalog();
+  }
+
+  @Post("roles")
+  @Permissions(PERMISSIONS.IAM_ROLE_MANAGE)
+  @SensitivePermission()
+  async createRole(@CurrentCompanyId() companyId: string, @Body() dto: CreateRoleDto) {
+    return this.rolesService.createRole(companyId, dto.name, dto.permissionKeys);
+  }
+
+  @Patch("roles/:id")
+  @Permissions(PERMISSIONS.IAM_ROLE_MANAGE)
+  @SensitivePermission()
+  async updateRole(@CurrentCompanyId() companyId: string, @Param("id") roleId: string, @Body() dto: UpdateRoleDto) {
+    return this.rolesService.updateRole(companyId, roleId, dto);
+  }
+
+  @Delete("roles/:id")
+  @Permissions(PERMISSIONS.IAM_ROLE_MANAGE)
+  @SensitivePermission()
+  async deleteRole(@CurrentCompanyId() companyId: string, @Param("id") roleId: string) {
+    await this.rolesService.deleteRole(companyId, roleId);
+    return { success: true };
+  }
+
+  @Patch("company-users/:id/role")
+  @Permissions(PERMISSIONS.IAM_USER_MANAGE)
+  @SensitivePermission()
+  async updateCompanyUserRole(
+    @CurrentCompanyId() companyId: string,
+    @Param("id") companyUserId: string,
+    @Body() dto: UpdateCompanyUserRoleDto,
+  ) {
+    return this.iamService.updateCompanyUserRole(companyId, companyUserId, dto.roleId);
   }
 
   @Patch("users/:id/reset-password")

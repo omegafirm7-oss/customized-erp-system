@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, WheelEvent, useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 
@@ -203,6 +203,7 @@ export function EmployeeDetailPage() {
   const [recoveryOpenId, setRecoveryOpenId] = useState<string | null>(null);
   const [recoveryForm, setRecoveryForm] = useState({ amount: "", bankCashAccountId: "", recoveryDate: new Date().toISOString().slice(0, 10) });
   const [receiptViewer, setReceiptViewer] = useState<{ url: string; mimeType: string; filename: string } | null>(null);
+  const [receiptZoom, setReceiptZoom] = useState(1);
   const [receiptUploadingFor, setReceiptUploadingFor] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -416,6 +417,7 @@ export function EmployeeDetailPage() {
     try {
       const res = await apiClient.get(`/hr/employee-payments/${payment.id}/receipt`, { responseType: "blob" });
       const url = URL.createObjectURL(res.data as Blob);
+      setReceiptZoom(1);
       setReceiptViewer({ url, mimeType: payment.attachment.mimeType, filename: payment.attachment.filename });
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "Failed to load receipt");
@@ -425,6 +427,15 @@ export function EmployeeDetailPage() {
   function closeReceiptViewer() {
     if (receiptViewer) URL.revokeObjectURL(receiptViewer.url);
     setReceiptViewer(null);
+  }
+
+  function zoomReceipt(delta: number) {
+    setReceiptZoom((z) => Math.min(4, Math.max(0.5, +(z + delta).toFixed(2))));
+  }
+
+  function handleReceiptWheel(e: WheelEvent) {
+    e.preventDefault();
+    zoomReceipt(e.deltaY < 0 ? 0.15 : -0.15);
   }
 
   async function recordRecovery(paymentId: string) {
@@ -1141,22 +1152,51 @@ export function EmployeeDetailPage() {
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 24 }}>
               <strong style={{ color: "#101828" }}>{receiptViewer.filename}</strong>
-              <button className="secondary" onClick={closeReceiptViewer}>
-                Close
-              </button>
+              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {receiptViewer.mimeType.startsWith("image/") && (
+                  <>
+                    <button className="secondary" onClick={() => zoomReceipt(-0.25)} title="Zoom out">
+                      −
+                    </button>
+                    <span style={{ color: "#667085", fontSize: 13, minWidth: 42, textAlign: "center" }}>
+                      {Math.round(receiptZoom * 100)}%
+                    </span>
+                    <button className="secondary" onClick={() => zoomReceipt(0.25)} title="Zoom in">
+                      +
+                    </button>
+                    <button className="secondary" onClick={() => setReceiptZoom(1)} title="Reset zoom">
+                      Reset
+                    </button>
+                  </>
+                )}
+                <button className="secondary" onClick={closeReceiptViewer}>
+                  Close
+                </button>
+              </span>
             </div>
-            <div style={{ overflow: "auto", flex: 1 }}>
+            <div
+              onWheel={receiptViewer.mimeType.startsWith("image/") ? handleReceiptWheel : undefined}
+              style={{ overflow: "auto", flex: 1, width: "85vw", height: "75vh" }}
+            >
               {receiptViewer.mimeType.startsWith("image/") ? (
                 <img
                   src={receiptViewer.url}
                   alt={receiptViewer.filename}
-                  style={{ maxWidth: "85vw", maxHeight: "75vh", display: "block", margin: "0 auto" }}
+                  style={{
+                    maxWidth: "none",
+                    width: `${receiptZoom * 100}%`,
+                    display: "block",
+                    margin: "0 auto",
+                    transition: "width 0.08s ease-out",
+                    cursor: receiptZoom < 4 ? "zoom-in" : "default",
+                  }}
+                  onClick={() => zoomReceipt(0.25)}
                 />
               ) : (
                 <iframe
                   src={receiptViewer.url}
                   title={receiptViewer.filename}
-                  style={{ width: "85vw", height: "75vh", border: "none" }}
+                  style={{ width: "100%", height: "100%", border: "none" }}
                 />
               )}
             </div>
