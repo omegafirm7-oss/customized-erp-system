@@ -45,11 +45,12 @@ interface DashboardResponse {
   totalPendingActive: string;
   totalPendingReleased: string;
   totalPendingAdvances: string;
-  totalPendingSettlements: string;
   pendingLaborAccrual: string;
   dailyLaborCost: Array<{ date: string; cost: string }>;
   groups: DashboardGroup[];
   grandTotal: string;
+  releasedGrandTotal: string;
+  releasedTradeRows: Array<{ employeeId: string; code: string; nameEn: string; designation: string | null; cost: string }>;
 }
 
 function money(v: string | number): string {
@@ -158,6 +159,8 @@ export function EmployeesOverviewPage() {
 
   const allRows = useMemo(() => dashboard?.groups.flatMap((g) => g.rows) ?? [], [dashboard]);
 
+  const [tradeScope, setTradeScope] = useState<"active" | "all">("active");
+
   const tradeBreakdown = useMemo<TradeRow[]>(() => {
     const byTrade = new Map<string, TradeRow>();
     for (const row of allRows) {
@@ -170,8 +173,20 @@ export function EmployeesOverviewPage() {
         byTrade.set(trade, { trade, headcount: 1, cost: Number(row.cost) });
       }
     }
+    if (tradeScope === "all") {
+      for (const row of dashboard?.releasedTradeRows ?? []) {
+        const trade = row.designation?.trim() || "Unspecified";
+        const existing = byTrade.get(trade);
+        if (existing) {
+          existing.headcount += 1;
+          existing.cost += Number(row.cost);
+        } else {
+          byTrade.set(trade, { trade, headcount: 1, cost: Number(row.cost) });
+        }
+      }
+    }
     return [...byTrade.values()].sort((a, b) => b.cost - a.cost);
-  }, [allRows]);
+  }, [allRows, dashboard, tradeScope]);
 
   function downloadTradeBreakdown() {
     downloadCsv(
@@ -325,7 +340,7 @@ export function EmployeesOverviewPage() {
               </div>
               <div className="form-row" style={{ justifyContent: "space-between" }}>
                 <span>
-                  Paid — released employees (settlement payouts) —{" "}
+                  Paid — released employees (salary/food paid before release; not their final settlement) —{" "}
                   <a onClick={() => navigate("/hr/employees/overview/released")} style={{ cursor: "pointer" }}>view released employees</a>
                 </span>
                 <strong>{money(dashboard.totalPaidReleased)}</strong>
@@ -367,7 +382,7 @@ export function EmployeesOverviewPage() {
               </div>
               <div className="form-row" style={{ justifyContent: "space-between" }}>
                 <span>
-                  Pending — released employees (settlement payouts) —{" "}
+                  Pending — released employees (unpaid logged hours before release; not their final settlement) —{" "}
                   <a onClick={() => navigate("/hr/employees/overview/released")} style={{ cursor: "pointer" }}>view released employees</a>
                 </span>
                 <strong>{money(dashboard.totalPendingReleased)}</strong>
@@ -394,6 +409,12 @@ export function EmployeesOverviewPage() {
                 </p>
               </div>
               <div className="button-group">
+                <button className={tradeScope === "active" ? "" : "secondary"} onClick={() => setTradeScope("active")}>
+                  Active only
+                </button>
+                <button className={tradeScope === "all" ? "" : "secondary"} onClick={() => setTradeScope("all")}>
+                  Active + Released
+                </button>
                 <button className="secondary" onClick={downloadTradeBreakdown} disabled={tradeBreakdown.length === 0}>
                   Download (CSV)
                 </button>

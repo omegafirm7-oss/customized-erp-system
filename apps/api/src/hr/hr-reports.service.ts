@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { EmployeePaymentCategory, EmployeeStatus, PayrollRunStatus, Prisma, SettlementStatus, TimesheetDayType } from "@prisma/client";
+import { EmployeePaymentCategory, EmployeeStatus, PayrollRunStatus, Prisma, TimesheetDayType } from "@prisma/client";
 import { PrismaService } from "../common/prisma/prisma.service";
 import { HrSettingsService } from "./hr-settings.service";
 import {
@@ -292,7 +292,57 @@ export class HrReportsService {
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, cost]) => ({ date, cost }));
 
-    const [payrollNetPay, paymentsByCategory, periodSettlementPayments, pendingPayments, pendingSettlements] = await Promise.all([
+    // Released employees, treated exactly like active ones for cost
+    // purposes: accrued cost from their own logged timesheet hours, offset
+    // by whatever SALARY/FOOD payments they were actually paid. A final
+    // settlement (EOSB, leave payout, loan recovery, the lump-sum on
+    // termination/resignation) is a one-time HR/legal payout, not ongoing
+    // project labor cost — deliberately excluded here (still fully visible
+    // on the Released Employees detail page, just not folded into this
+    // labor-cost KPI or into Project Intelligence).
+    const releasedEmployeesRaw = await this.prisma.employee.findMany({
+      where: { companyId, status: EmployeeStatus.TERMINATED },
+      select: {
+        id: true,
+        code: true,
+        nameEn: true,
+        designation: true,
+        basicSalary: true,
+        employeeTimesheetEntries: {
+          where: dateFilter ? { date: dateFilter } : undefined,
+          select: { hoursWorked: true },
+        },
+        payments: {
+          where: {
+            reversedAt: null,
+            category: { in: [EmployeePaymentCategory.SALARY, EmployeePaymentCategory.FOOD] },
+            ...(dateFilter ? { paymentDate: dateFilter } : {}),
+          },
+          select: { category: true, amount: true },
+        },
+      },
+    });
+
+    let releasedGrandTotal = ZERO;
+    let releasedPaidSalary = ZERO;
+    let releasedPaidFood = ZERO;
+    const releasedTradeRows: Array<{ employeeId: string; code: string; nameEn: string; designation: string | null; cost: Prisma.Decimal }> =
+      [];
+    for (const e of releasedEmployeesRaw) {
+      const hourlyRate = e.basicSalary.div(HOURLY_DIVISOR).toDecimalPlaces(4);
+      const cost = e.employeeTimesheetEntries.reduce((sum, t) => sum.add(hourlyRate.mul(t.hoursWorked).toDecimalPlaces(2)), ZERO);
+      releasedGrandTotal = releasedGrandTotal.add(cost);
+      releasedPaidSalary = releasedPaidSalary.add(
+        e.payments.filter((p) => p.category === EmployeePaymentCategory.SALARY).reduce((sum, p) => sum.add(p.amount), ZERO),
+      );
+      releasedPaidFood = releasedPaidFood.add(
+        e.payments.filter((p) => p.category === EmployeePaymentCategory.FOOD).reduce((sum, p) => sum.add(p.amount), ZERO),
+      );
+      releasedTradeRows.push({ employeeId: e.id, code: e.code, nameEn: e.nameEn, designation: e.designation, cost });
+    }
+    const releasedPendingLaborAccrual = Prisma.Decimal.max(ZERO, releasedGrandTotal.sub(releasedPaidSalary));
+
+    const [payrollNetPay, paymentsByCategory, pendingPayments] = await Promise.all([
       fiscalPeriodId
         ? this.prisma.payrollRun
             .findFirst({ where: { companyId, fiscalPeriodId, status: PayrollRunStatus.POSTED } })
@@ -302,15 +352,19 @@ export class HrReportsService {
             .then((r) => r._sum.totalNetPay ?? ZERO),
       // Per-category split — same breakdown as employees.service.ts
       // getSummary() (paidSalary/paidAllowance/paidFood/paidAdvance), just
-      // aggregated company-wide instead of per-employee, so "Total Paid"
-      // on the Overview reads the same way as an individual employee's card.
+      // aggregated across active employees instead of per-employee, so
+      // "Total Paid" on the Overview reads the same way as an individual
+      // employee's card. Scoped to ACTIVE only (via the employee relation)
+      // so it doesn't double-count released employees' salary/food, which
+      // are already folded into releasedPaidSalary/releasedPaidFood above.
       this.prisma.employeePayment.groupBy({
         by: ["category"],
-        where: { companyId, reversedAt: null, ...(dateFilter ? { paymentDate: dateFilter } : {}) },
-        _sum: { amount: true },
-      }),
-      this.prisma.settlementPayment.aggregate({
-        where: { companyId, ...(dateFilter ? { paymentDate: dateFilter } : {}) },
+        where: {
+          companyId,
+          reversedAt: null,
+          employee: { status: EmployeeStatus.ACTIVE },
+          ...(dateFilter ? { paymentDate: dateFilter } : {}),
+        },
         _sum: { amount: true },
       }),
       this.prisma.employeePayment.findMany({
@@ -321,17 +375,15 @@ export class HrReportsService {
         },
         select: { amount: true, recoveredAmount: true },
       }),
-      this.prisma.finalSettlement.findMany({
-        where: { companyId, status: SettlementStatus.POSTED },
-        select: { netAmount: true, paidAmount: true },
-      }),
     ]);
 
     const sumForCategory = (category: EmployeePaymentCategory) =>
       paymentsByCategory.find((p) => p.category === category)?._sum.amount ?? ZERO;
     // SALARY-category payments pay down pending labor accrual directly, the
     // same way a posted payroll run's net pay does — scoped to the same
-    // period as payrollNetPay/grandTotal above via dateFilter.
+    // period as payrollNetPay/grandTotal above via dateFilter. This
+    // company-wide split (active + released combined) still includes the
+    // released employees' own SALARY/FOOD payments computed above.
     const directSalaryPayments = sumForCategory(EmployeePaymentCategory.SALARY);
     const paidSalary = payrollNetPay.add(directSalaryPayments);
     const paidAllowance = sumForCategory(EmployeePaymentCategory.ALLOWANCE);
@@ -347,13 +399,12 @@ export class HrReportsService {
     const pendingLaborAccrual = Prisma.Decimal.max(ZERO, grandTotal.sub(payrollNetPay).sub(directSalaryPayments));
 
     const totalPaidActive = paidSalary.add(paidAllowance).add(paidFood).add(paidAdvance);
-    const totalPaidReleased = periodSettlementPayments._sum.amount ?? ZERO;
+    const totalPaidReleased = releasedPaidSalary.add(releasedPaidFood);
     const totalPaid = totalPaidActive.add(totalPaidReleased);
 
     const totalPendingAdvances = pendingPayments.reduce((sum, p) => sum.add(p.amount.sub(p.recoveredAmount)), ZERO);
-    const totalPendingSettlements = pendingSettlements.reduce((sum, s) => sum.add(s.netAmount.sub(s.paidAmount)), ZERO);
     const totalPendingActive = totalPendingAdvances.add(pendingLaborAccrual);
-    const totalPendingReleased = totalPendingSettlements;
+    const totalPendingReleased = releasedPendingLaborAccrual;
     const totalPending = totalPendingActive.add(totalPendingReleased);
 
     const releasedEmployees = await this.releasedEmployeesList(companyId);
@@ -374,11 +425,12 @@ export class HrReportsService {
       totalPendingActive,
       totalPendingReleased,
       totalPendingAdvances,
-      totalPendingSettlements,
       pendingLaborAccrual,
       dailyLaborCost,
       groups: [...groups.values()].sort((a, b) => a.label.localeCompare(b.label)),
       grandTotal,
+      releasedGrandTotal,
+      releasedTradeRows,
       releasedEmployees,
     };
   }

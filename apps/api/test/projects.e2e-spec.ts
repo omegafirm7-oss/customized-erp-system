@@ -707,7 +707,7 @@ describe("Projects — full job accounting (e2e)", () => {
       expect(intel.body.categories.LABOR.accounts.find((a: any) => a.code === salaryAccount.code)).toBeUndefined();
     });
 
-    it("a final settlement's 'Final salary days' line on 5112 shows up in the Labor drill-down, matching the intelligence total (not just PAYROLL-run postings)", async () => {
+    it("a final settlement's 'Final salary days' line on 5112 is excluded from both the Labor total and the drill-down — a settlement is a one-time exit payout, not project labor cost", async () => {
       const ctx = await setupProjectContext();
       const project = await createOverTimeProject(ctx);
       const now = Date.now();
@@ -731,10 +731,18 @@ describe("Projects — full job accounting (e2e)", () => {
         await request(app.getHttpServer()).get("/hr/employees").set("Authorization", `Bearer ${ctx.accessToken}`).expect(200)
       ).body.find((e: any) => e.code === "PE2");
 
+      // Add an ordinary SALARY payment first, so 5112 has *some* real Labor
+      // cost to sanity-check against — the settlement below must not affect it.
+      await request(app.getHttpServer())
+        .post(`/hr/employees/${employee.id}/payments`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ category: "SALARY", amount: "500", bankCashAccountId: ctx.cashAccount.id })
+        .expect(201);
+
       // No payroll run ever posted for this employee — "coveredUntil" falls
       // back to joinDate, so every one of these 5 days becomes a "final
       // salary days" stub in the settlement, posted to 5112 (project cost
-      // center), never touching a payroll run at all.
+      // center) — but as a settlement JE, not an ordinary payroll/SALARY one.
       const lastWorkingDay = new Date(new Date(joinDate).getTime() + 5 * 24 * 3600 * 1000).toISOString().slice(0, 10);
       const settlement = (
         await request(app.getHttpServer())
@@ -751,93 +759,16 @@ describe("Projects — full job accounting (e2e)", () => {
         .expect(200);
       const laborRow = intel.body.categories.LABOR.accounts.find((a: any) => a.code === "5112");
       expect(laborRow).toBeDefined();
-      expect(Number(laborRow.amount)).toBe(Number(settlement.finalSalaryAmount));
+      // Only the 500 SALARY payment counts — the settlement's finalSalaryAmount must not be added in.
+      expect(Number(laborRow.amount)).toBe(500);
 
       const labor = await request(app.getHttpServer())
         .get(`/projects/${project.id}/costs/labor?accountId=${laborRow.id}`)
         .set("Authorization", `Bearer ${ctx.accessToken}`)
         .expect(200);
-      const settlementRow = labor.body.find((l: any) => l.source === "SETTLEMENT");
-      expect(settlementRow).toBeDefined();
-      expect(settlementRow.employeeId).toBe(employee.id);
-      expect(Number(settlementRow.amount)).toBe(Number(settlement.finalSalaryAmount));
-      // Drill-down total for this account must equal the summary card's total —
-      // this is the exact bug reported: intelligence showed 12,830 for 5112
-      // but the drill-down (missing settlement postings entirely) showed only 3,600.
+      expect(labor.body.every((l: any) => l.source !== "SETTLEMENT")).toBe(true);
       const drillDownTotal = labor.body.reduce((sum: number, l: any) => sum + Number(l.amount), 0);
-      expect(drillDownTotal).toBeCloseTo(Number(laborRow.amount), 2);
-    });
-
-    it("still finds the settlement's Labor drill-down row after a reversal + re-release (FinalSettlement row is reused, its id no longer matches the new JE's sourceDocumentId)", async () => {
-      const ctx = await setupProjectContext();
-      const project = await createOverTimeProject(ctx);
-      const now = Date.now();
-      const period = ctx.periods.find(
-        (p: any) => new Date(p.startDate).getTime() <= now && now <= new Date(p.endDate).getTime(),
-      );
-      const joinDate = new Date(new Date(period.startDate).getTime() - 10 * 24 * 3600 * 1000).toISOString().slice(0, 10);
-
-      const csvHeader =
-        "code,nameEn,nameAr,designation,nationality,isSaudi,iqamaOrNationalId,iqamaExpiry,passportNumber,passportExpiry,gosiNumber,joinDate,contractType,bankCode,iban,costCenterCode,annualLeaveDays,basicSalary,housingAllowance,transportAllowance,otherAllowance,gosiExempt";
-      const csv = [
-        csvHeader,
-        `PE3,Twice Released,,Mason,SA,true,1099999997,2027-06-30,,,50099997,${joinDate},UNLIMITED,80,SA4420000001234567891236,${project.costCenter.code},21,6000,1000,0,0,false`,
-      ].join("\n");
-      await request(app.getHttpServer())
-        .post("/hr/employees/import")
-        .set("Authorization", `Bearer ${ctx.accessToken}`)
-        .send({ csv })
-        .expect(201);
-      const employee = (
-        await request(app.getHttpServer()).get("/hr/employees").set("Authorization", `Bearer ${ctx.accessToken}`).expect(200)
-      ).body.find((e: any) => e.code === "PE3");
-
-      const lastWorkingDay1 = new Date(new Date(joinDate).getTime() + 3 * 24 * 3600 * 1000).toISOString().slice(0, 10);
-      const firstSettlement = (
-        await request(app.getHttpServer())
-          .post(`/hr/employees/${employee.id}/termination`)
-          .set("Authorization", `Bearer ${ctx.accessToken}`)
-          .send({ reason: "RESIGNATION", lastWorkingDay: lastWorkingDay1 })
-          .expect(201)
-      ).body;
-
-      // Reverse it (e.g. the employee was reinstated) — the FinalSettlement
-      // row survives with status REVERSED, still carrying its original id.
-      await request(app.getHttpServer())
-        .post(`/hr/settlements/${firstSettlement.id}/reverse`)
-        .set("Authorization", `Bearer ${ctx.accessToken}`)
-        .expect(201);
-
-      // Release them again, later, for more days — this UPDATEs the same
-      // FinalSettlement row (same id) but posts a brand-new JE, whose
-      // sourceDocumentId is a freshly generated UUID that does NOT equal
-      // the settlement row's (unchanged) id.
-      const lastWorkingDay2 = new Date(new Date(joinDate).getTime() + 8 * 24 * 3600 * 1000).toISOString().slice(0, 10);
-      const secondSettlement = (
-        await request(app.getHttpServer())
-          .post(`/hr/employees/${employee.id}/termination`)
-          .set("Authorization", `Bearer ${ctx.accessToken}`)
-          .send({ reason: "RESIGNATION", lastWorkingDay: lastWorkingDay2 })
-          .expect(201)
-      ).body;
-      expect(secondSettlement.id).toBe(firstSettlement.id);
-      expect(Number(secondSettlement.finalSalaryAmount)).toBeGreaterThan(0);
-
-      const intel = await request(app.getHttpServer())
-        .get(`/projects/${project.id}/intelligence`)
-        .set("Authorization", `Bearer ${ctx.accessToken}`)
-        .expect(200);
-      const laborRow = intel.body.categories.LABOR.accounts.find((a: any) => a.code === "5112");
-      expect(laborRow).toBeDefined();
-      expect(Number(laborRow.amount)).toBe(Number(secondSettlement.finalSalaryAmount));
-
-      const labor = await request(app.getHttpServer())
-        .get(`/projects/${project.id}/costs/labor?accountId=${laborRow.id}`)
-        .set("Authorization", `Bearer ${ctx.accessToken}`)
-        .expect(200);
-      const settlementRow = labor.body.find((l: any) => l.source === "SETTLEMENT");
-      expect(settlementRow).toBeDefined();
-      expect(Number(settlementRow.amount)).toBe(Number(secondSettlement.finalSalaryAmount));
+      expect(drillDownTotal).toBeCloseTo(500, 2);
     });
 
     it("rejects an ADVANCE payment's expenseAccountId as irrelevant (ADVANCE ignores it) and rejects a non-expense override account", async () => {

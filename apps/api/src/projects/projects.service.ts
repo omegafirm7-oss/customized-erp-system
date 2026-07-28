@@ -288,6 +288,12 @@ export class ProjectsService {
     // creates a second, unlinked JE (linked only via reversalOfEntryId) that
     // would otherwise sneak through as an unmatched debit/credit leg and
     // throw the account's total off by that amount.
+    //
+    // Final-settlement JEs (EOSB/leave payout/final-salary-days on
+    // termination or resignation) are also excluded — a settlement is a
+    // one-time HR/legal exit payout, not ongoing project labor cost, and
+    // shouldn't inflate this figure the same way a payroll run or a direct
+    // SALARY payment does.
     const payrollRows = await this.prisma.$queryRaw<Row[]>`
       SELECT a."id", a."code", a."name", a."costCategory", SUM(jel."debit" - jel."credit") AS "amount"
       FROM "journal_entry_lines" jel
@@ -304,6 +310,10 @@ export class ProjectsService {
           SELECT "journalEntryId" FROM "employee_payments"
           WHERE "companyId" = ${companyId} AND "journalEntryId" IS NOT NULL
         ))
+        AND je."id" NOT IN (
+          SELECT "journalEntryId" FROM "final_settlements"
+          WHERE "companyId" = ${companyId} AND "journalEntryId" IS NOT NULL
+        )
       GROUP BY a."id", a."code", a."name", a."costCategory"
       HAVING SUM(jel."debit" - jel."credit") != 0
       ORDER BY a."code"
@@ -412,7 +422,7 @@ export class ProjectsService {
     const accountFilter = accountId ? Prisma.sql`AND a."id" = ${accountId}` : Prisma.empty;
 
     type Row = {
-      source: "ALLOWANCE" | "FOOD" | "SALARY" | "PAYROLL" | "SETTLEMENT";
+      source: "ALLOWANCE" | "FOOD" | "SALARY" | "PAYROLL";
       employeeId: string | null;
       employeeCode: string | null;
       employeeName: string | null;
@@ -461,41 +471,13 @@ export class ProjectsService {
       HAVING SUM(jel."debit" - jel."credit") != 0
     `;
 
-    // Final settlements (release/termination payouts) post their own JE —
-    // "Final salary days" lands on the same PROJECT_SALARY_EXPENSE account as
-    // an ordinary SALARY payment — that isn't sourced from a payroll run, so
-    // it's a separate query from payrollPostings above. Only 'POSTED' (not
-    // 'REVERSED') is included: unlike payrollPostings this lists individual
-    // transactions rather than summing both legs of a reversal to net zero,
-    // and a reversed settlement's reversal JE carries no sourceDocumentId of
-    // its own to join back to, so it would never appear here anyway.
-    //
-    // Joined via final_settlements.journalEntryId (not je.sourceDocumentId =
-    // fs.id): FinalSettlement is 1:1 per employee, so releasing someone a
-    // second time (after a reversal) reuses the existing row via UPDATE
-    // rather than inserting a new one — journalEntryId gets repointed at the
-    // new JE, but the row's own id never changes, so the JE's
-    // sourceDocumentId (set once, at whichever release first created the
-    // row) can end up referencing a stale id that no longer matches.
-    // journalEntryId is always kept current, so joining on it is safe.
-    const settlementPostings = await this.prisma.$queryRaw<Row[]>`
-      SELECT 'SETTLEMENT' AS "source", e."id" AS "employeeId", e."code" AS "employeeCode", e."nameEn" AS "employeeName",
-             a."code" AS "accountCode", a."name" AS "accountName", jel."debit" - jel."credit" AS "amount",
-             fs."lastWorkingDay" AS "date", je."memo" AS "memo", NULL AS "payrollRunId", NULL AS "payrollRunNumber"
-      FROM "journal_entry_lines" jel
-      JOIN "journal_entries" je ON je."id" = jel."journalEntryId"
-      JOIN "accounts" a ON a."id" = jel."accountId"
-      JOIN "final_settlements" fs ON fs."journalEntryId" = je."id" AND fs."companyId" = ${companyId}
-      JOIN "employees" e ON e."id" = fs."employeeId"
-      WHERE jel."costCenterId" = ${project.costCenterId}
-        ${accountFilter}
-        AND je."status" = 'POSTED'
-        AND a."controlAccountType" IN ('SALARY_EXPENSE', 'PROJECT_SALARY_EXPENSE', 'GOSI_EXPENSE', 'EOSB_EXPENSE')
-    `;
+    // Final settlements (EOSB/leave payout/final-salary-days on termination
+    // or resignation) are deliberately NOT included here — a settlement is
+    // a one-time HR/legal exit payout, not ongoing project labor cost, so it
+    // shouldn't show up in this drill-down at all (matches the exclusion in
+    // getProjectIntelligence's payrollRows above).
 
-    return [...allowancePayments, ...payrollPostings, ...settlementPostings].sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-    );
+    return [...allowancePayments, ...payrollPostings].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }
 
   // ── WBS tasks ────────────────────────────────────────────────────────

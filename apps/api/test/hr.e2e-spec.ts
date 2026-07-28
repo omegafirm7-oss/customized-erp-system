@@ -949,8 +949,13 @@ describe("HR & Saudi Payroll (e2e)", () => {
     expect(Number(overallDetailO1.cost)).toBe(Number(rowO1.cost));
     expect(Number(overallDetailO1.allowancesPaid)).toBe(150);
 
-    // Release EMPO2 and confirm it appears in the released section with pending = net,
-    // and that totalPendingSettlements now reflects it
+    // Release EMPO2 and confirm it appears in the released section — but its
+    // Paid/Pending on the Overview is accrual-based (its own 100 accrued
+    // cost minus the 25 FOOD it already got paid), NOT its settlement
+    // amount: a final settlement is a one-time HR/legal exit payout, not
+    // ongoing project labor cost, so it's deliberately excluded from these
+    // KPIs entirely (still fully visible on the Released Employees detail
+    // page via releasedEmployees, which is untouched here).
     const lastWorkingDay = new Date(period.endDate).toISOString().slice(0, 10);
     const settlement = (
       await request(app.getHttpServer())
@@ -969,16 +974,21 @@ describe("HR & Saudi Payroll (e2e)", () => {
     const releasedRow = overviewAfter.releasedEmployees.find((r: any) => r.employeeId === empO2.id);
     expect(releasedRow).toBeDefined();
     expect(Number(releasedRow.netAmount)).toBe(Number(settlement.netAmount));
-    expect(Number(releasedRow.paidAmount)).toBe(0);
-    expect(Number(releasedRow.pendingAmount)).toBe(Number(settlement.netAmount));
-    expect(Number(overviewAfter.totalPendingSettlements)).toBe(Number(settlement.netAmount));
-    expect(Number(overviewAfter.totalPendingReleased)).toBe(Number(settlement.netAmount));
+    // EMPO2's own accrued cost is 100 (unaffected by the 25 FOOD payment —
+    // FOOD is a straight expense, not a paydown of accrued wage hours, same
+    // as for active employees where only SALARY/payroll offsets pending).
+    expect(Number(overviewAfter.totalPaidReleased)).toBe(25);
+    expect(Number(overviewAfter.totalPendingReleased)).toBe(100);
     // EMPO2 dropped out of the active cost groups on release, so the
-    // accrued-labor component of pending is now EMPO1 alone (200, not 300).
+    // accrued-labor component of active pending is now EMPO1 alone (200, not 300).
     expect(Number(overviewAfter.pendingLaborAccrual)).toBe(200);
-    expect(Number(overviewAfter.totalPending)).toBe(500 + Number(settlement.netAmount));
+    expect(Number(overviewAfter.totalPending)).toBe(500 + 100);
     // No longer an active employee, so no longer in the cost groups
     expect(overviewAfter.groups.some((g: any) => g.rows.some((r: any) => r.employeeId === empO2.id))).toBe(false);
+    // Still shows up in the trade-toggle data for "Active + Released" combined views.
+    const releasedTradeRow = overviewAfter.releasedTradeRows.find((r: any) => r.employeeId === empO2.id);
+    expect(releasedTradeRow).toBeDefined();
+    expect(Number(releasedTradeRow.cost)).toBe(100);
   });
 
   it("employee payments ledger: allowance posts a straight expense, advance stays pending, recovery clears it, over-recovery and allowance-recovery are rejected", async () => {
