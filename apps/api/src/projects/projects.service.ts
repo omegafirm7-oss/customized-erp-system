@@ -469,6 +469,15 @@ export class ProjectsService {
     // transactions rather than summing both legs of a reversal to net zero,
     // and a reversed settlement's reversal JE carries no sourceDocumentId of
     // its own to join back to, so it would never appear here anyway.
+    //
+    // Joined via final_settlements.journalEntryId (not je.sourceDocumentId =
+    // fs.id): FinalSettlement is 1:1 per employee, so releasing someone a
+    // second time (after a reversal) reuses the existing row via UPDATE
+    // rather than inserting a new one — journalEntryId gets repointed at the
+    // new JE, but the row's own id never changes, so the JE's
+    // sourceDocumentId (set once, at whichever release first created the
+    // row) can end up referencing a stale id that no longer matches.
+    // journalEntryId is always kept current, so joining on it is safe.
     const settlementPostings = await this.prisma.$queryRaw<Row[]>`
       SELECT 'SETTLEMENT' AS "source", e."id" AS "employeeId", e."code" AS "employeeCode", e."nameEn" AS "employeeName",
              a."code" AS "accountCode", a."name" AS "accountName", jel."debit" - jel."credit" AS "amount",
@@ -476,7 +485,7 @@ export class ProjectsService {
       FROM "journal_entry_lines" jel
       JOIN "journal_entries" je ON je."id" = jel."journalEntryId"
       JOIN "accounts" a ON a."id" = jel."accountId"
-      JOIN "final_settlements" fs ON fs."id" = je."sourceDocumentId" AND fs."companyId" = ${companyId}
+      JOIN "final_settlements" fs ON fs."journalEntryId" = je."id" AND fs."companyId" = ${companyId}
       JOIN "employees" e ON e."id" = fs."employeeId"
       WHERE jel."costCenterId" = ${project.costCenterId}
         ${accountFilter}
