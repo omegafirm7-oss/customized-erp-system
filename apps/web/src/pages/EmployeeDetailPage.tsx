@@ -1,4 +1,4 @@
-import { FormEvent, WheelEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, SyntheticEvent, WheelEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 
@@ -205,7 +205,9 @@ export function EmployeeDetailPage() {
   const [receiptViewer, setReceiptViewer] = useState<{ url: string; mimeType: string; filename: string } | null>(null);
   const [receiptZoom, setReceiptZoom] = useState(1);
   const [receiptOffset, setReceiptOffset] = useState({ x: 0, y: 0 });
+  const [receiptFitSize, setReceiptFitSize] = useState<{ width: number; height: number } | null>(null);
   const receiptImgRef = useRef<HTMLImageElement | null>(null);
+  const receiptContainerRef = useRef<HTMLDivElement | null>(null);
   const [receiptUploadingFor, setReceiptUploadingFor] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -421,6 +423,7 @@ export function EmployeeDetailPage() {
       const url = URL.createObjectURL(res.data as Blob);
       setReceiptZoom(1);
       setReceiptOffset({ x: 0, y: 0 });
+      setReceiptFitSize(null);
       setReceiptViewer({ url, mimeType: payment.attachment.mimeType, filename: payment.attachment.filename });
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "Failed to load receipt");
@@ -430,6 +433,21 @@ export function EmployeeDetailPage() {
   function closeReceiptViewer() {
     if (receiptViewer) URL.revokeObjectURL(receiptViewer.url);
     setReceiptViewer(null);
+  }
+
+  /** Computes the image's displayed (unzoomed) box in JS instead of leaning on CSS
+   * max-width/max-height + object-fit: percentage-based max-height sizing for a bare <img>
+   * doesn't reliably shrink inside a flex container (a tall receipt screenshot rendered at
+   * full native height and got clipped by the viewer's overflow:hidden). Computing the exact
+   * fitted pixel box also keeps the img's own box equal to its visible content — no
+   * object-fit letterboxing — which the cursor-anchored zoom math in zoomReceiptAt relies on. */
+  function handleReceiptImageLoad(e: SyntheticEvent<HTMLImageElement>) {
+    const img = e.currentTarget;
+    const container = receiptContainerRef.current;
+    if (!container || img.naturalWidth === 0 || img.naturalHeight === 0) return;
+    const containerRect = container.getBoundingClientRect();
+    const scale = Math.min(containerRect.width / img.naturalWidth, containerRect.height / img.naturalHeight, 1);
+    setReceiptFitSize({ width: img.naturalWidth * scale, height: img.naturalHeight * scale });
   }
 
   /** Zooms in/out anchored to a screen point (defaults to the image's own center) so the
@@ -1209,6 +1227,7 @@ export function EmployeeDetailPage() {
               </span>
             </div>
             <div
+              ref={receiptContainerRef}
               onWheel={receiptViewer.mimeType.startsWith("image/") ? handleReceiptWheel : undefined}
               style={{
                 overflow: "hidden",
@@ -1225,9 +1244,11 @@ export function EmployeeDetailPage() {
                   ref={receiptImgRef}
                   src={receiptViewer.url}
                   alt={receiptViewer.filename}
+                  onLoad={handleReceiptImageLoad}
                   style={{
-                    maxWidth: "100%",
-                    maxHeight: "100%",
+                    ...(receiptFitSize
+                      ? { width: receiptFitSize.width, height: receiptFitSize.height }
+                      : { maxWidth: "100%", maxHeight: "100%", visibility: "hidden" }),
                     display: "block",
                     transform: `translate(${receiptOffset.x}px, ${receiptOffset.y}px) scale(${receiptZoom})`,
                     transformOrigin: "0 0",
