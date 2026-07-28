@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { downloadCsv } from "../utils/csv";
 
 interface FiscalPeriod {
   id: string;
@@ -73,6 +74,38 @@ function DailyCostChart({ data }: { data: Array<{ date: string; cost: string }> 
   );
 }
 
+interface TradeRow {
+  trade: string;
+  headcount: number;
+  cost: number;
+}
+
+function TradeBarChart({ data }: { data: TradeRow[] }) {
+  if (data.length === 0) return null;
+  const max = Math.max(...data.map((d) => d.cost), 1);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {data.map((d) => (
+        <div key={d.trade} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 160, fontSize: 13, color: "#344054", textAlign: "right", flexShrink: 0 }}>{d.trade}</div>
+          <div style={{ flex: 1, background: "#f2f4f7", borderRadius: 4, overflow: "hidden", height: 20 }}>
+            <div
+              style={{
+                width: `${Math.max((d.cost / max) * 100, 2)}%`,
+                height: "100%",
+                background: "#1e4fa3",
+                borderRadius: 4,
+              }}
+            />
+          </div>
+          <div style={{ width: 110, fontSize: 13, fontWeight: 600, flexShrink: 0 }}>{money(d.cost)}</div>
+          <div style={{ width: 70, fontSize: 12, color: "#667085", flexShrink: 0 }}>{d.headcount} emp.</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function EmployeesOverviewPage() {
   const navigate = useNavigate();
   const [periods, setPeriods] = useState<FiscalPeriod[]>([]);
@@ -118,12 +151,59 @@ export function EmployeesOverviewPage() {
       ? "Every day recorded to date, across all periods."
       : "Days within the selected period only.";
 
+  const allRows = useMemo(() => dashboard?.groups.flatMap((g) => g.rows) ?? [], [dashboard]);
+
+  const tradeBreakdown = useMemo<TradeRow[]>(() => {
+    const byTrade = new Map<string, TradeRow>();
+    for (const row of allRows) {
+      const trade = row.designation?.trim() || "Unspecified";
+      const existing = byTrade.get(trade);
+      if (existing) {
+        existing.headcount += 1;
+        existing.cost += Number(row.cost);
+      } else {
+        byTrade.set(trade, { trade, headcount: 1, cost: Number(row.cost) });
+      }
+    }
+    return [...byTrade.values()].sort((a, b) => b.cost - a.cost);
+  }, [allRows]);
+
+  function downloadTradeBreakdown() {
+    downloadCsv(
+      `employees-by-trade-${scope}${scope === "period" ? `-${periodId}` : ""}.csv`,
+      ["Trade", "Headcount", "Total cost (SAR)"],
+      tradeBreakdown.map((t) => [t.trade, t.headcount, t.cost.toFixed(2)]),
+    );
+  }
+
+  function downloadEmployeeCostReport() {
+    downloadCsv(
+      `employee-cost-report-${scope}${scope === "period" ? `-${periodId}` : ""}.csv`,
+      ["Employee code", "Name", "Trade", "Cost center", "Basic salary", "Hourly rate", "Hours worked", "Cost (SAR)"],
+      (dashboard?.groups ?? []).flatMap((g) =>
+        g.rows.map((r) => [
+          r.code,
+          r.nameEn,
+          r.designation?.trim() || "Unspecified",
+          g.label,
+          Number(r.basicSalary).toFixed(2),
+          Number(r.hourlyRate).toFixed(2),
+          Number(r.hoursWorked),
+          Number(r.cost).toFixed(2),
+        ]),
+      ),
+    );
+  }
+
   return (
     <div>
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h2>Employees Overview</h2>
           <span>
+            <button className="secondary" onClick={downloadEmployeeCostReport} disabled={!dashboard}>
+              Download cost report (CSV)
+            </button>{" "}
             <button
               className="secondary"
               onClick={() =>
@@ -234,6 +314,48 @@ export function EmployeesOverviewPage() {
               hourly rate across all active employees, from real timesheets. {dailyCostCaption}
             </p>
             <DailyCostChart data={dashboard.dailyLaborCost} />
+          </div>
+
+          <div className="card">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <h3>Employees by trade</h3>
+                <p style={{ color: "#667085", fontSize: 13, marginTop: 2 }}>
+                  Headcount and accrued labor cost per trade/designation (e.g. Mason, Electrician) — for staffing and
+                  cost-allocation decisions. {dailyCostCaption}
+                </p>
+              </div>
+              <button className="secondary" onClick={downloadTradeBreakdown} disabled={tradeBreakdown.length === 0}>
+                Download (CSV)
+              </button>
+            </div>
+            {tradeBreakdown.length === 0 ? (
+              <p>No active employees.</p>
+            ) : (
+              <>
+                <TradeBarChart data={tradeBreakdown} />
+                <table style={{ marginTop: 16 }}>
+                  <thead>
+                    <tr>
+                      <th>Trade</th>
+                      <th>Headcount</th>
+                      <th>Cost</th>
+                      <th>% of total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tradeBreakdown.map((t) => (
+                      <tr key={t.trade}>
+                        <td>{t.trade}</td>
+                        <td>{t.headcount}</td>
+                        <td>{money(t.cost)}</td>
+                        <td>{((t.cost / Math.max(Number(dashboard.grandTotal), 1)) * 100).toFixed(1)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
           </div>
 
           <div className="card">

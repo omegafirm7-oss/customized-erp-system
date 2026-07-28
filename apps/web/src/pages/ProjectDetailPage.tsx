@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { downloadCsv } from "../utils/csv";
 
 interface WbsTask {
   id: string;
@@ -205,6 +206,23 @@ export function ProjectDetailPage() {
     }
   }
 
+  function downloadIntelligenceCsv() {
+    if (!intelligence || !project) return;
+    const cats = ["MATERIAL", "MACHINERY", "LABOR", "OTHER"] as const;
+    const rows: Array<Array<string | number>> = [];
+    for (const cat of cats) {
+      const bucket = intelligence.categories[cat];
+      if (!bucket) continue;
+      for (const account of bucket.accounts) {
+        rows.push([cat, account.code, account.name, Number(account.amount).toFixed(2)]);
+      }
+      rows.push([cat, "", "Category total", Number(bucket.total).toFixed(2)]);
+    }
+    rows.push(["", "", "Grand total (all costs)", Number(intelligence.grandTotal).toFixed(2)]);
+    rows.push(["", "", "Contract value", Number(project.contractValue).toFixed(2)]);
+    downloadCsv(`${project.code}-project-intelligence.csv`, ["Category", "Account code", "Account name", "Amount (SAR, gross of VAT)"], rows);
+  }
+
   /** Render tasks as an indented tree (roots first, DFS). */
   function taskTree(): Array<WbsTask & { depth: number }> {
     if (!project) return [];
@@ -307,8 +325,14 @@ export function ProjectDetailPage() {
           <div className="intelligence-header">
             <div>
               <div className="intelligence-title">Project Intelligence</div>
-              <div className="intelligence-subtitle">Live cost breakdown across every purchase invoice and payroll posting for this project</div>
+              <div className="intelligence-subtitle">
+                Live cost breakdown across every purchase invoice and payroll posting for this project — amounts are
+                gross of VAT (the real amount paid/payable to vendors)
+              </div>
             </div>
+            <button className="secondary" onClick={downloadIntelligenceCsv}>
+              Download (CSV)
+            </button>
           </div>
 
           <div className="pi-kpi-strip">

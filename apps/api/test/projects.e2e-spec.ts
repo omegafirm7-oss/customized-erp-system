@@ -440,6 +440,47 @@ describe("Projects — full job accounting (e2e)", () => {
       expect(Number(lines.body[0].grossAmount)).toBe(300);
     });
 
+    it("Material/Machinery costs are gross of VAT — the real amount paid/payable, not the net GL expense", async () => {
+      const ctx = await setupProjectContext();
+      const project = await createOverTimeProject(ctx);
+      const today = new Date().toISOString();
+
+      // 5104 Site Tools & Consumables, VAT-exclusive line (this endpoint's default):
+      // unitPrice 100 @ STANDARD_15 means net 100.00 + VAT 15.00 = gross 115.00.
+      const draft = await request(app.getHttpServer())
+        .post("/ap/invoices")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({
+          businessPartnerId: ctx.vendor.id,
+          vendorInvoiceNumber: `VND-${Date.now()}-vat`,
+          postingDate: today,
+          dueDate: today,
+          lines: [
+            {
+              description: "Consumables with VAT",
+              quantity: "1",
+              unitPrice: "100",
+              vatCategory: "STANDARD_15",
+              accountId: ctx.accountByCode("5104").id,
+              projectId: project.id,
+            },
+          ],
+        })
+        .expect(201);
+      expect(Number(draft.body.lines[0].netAmount)).toBe(100);
+      expect(Number(draft.body.lines[0].grossAmount)).toBe(115);
+
+      const res = await request(app.getHttpServer())
+        .get(`/projects/${project.id}/intelligence`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+
+      // Gross (115), not net (100) — the dashboard reflects what was actually paid/payable.
+      expect(res.body.categories.MATERIAL.total).toBe("115.00");
+      const materialRow = res.body.categories.MATERIAL.accounts.find((a: any) => a.code === "5104");
+      expect(materialRow.amount).toBe("115.00");
+    });
+
     it("buckets Labor from ALLOWANCE employee payments, honoring an explicit expenseAccountId override", async () => {
       const ctx = await setupProjectContext();
       const project = await createOverTimeProject(ctx);

@@ -245,8 +245,10 @@ export class ProjectsService {
 
     type Row = { id: string; code: string; name: string; costCategory: "MATERIAL" | "MACHINERY" | "LABOR" | null; amount: Prisma.Decimal };
 
+    // grossAmount (net + VAT) so Material/Machinery reflects the actual amount paid/payable
+    // to vendors, not the VAT-exclusive expense recognized in the GL.
     const invoiceRows = await this.prisma.$queryRaw<Row[]>`
-      SELECT a."id", a."code", a."name", a."costCategory", SUM(pil."netAmount") AS "amount"
+      SELECT a."id", a."code", a."name", a."costCategory", SUM(pil."grossAmount") AS "amount"
       FROM "purchase_invoice_lines" pil
       JOIN "purchase_invoices" pi ON pi."id" = pil."purchaseInvoiceId"
       JOIN "accounts" a ON a."id" = pil."expenseAccountId"
