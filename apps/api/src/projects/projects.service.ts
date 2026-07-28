@@ -266,13 +266,19 @@ export class ProjectsService {
           FROM "employee_payments" ep
           JOIN "employees" e ON e."id" = ep."employeeId"
           JOIN "accounts" a ON a."id" = COALESCE(ep."expenseAccountId", ${defaultAllowanceAccount.id})
-          WHERE ep."companyId" = ${companyId} AND ep."category" IN ('ALLOWANCE', 'SALARY')
+          WHERE ep."companyId" = ${companyId} AND ep."category" IN ('ALLOWANCE', 'FOOD', 'SALARY')
+            AND ep."reversedAt" IS NULL
             AND e."costCenterId" = ${project.costCenterId}
           GROUP BY a."id", a."code", a."name", a."costCategory"
           ORDER BY a."code"
         `
       : [];
 
+    // status IN ('POSTED','REVERSED') deliberately sums both legs of a reversed
+    // entry (original + its balancing reversal) so a reversed payroll posting
+    // nets to zero rather than double-counting — but that leaves a phantom
+    // zero-amount row for the account. HAVING drops those before they ever
+    // reach the response.
     const payrollRows = await this.prisma.$queryRaw<Row[]>`
       SELECT a."id", a."code", a."name", a."costCategory", SUM(jel."debit" - jel."credit") AS "amount"
       FROM "journal_entry_lines" jel
@@ -286,6 +292,7 @@ export class ProjectsService {
           WHERE "companyId" = ${companyId} AND "journalEntryId" IS NOT NULL
         )
       GROUP BY a."id", a."code", a."name", a."costCategory"
+      HAVING SUM(jel."debit" - jel."credit") != 0
       ORDER BY a."code"
     `;
 
@@ -335,6 +342,12 @@ export class ProjectsService {
       categories.LABOR.accounts.push({ id, code: row.code, name: row.name, amount: row.amount.toFixed(2) });
     }
     categories.LABOR.accounts.sort((a, b) => a.code.localeCompare(b.code));
+    // Defensive: an account that nets to exactly zero (e.g. a fully reversed
+    // posting) contributes nothing to the total but shouldn't be listed as a
+    // line item.
+    for (const key of Object.keys(categories) as Array<keyof typeof categories>) {
+      categories[key].accounts = categories[key].accounts.filter((a) => a.amount !== "0.00");
+    }
     for (const key of Object.keys(categories) as Array<keyof typeof categories>) {
       categories[key].total = totals[key].toFixed(2);
     }
@@ -374,15 +387,19 @@ export class ProjectsService {
     `;
   }
 
-  /** Drill-down: every ALLOWANCE payment recorded against employees assigned to this project's cost center. */
-  async getLaborPayments(companyId: string, projectId: string) {
+  /** Drill-down: every ALLOWANCE/FOOD/SALARY payment (and payroll posting) recorded against
+   * employees assigned to this project's cost center, optionally narrowed to one account so
+   * clicking a specific Labor account (e.g. Employee Allowances Expense) doesn't show every
+   * account's rows mixed together. */
+  async getLaborPayments(companyId: string, projectId: string, accountId?: string) {
     const project = await this.getOwned(companyId, projectId);
     const defaultAllowanceAccount = await this.accountResolution
       .getControlAccount(this.prisma, companyId, ControlAccountType.ALLOWANCE_EXPENSE)
       .catch(() => null);
+    const accountFilter = accountId ? Prisma.sql`AND a."id" = ${accountId}` : Prisma.empty;
 
     type Row = {
-      source: "ALLOWANCE" | "SALARY" | "PAYROLL";
+      source: "ALLOWANCE" | "FOOD" | "SALARY" | "PAYROLL";
       employeeId: string | null;
       employeeCode: string | null;
       employeeName: string | null;
@@ -402,7 +419,9 @@ export class ProjectsService {
       FROM "employee_payments" ep
       JOIN "employees" e ON e."id" = ep."employeeId"
       LEFT JOIN "accounts" a ON a."id" = COALESCE(ep."expenseAccountId", ${defaultAllowanceAccount?.id ?? null})
-      WHERE ep."companyId" = ${companyId} AND ep."category" IN ('ALLOWANCE', 'SALARY') AND e."costCenterId" = ${project.costCenterId}
+      WHERE ep."companyId" = ${companyId} AND ep."category" IN ('ALLOWANCE', 'FOOD', 'SALARY')
+        AND ep."reversedAt" IS NULL AND e."costCenterId" = ${project.costCenterId}
+        ${accountFilter}
     `;
 
     // Payroll runs stamp costCenterId at the line level (per employee), but
@@ -418,6 +437,7 @@ export class ProjectsService {
       JOIN "accounts" a ON a."id" = jel."accountId"
       JOIN "payroll_runs" pr ON pr."id" = je."sourceDocumentId" AND pr."companyId" = ${companyId}
       WHERE jel."costCenterId" = ${project.costCenterId}
+        ${accountFilter}
         AND je."status" IN ('POSTED', 'REVERSED')
         AND a."controlAccountType" IN ('SALARY_EXPENSE', 'PROJECT_SALARY_EXPENSE', 'GOSI_EXPENSE', 'EOSB_EXPENSE', 'LEAVE_EXPENSE')
         AND je."id" NOT IN (
@@ -425,6 +445,7 @@ export class ProjectsService {
           WHERE "companyId" = ${companyId} AND "journalEntryId" IS NOT NULL
         )
       GROUP BY a."code", a."name", pr."id", pr."runDate", pr."runNumber"
+      HAVING SUM(jel."debit" - jel."credit") != 0
     `;
 
     return [...allowancePayments, ...payrollPostings].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());

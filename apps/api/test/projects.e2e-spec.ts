@@ -483,6 +483,67 @@ describe("Projects — full job accounting (e2e)", () => {
       expect(payments.body.every((p: any) => p.employeeCode === "E1")).toBe(true);
     });
 
+    it("includes FOOD payments in Labor alongside ALLOWANCE, excludes reversed payments, and the accountId filter narrows the drill-down to just that account", async () => {
+      const ctx = await setupProjectContext();
+      const project = await createOverTimeProject(ctx);
+
+      const employee = await request(app.getHttpServer())
+        .post("/hr/employees")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ code: "E2", nameEn: "Food Worker", joinDate: new Date().toISOString(), costCenterId: project.costCenterId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/hr/employees/${employee.body.id}/payments`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ category: "FOOD", amount: "40", bankCashAccountId: ctx.cashAccount.id })
+        .expect(201);
+
+      // A wrongly-recorded allowance that gets reversed — must not count toward Labor.
+      const wrongPayment = (
+        await request(app.getHttpServer())
+          .post(`/hr/employees/${employee.body.id}/payments`)
+          .set("Authorization", `Bearer ${ctx.accessToken}`)
+          .send({ category: "ALLOWANCE", amount: "999", bankCashAccountId: ctx.cashAccount.id })
+          .expect(201)
+      ).body;
+      await request(app.getHttpServer())
+        .post(`/hr/employee-payments/${wrongPayment.id}/reverse`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(201);
+
+      const overrideAccount = ctx.accountByCode("5240");
+      await request(app.getHttpServer())
+        .post(`/hr/employees/${employee.body.id}/payments`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ category: "ALLOWANCE", amount: "20", bankCashAccountId: ctx.cashAccount.id, expenseAccountId: overrideAccount.id })
+        .expect(201);
+
+      const intel = await request(app.getHttpServer())
+        .get(`/projects/${project.id}/intelligence`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+      // 40 (FOOD, defaults to 5215) + 20 (ALLOWANCE override, 5240) — the reversed 999 is excluded.
+      expect(intel.body.categories.LABOR.total).toBe("60.00");
+      const foodAccountRow = intel.body.categories.LABOR.accounts.find((a: any) => a.code === "5215");
+      expect(foodAccountRow.amount).toBe("40.00");
+
+      const allLabor = await request(app.getHttpServer())
+        .get(`/projects/${project.id}/costs/labor`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+      expect(allLabor.body).toHaveLength(2);
+      expect(allLabor.body.some((p: any) => Number(p.amount) === 999)).toBe(false);
+
+      const filtered = await request(app.getHttpServer())
+        .get(`/projects/${project.id}/costs/labor?accountId=${foodAccountRow.id}`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+      expect(filtered.body).toHaveLength(1);
+      expect(filtered.body[0].source).toBe("FOOD");
+      expect(Number(filtered.body[0].amount)).toBe(40);
+    });
+
     it("routes payroll gross salary to the Project Salaries account (5112) for a project cost center, not 5200", async () => {
       const ctx = await setupProjectContext();
       const project = await createOverTimeProject(ctx);

@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 
 interface LaborPayment {
-  source: "ALLOWANCE" | "PAYROLL";
+  source: "ALLOWANCE" | "FOOD" | "SALARY" | "PAYROLL";
   employeeId: string | null;
   employeeCode: string | null;
   employeeName: string | null;
@@ -18,16 +18,21 @@ interface LaborPayment {
 
 export function ProjectLaborDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const accountId = searchParams.get("accountId");
   const [payments, setPayments] = useState<LaborPayment[] | null>(null);
 
   useEffect(() => {
     if (!id) return;
-    apiClient.get<LaborPayment[]>(`/projects/${id}/costs/labor`).then((res) => setPayments(res.data));
-  }, [id]);
+    setPayments(null);
+    const query = accountId ? `?accountId=${accountId}` : "";
+    apiClient.get<LaborPayment[]>(`/projects/${id}/costs/labor${query}`).then((res) => setPayments(res.data));
+  }, [id, accountId]);
 
   if (!payments) return <p style={{ padding: 24 }}>Loading…</p>;
 
   const total = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+  const accountLabel = payments[0]?.accountCode ? `${payments[0].accountCode} — ${payments[0].accountName}` : null;
 
   return (
     <div className="intelligence-board">
@@ -37,7 +42,7 @@ export function ProjectLaborDetailPage() {
       <div className="intelligence-panel-header">
         <div className="intelligence-panel-title">
           <span style={{ fontSize: 28 }}>{"\u{1F477}"}</span>
-          Labor — allowances &amp; payroll
+          {accountId && accountLabel ? `Labor — ${accountLabel}` : "Labor — allowances & payroll"}
         </div>
         <div className="intelligence-total-pill">
           <div className="label">Total</div>
@@ -59,8 +64,14 @@ export function ProjectLaborDetailPage() {
           {payments.map((p, i) => (
             <tr key={i}>
               <td>
-                <span className={`source-pill ${p.source === "ALLOWANCE" ? "allowance" : "payroll"}`}>
-                  {p.source === "ALLOWANCE" ? "Allowance" : "Payroll"}
+                <span className={`source-pill ${p.source === "PAYROLL" ? "payroll" : "allowance"}`}>
+                  {p.source === "ALLOWANCE"
+                    ? "Allowance"
+                    : p.source === "FOOD"
+                      ? "Food"
+                      : p.source === "SALARY"
+                        ? "Salary"
+                        : "Payroll"}
                 </span>
               </td>
               <td>

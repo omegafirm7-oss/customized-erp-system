@@ -62,7 +62,7 @@ export function ProjectCostCategoryPage() {
         {(bucket?.accounts ?? []).map((a) => (
           <Link
             key={a.id}
-            to={isLabor ? `/projects/${id}/costs/labor` : `/projects/${id}/costs/accounts/${a.id}`}
+            to={isLabor ? `/projects/${id}/costs/labor?accountId=${a.id}` : `/projects/${id}/costs/accounts/${a.id}`}
             style={{ textDecoration: "none" }}
           >
             <div className="intelligence-account-card">

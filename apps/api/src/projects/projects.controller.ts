@@ -67,8 +67,12 @@ export class ProjectsController {
 
   @Get("projects/:id/costs/labor")
   @Permissions(PERMISSIONS.PROJECT_VIEW)
-  async getLaborPayments(@CurrentCompanyId() companyId: string, @Param("id") id: string) {
-    return this.projectsService.getLaborPayments(companyId, id);
+  async getLaborPayments(
+    @CurrentCompanyId() companyId: string,
+    @Param("id") id: string,
+    @Query("accountId") accountId?: string,
+  ) {
+    return this.projectsService.getLaborPayments(companyId, id, accountId);
   }
 
   @Post("projects")
