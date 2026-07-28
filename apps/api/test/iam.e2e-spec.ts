@@ -120,9 +120,12 @@ describe("IAM admin (e2e)", () => {
 
     // Allowed: listing employees.
     await request(app.getHttpServer()).get("/hr/employees").set(auth(memberToken)).expect(200);
-    // Denied: everything else, e.g. viewing projects or reports.
+    // Allowed: read-only reference data the employee pages themselves need
+    // (e.g. the allowance expense-account picker) — see the dedicated
+    // AnyPermissions test below for full coverage of this.
+    await request(app.getHttpServer()).get("/coa/accounts").set(auth(memberToken)).expect(200);
+    // Denied: real module actions outside HR, e.g. viewing projects.
     await request(app.getHttpServer()).get("/projects").set(auth(memberToken)).expect(403);
-    await request(app.getHttpServer()).get("/coa/accounts").set(auth(memberToken)).expect(403);
   });
 
   it("custom role: editing permissions, system roles are protected, and delete is blocked while assigned then allowed after reassignment", async () => {
@@ -213,5 +216,50 @@ describe("IAM admin (e2e)", () => {
       .set(auth(ctx.accessToken))
       .send({ roleId: ownRole.id })
       .expect(200);
+  });
+
+  it("an HR-only role (view+manage) can still read the cross-module reference data its own pages need — cost centers, chart of accounts, fiscal periods — without being granted GL journal access", async () => {
+    const ctx = await setupUserWithCompany(app);
+    const prisma = getPrisma(app);
+
+    const role = (
+      await request(app.getHttpServer())
+        .post("/iam/roles")
+        .set(auth(ctx.accessToken))
+        .send({ name: "HR Only", permissionKeys: ["hr.employee.view", "hr.employee.manage"] })
+        .expect(201)
+    ).body;
+
+    const memberEmail = uniqueEmail("hronly");
+    const memberPassword = "SomePass123!";
+    await request(app.getHttpServer())
+      .post("/auth/register")
+      .send({ email: memberEmail, password: memberPassword, fullName: "HR Only User" })
+      .expect(201);
+    const memberUser = await prisma.user.findUniqueOrThrow({ where: { email: memberEmail } });
+    await prisma.companyUser.create({
+      data: { userId: memberUser.id, companyId: ctx.companyId, roleId: role.id, isDefault: true },
+    });
+
+    const memberLogin = await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({ email: memberEmail, password: memberPassword })
+      .expect(201);
+    const memberToken = memberLogin.body.accessToken;
+
+    // The employee-list/detail pages' own routes.
+    await request(app.getHttpServer()).get("/hr/employees").set(auth(memberToken)).expect(200);
+    await request(app.getHttpServer()).get("/hr/reports/employees-dashboard").set(auth(memberToken)).expect(200);
+
+    // Reference data those pages' dropdowns/selectors depend on but that
+    // belongs to unrelated modules — must be readable via AnyPermissions,
+    // not blocked behind gl.journal.view.
+    await request(app.getHttpServer()).get("/cost-centers").set(auth(memberToken)).expect(200);
+    await request(app.getHttpServer()).get("/coa/accounts").set(auth(memberToken)).expect(200);
+    await request(app.getHttpServer()).get("/companies/current/fiscal-periods").set(auth(memberToken)).expect(200);
+
+    // Still correctly denied real GL/journal actions — the fix only opens
+    // read access to reference data, not journal posting/management.
+    await request(app.getHttpServer()).get("/gl/journal-entries").set(auth(memberToken)).expect(403);
   });
 });

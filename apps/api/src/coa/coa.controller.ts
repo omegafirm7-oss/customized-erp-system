@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { Permissions } from "../common/decorators/permissions.decorator";
+import { AnyPermissions, Permissions } from "../common/decorators/permissions.decorator";
 import { CurrentCompanyId } from "../common/decorators/current-company-id.decorator";
 import { PERMISSIONS } from "@erp/shared-constants";
 import { CoaService } from "./coa.service";
@@ -14,14 +14,33 @@ import { UpdateAccountDto } from "./dto/update-account.dto";
 export class CoaController {
   constructor(private readonly coaService: CoaService) {}
 
+  // Read-only reference data (account names/codes) — several unrelated modules'
+  // forms depend on it (HR payment dropdowns, project cost breakdowns, etc.), so
+  // any of their view permissions suffices, not just GL journal access.
   @Get()
-  @Permissions(PERMISSIONS.JOURNAL_VIEW)
+  @AnyPermissions(
+    PERMISSIONS.JOURNAL_VIEW,
+    PERMISSIONS.HR_EMPLOYEE_VIEW,
+    PERMISSIONS.PROJECT_VIEW,
+    PERMISSIONS.MANPOWER_CONTRACT_VIEW,
+    PERMISSIONS.EQUIPMENT_VIEW,
+    PERMISSIONS.AP_INVOICE_VIEW,
+    PERMISSIONS.AR_INVOICE_VIEW,
+  )
   async list(@CurrentCompanyId() companyId: string) {
     return this.coaService.listAccounts(companyId);
   }
 
   @Get(":id")
-  @Permissions(PERMISSIONS.JOURNAL_VIEW)
+  @AnyPermissions(
+    PERMISSIONS.JOURNAL_VIEW,
+    PERMISSIONS.HR_EMPLOYEE_VIEW,
+    PERMISSIONS.PROJECT_VIEW,
+    PERMISSIONS.MANPOWER_CONTRACT_VIEW,
+    PERMISSIONS.EQUIPMENT_VIEW,
+    PERMISSIONS.AP_INVOICE_VIEW,
+    PERMISSIONS.AR_INVOICE_VIEW,
+  )
   async get(@CurrentCompanyId() companyId: string, @Param("id") id: string) {
     return this.coaService.getAccount(companyId, id);
   }

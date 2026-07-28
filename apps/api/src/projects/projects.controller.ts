@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestj
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { ProjectStatus } from "@prisma/client";
 import { PERMISSIONS } from "@erp/shared-constants";
-import { Permissions } from "../common/decorators/permissions.decorator";
+import { AnyPermissions, Permissions } from "../common/decorators/permissions.decorator";
 import { CurrentCompanyId } from "../common/decorators/current-company-id.decorator";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { JwtPayload } from "../auth/types/jwt-payload.type";
@@ -167,8 +167,17 @@ export class ProjectsController {
 
   // ── Department cost centers ──────────────────────────────────────────
 
+  // Read-only reference data (cost-center names/codes) — HR/manpower/equipment
+  // forms all need to read this list for their own dropdowns, so any of their
+  // view permissions suffices, not just GL journal access.
   @Get("cost-centers")
-  @Permissions(PERMISSIONS.JOURNAL_VIEW)
+  @AnyPermissions(
+    PERMISSIONS.JOURNAL_VIEW,
+    PERMISSIONS.HR_EMPLOYEE_VIEW,
+    PERMISSIONS.PROJECT_VIEW,
+    PERMISSIONS.MANPOWER_CONTRACT_VIEW,
+    PERMISSIONS.EQUIPMENT_VIEW,
+  )
   async listCostCenters(@CurrentCompanyId() companyId: string) {
     return this.projectsService.listCostCenters(companyId);
   }

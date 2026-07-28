@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { PERMISSIONS } from "@erp/shared-constants";
-import { Permissions, SensitivePermission } from "../common/decorators/permissions.decorator";
+import { AnyPermissions, Permissions, SensitivePermission } from "../common/decorators/permissions.decorator";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { CurrentCompanyId } from "../common/decorators/current-company-id.decorator";
 import { JwtPayload } from "../auth/types/jwt-payload.type";
@@ -57,8 +57,19 @@ export class CompaniesController {
     return this.companiesService.updateCompany(companyId, user.sub, { ...dto });
   }
 
+  // Read-only reference data (period names/dates) — every module's period
+  // selector (HR dashboard, manpower/equipment reports, etc.) needs to read
+  // this list, so any of their view permissions suffices, not just GL
+  // journal access.
   @Get("current/fiscal-periods")
-  @Permissions(PERMISSIONS.JOURNAL_VIEW)
+  @AnyPermissions(
+    PERMISSIONS.JOURNAL_VIEW,
+    PERMISSIONS.HR_EMPLOYEE_VIEW,
+    PERMISSIONS.PROJECT_VIEW,
+    PERMISSIONS.MANPOWER_CONTRACT_VIEW,
+    PERMISSIONS.EQUIPMENT_VIEW,
+    PERMISSIONS.REPORTS_VIEW,
+  )
   async listFiscalPeriods(@CurrentCompanyId() companyId: string) {
     return this.companiesService.listFiscalPeriods(companyId);
   }

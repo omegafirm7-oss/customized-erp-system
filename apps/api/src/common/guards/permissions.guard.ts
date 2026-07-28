@@ -1,6 +1,6 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import { PERMISSIONS_KEY, SENSITIVE_KEY } from "../decorators/permissions.decorator";
+import { ANY_PERMISSIONS_KEY, PERMISSIONS_KEY, SENSITIVE_KEY } from "../decorators/permissions.decorator";
 import { IamService } from "../../iam/iam.service";
 import { JwtPayload } from "../../auth/types/jwt-payload.type";
 
@@ -16,7 +16,13 @@ export class PermissionsGuard implements CanActivate {
       context.getHandler(),
       context.getClass(),
     ]);
-    if (!required || required.length === 0) {
+    const anyOf = this.reflector.getAllAndOverride<string[]>(ANY_PERMISSIONS_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    const hasRequired = required && required.length > 0;
+    const hasAnyOf = anyOf && anyOf.length > 0;
+    if (!hasRequired && !hasAnyOf) {
       return true;
     }
 
@@ -33,10 +39,17 @@ export class PermissionsGuard implements CanActivate {
 
     const grantedPermissions = isSensitive ? await this.loadFreshPermissions(user) : user.permissions;
 
-    const missing = required.filter((permission) => !grantedPermissions.includes(permission));
-    if (missing.length > 0) {
-      throw new ForbiddenException(`Missing required permission(s): ${missing.join(", ")}`);
+    if (hasRequired) {
+      const missing = required.filter((permission) => !grantedPermissions.includes(permission));
+      if (missing.length > 0) {
+        throw new ForbiddenException(`Missing required permission(s): ${missing.join(", ")}`);
+      }
     }
+
+    if (hasAnyOf && !anyOf.some((permission) => grantedPermissions.includes(permission))) {
+      throw new ForbiddenException(`Missing required permission(s): one of ${anyOf.join(", ")}`);
+    }
+
     return true;
   }
 
