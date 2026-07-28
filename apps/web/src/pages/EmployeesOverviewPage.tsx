@@ -37,6 +37,10 @@ interface DashboardResponse {
   totalPaid: string;
   totalPaidActive: string;
   totalPaidReleased: string;
+  paidSalary: string;
+  paidAllowance: string;
+  paidFood: string;
+  paidAdvance: string;
   totalPending: string;
   totalPendingActive: string;
   totalPendingReleased: string;
@@ -325,6 +329,22 @@ export function EmployeesOverviewPage() {
                   <a onClick={() => navigate("/hr/employees/overview/released")} style={{ cursor: "pointer" }}>view released employees</a>
                 </span>
                 <strong>{money(dashboard.totalPaidReleased)}</strong>
+              </div>
+              <div className="form-row" style={{ justifyContent: "space-between", paddingLeft: 20, fontSize: 13, color: "#667085" }}>
+                <span>— of which salary (payroll + direct payments)</span>
+                <span>{money(dashboard.paidSalary)}</span>
+              </div>
+              <div className="form-row" style={{ justifyContent: "space-between", paddingLeft: 20, fontSize: 13, color: "#667085" }}>
+                <span>— of which allowances</span>
+                <span>{money(dashboard.paidAllowance)}</span>
+              </div>
+              <div className="form-row" style={{ justifyContent: "space-between", paddingLeft: 20, fontSize: 13, color: "#667085" }}>
+                <span>— of which food</span>
+                <span>{money(dashboard.paidFood)}</span>
+              </div>
+              <div className="form-row" style={{ justifyContent: "space-between", paddingLeft: 20, fontSize: 13, color: "#667085" }}>
+                <span>— of which advances</span>
+                <span>{money(dashboard.paidAdvance)}</span>
               </div>
             </div>
           )}

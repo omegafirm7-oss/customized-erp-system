@@ -78,6 +78,7 @@ enum ControlAccountType {
   ACCUM_DEPRECIATION
   DEPRECIATION_EXPENSE
   ALLOWANCE_EXPENSE
+  FOOD_EXPENSE
 }
 
 enum FiscalYearStatus {

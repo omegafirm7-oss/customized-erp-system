@@ -444,7 +444,11 @@ export function ProjectDetailPage() {
                             key={a.id}
                             className="pi-table-row-link"
                             onClick={() =>
-                              navigate(cat === "LABOR" ? `/projects/${id}/costs/labor` : `/projects/${id}/costs/accounts/${a.id}`)
+                              navigate(
+                                cat === "LABOR"
+                                  ? `/projects/${id}/costs/labor?accountId=${a.id}`
+                                  : `/projects/${id}/costs/accounts/${a.id}`,
+                              )
                             }
                           >
                             <td>

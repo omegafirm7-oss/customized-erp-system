@@ -868,6 +868,11 @@ describe("HR & Saudi Payroll (e2e)", () => {
       .set(auth(ctx.accessToken))
       .send({ category: "ALLOWANCE", amount: "150", bankCashAccountId: ctx.cashAccount.id })
       .expect(201);
+    await request(app.getHttpServer())
+      .post(`/hr/employees/${empO2.id}/payments`)
+      .set(auth(ctx.accessToken))
+      .send({ category: "FOOD", amount: "25", bankCashAccountId: ctx.cashAccount.id })
+      .expect(201);
 
     const overview = (
       await request(app.getHttpServer())
@@ -904,8 +909,15 @@ describe("HR & Saudi Payroll (e2e)", () => {
     const dayEntry = overview.dailyLaborCost.find((d: any) => d.date === joinDate);
     expect(Number(dayEntry.cost)).toBe(300);
 
-    // Total paid this period includes both payments (450); allowance excluded from pending
-    expect(Number(overview.totalPaid)).toBe(450);
+    // Total paid this period includes all three payments (475); allowance/food excluded from pending
+    expect(Number(overview.totalPaid)).toBe(475);
+    // Company-wide paid split (same category breakdown as an individual
+    // employee's getSummary()) — the 300 ADVANCE, 150 ALLOWANCE, and 25 FOOD
+    // above must each land in their own bucket, not get lumped into one figure.
+    expect(Number(overview.paidSalary)).toBe(0);
+    expect(Number(overview.paidAllowance)).toBe(150);
+    expect(Number(overview.paidFood)).toBe(25);
+    expect(Number(overview.paidAdvance)).toBe(300);
     expect(Number(overview.totalPendingAdvances)).toBe(300);
     // No payroll run posted, so the full accrued timesheet cost (300) is
     // still "owed" — pendingLaborAccrual = grandTotal(300) - payrollNetPay(0)
@@ -924,7 +936,7 @@ describe("HR & Saudi Payroll (e2e)", () => {
     ).body;
     expect(overallOverview.scope).toBe("overall");
     expect(Number(overallOverview.grandTotal)).toBe(300);
-    expect(Number(overallOverview.totalPaid)).toBe(450);
+    expect(Number(overallOverview.totalPaid)).toBe(475);
     expect(Number(overallOverview.totalPending)).toBe(600);
 
     const overallDetail = (
@@ -1060,7 +1072,7 @@ describe("HR & Saudi Payroll (e2e)", () => {
       .expect(400);
   });
 
-  it("FOOD payments post to Allowance Expense like ALLOWANCE (tracked separately), and reversal excludes a payment from paid/pending", async () => {
+  it("FOOD payments post to their own Food Expense account, separate from ALLOWANCE, and reversal excludes a payment from paid/pending", async () => {
     const ctx = await setupUserWithCompany(app);
     const { period } = await currentPeriod(ctx);
     const joinDate = new Date(period.startDate).toISOString().slice(0, 10);
@@ -1085,8 +1097,9 @@ describe("HR & Saudi Payroll (e2e)", () => {
       where: { id: food.id },
       include: { journalEntry: { include: { lines: { include: { account: true } } } } },
     });
-    // Same control account as ALLOWANCE (5215), tracked separately only in the app layer
-    expect(foodJe.journalEntry.lines.find((l) => l.account.code === "5215")!.debit.toString()).toBe("200");
+    // Own dedicated account (5216), not shared with ALLOWANCE (5215)
+    expect(foodJe.journalEntry.lines.find((l) => l.account.code === "5216")!.debit.toString()).toBe("200");
+    expect(foodJe.journalEntry.lines.some((l) => l.account.code === "5215")).toBe(false);
 
     // Straight expense — nothing to recover
     await request(app.getHttpServer())

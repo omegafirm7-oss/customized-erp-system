@@ -524,7 +524,7 @@ describe("Projects — full job accounting (e2e)", () => {
       expect(payments.body.every((p: any) => p.employeeCode === "E1")).toBe(true);
     });
 
-    it("includes FOOD payments in Labor alongside ALLOWANCE, excludes reversed payments, and the accountId filter narrows the drill-down to just that account", async () => {
+    it("FOOD payments default to their own account (5216), separate from ALLOWANCE (5215); excludes reversed payments; the accountId filter narrows the drill-down to just that account", async () => {
       const ctx = await setupProjectContext();
       const project = await createOverTimeProject(ctx);
 
@@ -538,6 +538,13 @@ describe("Projects — full job accounting (e2e)", () => {
         .post(`/hr/employees/${employee.body.id}/payments`)
         .set("Authorization", `Bearer ${ctx.accessToken}`)
         .send({ category: "FOOD", amount: "40", bankCashAccountId: ctx.cashAccount.id })
+        .expect(201);
+
+      // Plain ALLOWANCE, no override — must land on 5215, not mix with FOOD's 5216.
+      await request(app.getHttpServer())
+        .post(`/hr/employees/${employee.body.id}/payments`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ category: "ALLOWANCE", amount: "15", bankCashAccountId: ctx.cashAccount.id })
         .expect(201);
 
       // A wrongly-recorded allowance that gets reversed — must not count toward Labor.
@@ -564,18 +571,23 @@ describe("Projects — full job accounting (e2e)", () => {
         .get(`/projects/${project.id}/intelligence`)
         .set("Authorization", `Bearer ${ctx.accessToken}`)
         .expect(200);
-      // 40 (FOOD, defaults to 5215) + 20 (ALLOWANCE override, 5240) — the reversed 999 is excluded.
-      expect(intel.body.categories.LABOR.total).toBe("60.00");
-      const foodAccountRow = intel.body.categories.LABOR.accounts.find((a: any) => a.code === "5215");
+      // 40 (FOOD, on its own 5216) + 15 (plain ALLOWANCE, 5215) + 20 (ALLOWANCE override, 5240) — the reversed 999 is excluded.
+      expect(intel.body.categories.LABOR.total).toBe("75.00");
+      const foodAccountRow = intel.body.categories.LABOR.accounts.find((a: any) => a.code === "5216");
+      const allowanceAccountRow = intel.body.categories.LABOR.accounts.find((a: any) => a.code === "5215");
       expect(foodAccountRow.amount).toBe("40.00");
+      expect(allowanceAccountRow.amount).toBe("15.00");
 
       const allLabor = await request(app.getHttpServer())
         .get(`/projects/${project.id}/costs/labor`)
         .set("Authorization", `Bearer ${ctx.accessToken}`)
         .expect(200);
-      expect(allLabor.body).toHaveLength(2);
+      expect(allLabor.body).toHaveLength(3);
       expect(allLabor.body.some((p: any) => Number(p.amount) === 999)).toBe(false);
 
+      // The drill-down accountId filter (the fix for the frontend bug where
+      // clicking any Labor row showed the same unfiltered list) must scope
+      // to exactly the clicked account's own transactions.
       const filtered = await request(app.getHttpServer())
         .get(`/projects/${project.id}/costs/labor?accountId=${foodAccountRow.id}`)
         .set("Authorization", `Bearer ${ctx.accessToken}`)
@@ -583,6 +595,14 @@ describe("Projects — full job accounting (e2e)", () => {
       expect(filtered.body).toHaveLength(1);
       expect(filtered.body[0].source).toBe("FOOD");
       expect(Number(filtered.body[0].amount)).toBe(40);
+
+      const filteredAllowance = await request(app.getHttpServer())
+        .get(`/projects/${project.id}/costs/labor?accountId=${allowanceAccountRow.id}`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+      expect(filteredAllowance.body).toHaveLength(1);
+      expect(filteredAllowance.body[0].source).toBe("ALLOWANCE");
+      expect(Number(filteredAllowance.body[0].amount)).toBe(15);
     });
 
     it("a reversed SALARY-category payment leaves no phantom debit/credit leg on its account (reversal JE isn't linked via employee_payments)", async () => {

@@ -292,50 +292,51 @@ export class HrReportsService {
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, cost]) => ({ date, cost }));
 
-    const [payrollNetPay, directSalaryPayments, periodPayments, periodSettlementPayments, pendingPayments, pendingSettlements] =
-      await Promise.all([
-        fiscalPeriodId
-          ? this.prisma.payrollRun
-              .findFirst({ where: { companyId, fiscalPeriodId, status: PayrollRunStatus.POSTED } })
-              .then((run) => run?.totalNetPay ?? ZERO)
-          : this.prisma.payrollRun
-              .aggregate({ where: { companyId, status: PayrollRunStatus.POSTED }, _sum: { totalNetPay: true } })
-              .then((r) => r._sum.totalNetPay ?? ZERO),
-        // SALARY-category payments pay down pending labor accrual directly,
-        // the same way a posted payroll run's net pay does — scoped to the
-        // same period as payrollNetPay/grandTotal above via dateFilter.
-        this.prisma.employeePayment
-          .aggregate({
-            where: {
-              companyId,
-              category: EmployeePaymentCategory.SALARY,
-              reversedAt: null,
-              ...(dateFilter ? { paymentDate: dateFilter } : {}),
-            },
-            _sum: { amount: true },
-          })
-          .then((r) => r._sum.amount ?? ZERO),
-        this.prisma.employeePayment.aggregate({
-          where: { companyId, reversedAt: null, ...(dateFilter ? { paymentDate: dateFilter } : {}) },
-          _sum: { amount: true },
-        }),
-        this.prisma.settlementPayment.aggregate({
-          where: { companyId, ...(dateFilter ? { paymentDate: dateFilter } : {}) },
-          _sum: { amount: true },
-        }),
-        this.prisma.employeePayment.findMany({
-          where: {
-            companyId,
-            reversedAt: null,
-            category: { in: [EmployeePaymentCategory.ADVANCE, EmployeePaymentCategory.OTHER] },
-          },
-          select: { amount: true, recoveredAmount: true },
-        }),
-        this.prisma.finalSettlement.findMany({
-          where: { companyId, status: SettlementStatus.POSTED },
-          select: { netAmount: true, paidAmount: true },
-        }),
-      ]);
+    const [payrollNetPay, paymentsByCategory, periodSettlementPayments, pendingPayments, pendingSettlements] = await Promise.all([
+      fiscalPeriodId
+        ? this.prisma.payrollRun
+            .findFirst({ where: { companyId, fiscalPeriodId, status: PayrollRunStatus.POSTED } })
+            .then((run) => run?.totalNetPay ?? ZERO)
+        : this.prisma.payrollRun
+            .aggregate({ where: { companyId, status: PayrollRunStatus.POSTED }, _sum: { totalNetPay: true } })
+            .then((r) => r._sum.totalNetPay ?? ZERO),
+      // Per-category split — same breakdown as employees.service.ts
+      // getSummary() (paidSalary/paidAllowance/paidFood/paidAdvance), just
+      // aggregated company-wide instead of per-employee, so "Total Paid"
+      // on the Overview reads the same way as an individual employee's card.
+      this.prisma.employeePayment.groupBy({
+        by: ["category"],
+        where: { companyId, reversedAt: null, ...(dateFilter ? { paymentDate: dateFilter } : {}) },
+        _sum: { amount: true },
+      }),
+      this.prisma.settlementPayment.aggregate({
+        where: { companyId, ...(dateFilter ? { paymentDate: dateFilter } : {}) },
+        _sum: { amount: true },
+      }),
+      this.prisma.employeePayment.findMany({
+        where: {
+          companyId,
+          reversedAt: null,
+          category: { in: [EmployeePaymentCategory.ADVANCE, EmployeePaymentCategory.OTHER] },
+        },
+        select: { amount: true, recoveredAmount: true },
+      }),
+      this.prisma.finalSettlement.findMany({
+        where: { companyId, status: SettlementStatus.POSTED },
+        select: { netAmount: true, paidAmount: true },
+      }),
+    ]);
+
+    const sumForCategory = (category: EmployeePaymentCategory) =>
+      paymentsByCategory.find((p) => p.category === category)?._sum.amount ?? ZERO;
+    // SALARY-category payments pay down pending labor accrual directly, the
+    // same way a posted payroll run's net pay does — scoped to the same
+    // period as payrollNetPay/grandTotal above via dateFilter.
+    const directSalaryPayments = sumForCategory(EmployeePaymentCategory.SALARY);
+    const paidSalary = payrollNetPay.add(directSalaryPayments);
+    const paidAllowance = sumForCategory(EmployeePaymentCategory.ALLOWANCE);
+    const paidFood = sumForCategory(EmployeePaymentCategory.FOOD);
+    const paidAdvance = sumForCategory(EmployeePaymentCategory.ADVANCE).add(sumForCategory(EmployeePaymentCategory.OTHER));
 
     // Wages accrued via logged hours that haven't been covered by a posted
     // payroll run (or a direct SALARY cash payment) yet — the company's
@@ -345,7 +346,7 @@ export class HrReportsService {
     // negative "pending" amount.
     const pendingLaborAccrual = Prisma.Decimal.max(ZERO, grandTotal.sub(payrollNetPay).sub(directSalaryPayments));
 
-    const totalPaidActive = payrollNetPay.add(periodPayments._sum.amount ?? ZERO);
+    const totalPaidActive = paidSalary.add(paidAllowance).add(paidFood).add(paidAdvance);
     const totalPaidReleased = periodSettlementPayments._sum.amount ?? ZERO;
     const totalPaid = totalPaidActive.add(totalPaidReleased);
 
@@ -365,6 +366,10 @@ export class HrReportsService {
       totalPaid,
       totalPaidActive,
       totalPaidReleased,
+      paidSalary,
+      paidAllowance,
+      paidFood,
+      paidAdvance,
       totalPending,
       totalPendingActive,
       totalPendingReleased,

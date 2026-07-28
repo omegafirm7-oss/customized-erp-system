@@ -113,9 +113,9 @@ export class EmployeePaymentsService {
           throw new BadRequestException("Amount must be positive");
         }
 
-        // FOOD is tracked separately from ALLOWANCE purely for reporting
-        // (paidFood vs paidAllowance) — both are the same straight-expense
-        // shape and default to the same control account.
+        // FOOD is tracked separately from ALLOWANCE — same straight-expense
+        // shape, but defaults to its own control account (5216) so the two
+        // never mix in cost reporting.
         const isAllowance = dto.category === EmployeePaymentCategory.ALLOWANCE;
         const isFood = dto.category === EmployeePaymentCategory.FOOD;
         const isSalary = dto.category === EmployeePaymentCategory.SALARY;
@@ -123,7 +123,11 @@ export class EmployeePaymentsService {
         if (isAllowance || isFood) {
           debitAccount = dto.expenseAccountId
             ? await this.accountResolution.getExpenseAccount(tx, companyId, dto.expenseAccountId)
-            : await this.accountResolution.getControlAccount(tx, companyId, ControlAccountType.ALLOWANCE_EXPENSE);
+            : await this.accountResolution.getControlAccount(
+                tx,
+                companyId,
+                isFood ? ControlAccountType.FOOD_EXPENSE : ControlAccountType.ALLOWANCE_EXPENSE,
+              );
         } else if (isSalary) {
           const project = employee.costCenterId
             ? await tx.project.findFirst({ where: { companyId, costCenterId: employee.costCenterId } })
