@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { ControlAccountType, PartnerType, Prisma, ProjectStatus } from "@prisma/client";
+import { ControlAccountType, EmployeePaymentCategory, PartnerType, PayrollRunStatus, Prisma, ProjectStatus } from "@prisma/client";
 import { PrismaService } from "../common/prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { AccountResolutionService } from "../finance/account-resolution.service";
@@ -319,14 +319,51 @@ export class ProjectsService {
       ORDER BY a."code"
     `;
 
+    // Labor cost isn't just what's already been paid (GL postings) — it also
+    // includes wages accrued via logged timesheet hours that haven't been
+    // paid yet, same "pending" concept as the Employees Overview and each
+    // employee's own summary. Scoped to every employee ever assigned to
+    // this project's cost center (costCenterId survives termination, so a
+    // released-but-not-yet-fully-paid employee's outstanding hours still
+    // count). A final settlement is deliberately excluded here too — same
+    // reasoning as the paid side above.
+    const HOURLY_DIVISOR = new Prisma.Decimal(260);
+    const costCenterEmployees = project.costCenterId
+      ? await this.prisma.employee.findMany({
+          where: { companyId, costCenterId: project.costCenterId },
+          select: {
+            id: true,
+            basicSalary: true,
+            employeeTimesheetEntries: { select: { hoursWorked: true } },
+            payments: { where: { reversedAt: null, category: EmployeePaymentCategory.SALARY }, select: { amount: true } },
+          },
+        })
+      : [];
+    const payrollNetPayByEmployee = costCenterEmployees.length
+      ? await this.prisma.payrollRunLine.groupBy({
+          by: ["employeeId"],
+          where: { employeeId: { in: costCenterEmployees.map((e) => e.id) }, run: { status: PayrollRunStatus.POSTED } },
+          _sum: { netPay: true },
+        })
+      : [];
+    let pendingLabor = new Prisma.Decimal(0);
+    for (const e of costCenterEmployees) {
+      const hourlyRate = e.basicSalary.div(HOURLY_DIVISOR).toDecimalPlaces(4);
+      const accrued = e.employeeTimesheetEntries.reduce((sum, t) => sum.add(hourlyRate.mul(t.hoursWorked).toDecimalPlaces(2)), new Prisma.Decimal(0));
+      const directSalaryPaid = e.payments.reduce((sum, p) => sum.add(p.amount), new Prisma.Decimal(0));
+      const payrollNetPay = payrollNetPayByEmployee.find((p) => p.employeeId === e.id)?._sum.netPay ?? new Prisma.Decimal(0);
+      const paid = directSalaryPaid.add(payrollNetPay);
+      pendingLabor = pendingLabor.add(Prisma.Decimal.max(new Prisma.Decimal(0), accrued.sub(paid)));
+    }
+
     const categories: Record<
       "MATERIAL" | "MACHINERY" | "LABOR" | "OTHER",
-      { total: string; accounts: Array<{ id: string; code: string; name: string; amount: string }> }
+      { total: string; paid: string; pending: string; accounts: Array<{ id: string; code: string; name: string; amount: string }> }
     > = {
-      MATERIAL: { total: "0.00", accounts: [] },
-      MACHINERY: { total: "0.00", accounts: [] },
-      LABOR: { total: "0.00", accounts: [] },
-      OTHER: { total: "0.00", accounts: [] },
+      MATERIAL: { total: "0.00", paid: "0.00", pending: "0.00", accounts: [] },
+      MACHINERY: { total: "0.00", paid: "0.00", pending: "0.00", accounts: [] },
+      LABOR: { total: "0.00", paid: "0.00", pending: "0.00", accounts: [] },
+      OTHER: { total: "0.00", paid: "0.00", pending: "0.00", accounts: [] },
     };
     const totals: Record<string, Prisma.Decimal> = {
       MATERIAL: new Prisma.Decimal(0),
@@ -372,11 +409,20 @@ export class ProjectsService {
       categories[key].accounts = categories[key].accounts.filter((a) => a.amount !== "0.00");
     }
     for (const key of Object.keys(categories) as Array<keyof typeof categories>) {
-      categories[key].total = totals[key].toFixed(2);
+      categories[key].paid = totals[key].toFixed(2);
     }
+    // Labor's headline "total" is paid + pending (the true cost of running
+    // this project's workforce, not just what's moved through the GL so
+    // far); the other categories have no accrual concept, so paid = total.
+    categories.LABOR.pending = pendingLabor.toFixed(2);
+    categories.LABOR.total = totals.LABOR.add(pendingLabor).toFixed(2);
+    categories.MATERIAL.total = categories.MATERIAL.paid;
+    categories.MACHINERY.total = categories.MACHINERY.paid;
+    categories.OTHER.total = categories.OTHER.paid;
 
     const grandTotal = Object.values(totals)
       .reduce((sum, t) => sum.add(t), new Prisma.Decimal(0))
+      .add(pendingLabor)
       .toFixed(2);
 
     return { categories, grandTotal };

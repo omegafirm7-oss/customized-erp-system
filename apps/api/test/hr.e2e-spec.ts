@@ -611,7 +611,6 @@ describe("HR & Saudi Payroll (e2e)", () => {
         .set(auth(ctx.accessToken))
         .expect(200)
     ).body;
-    expect(Number(summaryAfterReversal.settlementPending)).toBe(0);
     expect(Number(summaryAfterReversal.totalPending)).toBe(0);
 
     // Releasing the same employee a second time must not hit the
@@ -1401,7 +1400,6 @@ describe("HR & Saudi Payroll (e2e)", () => {
     expect(Number(beforePayroll.pendingSalary)).toBe(Number(beforePayroll.pendingLaborAccrual));
     expect(Number(beforePayroll.pendingAllowance)).toBe(300);
     expect(Number(beforePayroll.loanBalance)).toBe(0);
-    expect(Number(beforePayroll.settlementPending)).toBe(0);
     expect(Number(beforePayroll.totalPending)).toBe(
       Number(beforePayroll.pendingSalary) + Number(beforePayroll.pendingAllowance) + Number(beforePayroll.loanBalance),
     );
@@ -1412,8 +1410,8 @@ describe("HR & Saudi Payroll (e2e)", () => {
 
     // Post payroll for the period — this employee's basic salary (4000) far
     // exceeds their ~123 accrued timesheet cost, so pendingSalary should
-    // floor at zero (settlementPending stays 0, not released) and paidSalary
-    // should reflect the actual posted net pay exactly.
+    // floor at zero, and paidSalary should reflect the actual posted net
+    // pay exactly.
     const run = (
       await request(app.getHttpServer())
         .post("/hr/payroll-runs")
@@ -1440,7 +1438,6 @@ describe("HR & Saudi Payroll (e2e)", () => {
     expect(Number(summary.pendingSalary)).toBe(0);
     expect(Number(summary.pendingAllowance)).toBe(300);
     expect(Number(summary.loanBalance)).toBe(0);
-    expect(Number(summary.settlementPending)).toBe(0);
     expect(Number(summary.totalPending)).toBe(300);
     expect(summary.workedDays).toBe(1);
     expect(Number(summary.workedHours)).toBe(8);

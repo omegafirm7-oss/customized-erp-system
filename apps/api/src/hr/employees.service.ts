@@ -292,14 +292,6 @@ export class EmployeesService {
     const loanBalance = employee.loans
       .filter((l) => l.status === LoanStatus.ACTIVE)
       .reduce((sum, l) => sum.add(l.balance), ZERO);
-    // A REVERSED settlement carries no real debt — only a POSTED one is
-    // actually owed. Without this check, an employee released, then
-    // reversed, would show a phantom "pending settlement" forever.
-    const settlementPending =
-      employee.finalSettlement && employee.finalSettlement.status === SettlementStatus.POSTED
-        ? employee.finalSettlement.netAmount.sub(employee.finalSettlement.paidAmount)
-        : ZERO;
-
     const workedAgg = timesheetAgg.find((t) => t.dayType === TimesheetDayType.WORKED);
     const absentAgg = timesheetAgg.find((t) => t.dayType === TimesheetDayType.ABSENT);
     const unpaidLeaveAgg = timesheetAgg.find((t) => t.dayType === TimesheetDayType.UNPAID_LEAVE);
@@ -314,8 +306,12 @@ export class EmployeesService {
     // from logged hours, pendingAllowance from unrecovered ADVANCE/OTHER,
     // loanBalance from active loans. FOOD is never auto-accrued — it's a
     // straight expense the moment it's recorded (see paidFood), with no
-    // pending balance of its own.
-    const pendingSalary = pendingLaborAccrual.add(settlementPending);
+    // pending balance of its own. A final settlement (EOSB/leave
+    // payout/loan recovery on termination) is a one-time HR/legal exit
+    // payout, not ongoing accrued labor cost — deliberately excluded here,
+    // same as the company-wide dashboard; still fully visible on the
+    // Released Employees detail page (net/paid/pending settlement columns).
+    const pendingSalary = pendingLaborAccrual;
     const pendingFood = ZERO;
 
     const totalPending = pendingSalary.add(pendingAllowance).add(loanBalance);
@@ -331,7 +327,6 @@ export class EmployeesService {
       pendingFood,
       pendingLaborAccrual,
       loanBalance,
-      settlementPending,
       totalPending,
       workedDays: actualWorkedDays,
       workedHours,

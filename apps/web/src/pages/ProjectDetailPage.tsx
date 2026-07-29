@@ -58,7 +58,10 @@ interface IntelligenceAccountRow {
 }
 
 interface IntelligenceSummary {
-  categories: Record<"MATERIAL" | "MACHINERY" | "LABOR" | "OTHER", { total: string; accounts: IntelligenceAccountRow[] }>;
+  categories: Record<
+    "MATERIAL" | "MACHINERY" | "LABOR" | "OTHER",
+    { total: string; paid: string; pending: string; accounts: IntelligenceAccountRow[] }
+  >;
   grandTotal: string;
 }
 
@@ -393,6 +396,9 @@ export function ProjectDetailPage() {
             <div className="pi-kpi-card">
               <div className="pi-kpi-label">Labor Cost</div>
               <div className="pi-kpi-value">{formatMoney(intelligence.categories.LABOR?.total)}</div>
+              <div style={{ fontSize: 11, color: "#98a2b3", marginTop: 4 }}>
+                Paid {formatMoney(intelligence.categories.LABOR?.paid)} · Pending {formatMoney(intelligence.categories.LABOR?.pending)}
+              </div>
             </div>
             <div className="pi-kpi-card">
               <div className="pi-kpi-label">Contract Value</div>
@@ -432,8 +438,13 @@ export function ProjectDetailPage() {
                 <div key={cat} className={`pi-table-card ${cat.toLowerCase()}`}>
                   <h4>
                     <span>{label}</span>
-                    <span className="total">{formatMoney(bucket?.total)}</span>
+                    <span className="total">{formatMoney(bucket?.paid)}</span>
                   </h4>
+                  {cat === "LABOR" && Number(bucket?.pending ?? 0) > 0 && (
+                    <div style={{ fontSize: 12, color: "#98a2b3", marginBottom: 8 }}>
+                      + {formatMoney(bucket?.pending)} pending (accrued from timesheets, not yet paid)
+                    </div>
+                  )}
                   <table>
                     <tbody>
                       {(bucket?.accounts ?? [])

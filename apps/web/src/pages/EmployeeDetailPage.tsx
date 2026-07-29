@@ -98,7 +98,6 @@ interface EmployeeSummary {
   pendingFood: string;
   pendingLaborAccrual: string;
   loanBalance: string;
-  settlementPending: string;
   totalPending: string;
   workedDays: number;
   workedHours: string;
@@ -603,17 +602,19 @@ export function EmployeeDetailPage() {
           {showPendingBreakdown && (
             <div className="card" style={{ marginTop: -10 }}>
               <div className="form-row" style={{ justifyContent: "space-between" }}>
-                <span>Pending — salary (unpaid logged hours{employee.finalSettlement ? " + settlement" : ""})</span>
-                <strong>{money(summary.pendingSalary)}</strong>
-              </div>
-              <div className="form-row" style={{ justifyContent: "space-between", paddingLeft: 20, fontSize: 13, color: "#667085" }}>
-                <span>— of which unpaid logged hours (from timesheets, not yet covered by payroll)</span>
-                <span>{money(summary.pendingLaborAccrual)}</span>
+                <span>Pending — salary (unpaid logged hours, from timesheets, not yet covered by payroll)</span>
+                <strong>{money(summary.pendingLaborAccrual)}</strong>
               </div>
               {employee.finalSettlement && employee.finalSettlement.status === "POSTED" && (
                 <div className="form-row" style={{ justifyContent: "space-between", paddingLeft: 20, fontSize: 13, color: "#667085" }}>
-                  <span>— of which unpaid settlement</span>
-                  <span>{money(summary.settlementPending)}</span>
+                  <span>
+                    Final settlement (EOSB/leave payout, not ongoing labor cost — see{" "}
+                    <a onClick={() => navigate("/hr/employees/overview/released")} style={{ cursor: "pointer" }}>
+                      Released Employees
+                    </a>{" "}
+                    for its own paid/pending)
+                  </span>
+                  <span>{money(employee.finalSettlement.netAmount)}</span>
                 </div>
               )}
               <div className="form-row" style={{ justifyContent: "space-between" }}>

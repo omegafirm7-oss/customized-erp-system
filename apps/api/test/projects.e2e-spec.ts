@@ -707,6 +707,62 @@ describe("Projects — full job accounting (e2e)", () => {
       expect(intel.body.categories.LABOR.accounts.find((a: any) => a.code === salaryAccount.code)).toBeUndefined();
     });
 
+    it("Labor Cost includes accrued-but-unpaid wages as 'pending', on top of what's actually been paid", async () => {
+      const ctx = await setupProjectContext();
+      const project = await createOverTimeProject(ctx);
+      const now = Date.now();
+      const period = ctx.periods.find(
+        (p: any) => new Date(p.startDate).getTime() <= now && now <= new Date(p.endDate).getTime(),
+      );
+      const joinDate = new Date(period.startDate).toISOString().slice(0, 10);
+
+      const csvHeader =
+        "code,nameEn,nameAr,designation,nationality,isSaudi,iqamaOrNationalId,iqamaExpiry,passportNumber,passportExpiry,gosiNumber,joinDate,contractType,bankCode,iban,costCenterCode,annualLeaveDays,basicSalary,housingAllowance,transportAllowance,otherAllowance,gosiExempt";
+      const csv = [
+        csvHeader,
+        `PE4,Unpaid Worker,,Mason,SA,true,1099999996,2027-06-30,,,50099996,${joinDate},UNLIMITED,80,SA4420000001234567891237,${project.costCenter.code},21,2600,0,0,0,false`,
+      ].join("\n");
+      await request(app.getHttpServer())
+        .post("/hr/employees/import")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ csv })
+        .expect(201);
+      const employee = (
+        await request(app.getHttpServer()).get("/hr/employees").set("Authorization", `Bearer ${ctx.accessToken}`).expect(200)
+      ).body.find((e: any) => e.code === "PE4");
+
+      // 10 hours logged, hourlyRate 2600/260 = 10.00 → 100.00 accrued, and no
+      // payroll run posted, no SALARY payment made — all of it is pending.
+      await request(app.getHttpServer())
+        .post("/hr/employee-timesheet/entry")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ employeeId: employee.id, date: joinDate, dayType: "WORKED", hoursWorked: "10" })
+        .expect(201);
+
+      const intel = await request(app.getHttpServer())
+        .get(`/projects/${project.id}/intelligence`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+      expect(intel.body.categories.LABOR.paid).toBe("0.00");
+      expect(intel.body.categories.LABOR.pending).toBe("100.00");
+      expect(intel.body.categories.LABOR.total).toBe("100.00");
+
+      // Now record a partial SALARY payment — pending should drop by exactly that much.
+      await request(app.getHttpServer())
+        .post(`/hr/employees/${employee.id}/payments`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ category: "SALARY", amount: "40", bankCashAccountId: ctx.cashAccount.id })
+        .expect(201);
+
+      const intelAfter = await request(app.getHttpServer())
+        .get(`/projects/${project.id}/intelligence`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+      expect(intelAfter.body.categories.LABOR.paid).toBe("40.00");
+      expect(intelAfter.body.categories.LABOR.pending).toBe("60.00");
+      expect(intelAfter.body.categories.LABOR.total).toBe("100.00");
+    });
+
     it("a final settlement's 'Final salary days' line on 5112 is excluded from both the Labor total and the drill-down — a settlement is a one-time exit payout, not project labor cost", async () => {
       const ctx = await setupProjectContext();
       const project = await createOverTimeProject(ctx);
