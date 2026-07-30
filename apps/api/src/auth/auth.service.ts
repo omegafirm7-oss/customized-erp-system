@@ -46,7 +46,14 @@ export class AuthService {
 
   async login(userId: string, meta: RequestMeta = {}): Promise<IssuedTokens> {
     const memberships = await this.iamService.getCompanyMemberships(userId);
-    const defaultMembership = memberships.find((m) => m.isDefault) ?? memberships[0] ?? null;
+    const activeMemberships = memberships.filter((m) => m.status === "ACTIVE");
+    // A user whose every company membership has been suspended (or who was
+    // never added to any company) has nowhere to land — reject the login
+    // outright rather than issuing a token with an empty permission set.
+    if (memberships.length > 0 && activeMemberships.length === 0) {
+      throw new UnauthorizedException("Your access has been suspended — contact your company administrator");
+    }
+    const defaultMembership = activeMemberships.find((m) => m.isDefault) ?? activeMemberships[0] ?? null;
     return this.issueTokens(userId, defaultMembership?.companyId ?? null, meta);
   }
 
@@ -83,6 +90,24 @@ export class AuthService {
 
     if (existing.expiresAt < new Date() || this.hashSecret(secret) !== existing.tokenHash) {
       throw new UnauthorizedException("Refresh token invalid or expired");
+    }
+
+    // Re-check access on every refresh, not just at the original login — a
+    // user deactivated or a company membership suspended after a token was
+    // issued must not be able to keep minting fresh access tokens with it.
+    const user = await this.prisma.user.findUnique({ where: { id: existing.userId } });
+    if (!user || !user.isActive) {
+      await this.prisma.refreshToken.update({ where: { id: existing.id }, data: { revokedAt: new Date() } });
+      throw new UnauthorizedException("Account is no longer active");
+    }
+    if (existing.activeCompanyId) {
+      const membership = await this.prisma.companyUser.findUnique({
+        where: { userId_companyId: { userId: existing.userId, companyId: existing.activeCompanyId } },
+      });
+      if (!membership || membership.status !== "ACTIVE") {
+        await this.prisma.refreshToken.update({ where: { id: existing.id }, data: { revokedAt: new Date() } });
+        throw new UnauthorizedException("Access to this company has been revoked");
+      }
     }
 
     const tokens = await this.issueTokens(existing.userId, existing.activeCompanyId, meta);

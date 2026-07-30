@@ -94,6 +94,12 @@ export function AdminUsersPage() {
   const [roleFormPermissions, setRoleFormPermissions] = useState<Set<string>>(new Set());
   const [roleError, setRoleError] = useState<string | null>(null);
 
+  const [statusBusyId, setStatusBusyId] = useState<string | null>(null);
+  const [newUserOpen, setNewUserOpen] = useState(false);
+  const [newUser, setNewUser] = useState({ email: "", fullName: "", password: randomTempPassword(), roleId: "" });
+  const [newUserError, setNewUserError] = useState<string | null>(null);
+  const [newUserConfirmed, setNewUserConfirmed] = useState<{ email: string; password: string } | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -184,6 +190,52 @@ export function AdminUsersPage() {
       await load();
     } catch (err: any) {
       setRoleChangeError(err?.response?.data?.message ?? "Failed to change role");
+    }
+  }
+
+  async function toggleUserStatus(companyUserId: string, currentStatus: string) {
+    setError(null);
+    setStatusBusyId(companyUserId);
+    try {
+      const nextStatus = currentStatus === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
+      await apiClient.patch(`/iam/company-users/${companyUserId}/status`, { status: nextStatus });
+      await load();
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to change access");
+    } finally {
+      setStatusBusyId(null);
+    }
+  }
+
+  async function removeUser(companyUserId: string, fullName: string) {
+    if (!window.confirm(`Remove ${fullName}'s access to this company entirely? They can be re-added later if needed.`)) return;
+    setError(null);
+    setStatusBusyId(companyUserId);
+    try {
+      await apiClient.delete(`/iam/company-users/${companyUserId}`);
+      await load();
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to remove user");
+    } finally {
+      setStatusBusyId(null);
+    }
+  }
+
+  function openNewUser() {
+    setNewUserOpen(true);
+    setNewUser({ email: "", fullName: "", password: randomTempPassword(), roleId: roles[0]?.id ?? "" });
+    setNewUserConfirmed(null);
+    setNewUserError(null);
+  }
+
+  async function createUser() {
+    setNewUserError(null);
+    try {
+      await apiClient.post("/iam/company-users", newUser);
+      setNewUserConfirmed({ email: newUser.email, password: newUser.password });
+      await load();
+    } catch (err: any) {
+      setNewUserError(err?.response?.data?.message ?? "Failed to add user");
     }
   }
 
@@ -420,14 +472,95 @@ export function AdminUsersPage() {
       </div>
 
       <div className="card">
-        <h2>Users</h2>
-        <p style={{ color: "#667085", fontSize: 13 }}>
-          Change a user's role to control which tabs they can see and edit, or reset their password (admin-set — no
-          email is sent). Share the new password with them directly; any of their active sessions are signed out once
-          it's changed.
-        </p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <h2>Users</h2>
+            <p style={{ color: "#667085", fontSize: 13 }}>
+              Change a user's role to control which tabs they can see and edit, or reset their password (admin-set —
+              no email is sent). Suspend a user to immediately end their access without deleting their account —
+              re-activate any time to restore it exactly as it was. Removing a user deletes their access to this
+              company entirely (they can be re-added later). Any of their active sessions are signed out the moment
+              you suspend, remove, or reset their password.
+            </p>
+          </div>
+          {!newUserOpen && (
+            <button className="secondary" onClick={openNewUser}>
+              + Add user
+            </button>
+          )}
+        </div>
         {error && <div className="error-banner">{error}</div>}
         {roleChangeError && <div className="error-banner">{roleChangeError}</div>}
+        {newUserOpen && (
+          <div style={{ marginTop: 12, borderTop: "1px solid #eaecf0", paddingTop: 12 }}>
+            {newUserConfirmed ? (
+              <div>
+                <p style={{ color: "#027a48", marginBottom: 4 }}>
+                  {newUserConfirmed.email} added. Share this password with them now — it will not be shown again:
+                </p>
+                <code style={{ background: "#f4f5f7", padding: "4px 8px", borderRadius: 4, fontSize: 14 }}>
+                  {newUserConfirmed.password}
+                </code>
+                <div style={{ marginTop: 8 }}>
+                  <button className="secondary" onClick={() => setNewUserOpen(false)}>
+                    Close
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {newUserError && <div className="error-banner">{newUserError}</div>}
+                <div className="form-row">
+                  <input
+                    placeholder="Full name"
+                    value={newUser.fullName}
+                    onChange={(e) => setNewUser({ ...newUser, fullName: e.target.value })}
+                    style={{ width: 200 }}
+                  />
+                  <input
+                    placeholder="Email"
+                    type="email"
+                    value={newUser.email}
+                    onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                    style={{ width: 220 }}
+                  />
+                  <select value={newUser.roleId} onChange={(e) => setNewUser({ ...newUser, roleId: e.target.value })}>
+                    <option value="" disabled>
+                      Select role…
+                    </option>
+                    {roles.map((role) => (
+                      <option key={role.id} value={role.id}>
+                        {role.name}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    value={newUser.password}
+                    onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                    minLength={10}
+                    style={{ width: 180 }}
+                  />
+                  <button
+                    className="secondary"
+                    type="button"
+                    onClick={() => setNewUser({ ...newUser, password: randomTempPassword() })}
+                  >
+                    Regenerate
+                  </button>
+                  <button
+                    onClick={createUser}
+                    disabled={!newUser.fullName.trim() || !newUser.email.trim() || !newUser.roleId || newUser.password.length < 10}
+                  >
+                    Add user
+                  </button>
+                  <button className="secondary" onClick={() => setNewUserOpen(false)}>
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="card">
@@ -465,6 +598,20 @@ export function AdminUsersPage() {
                     <td>
                       <button className="secondary" onClick={() => (resetOpenId === u.userId ? setResetOpenId(null) : openReset(u.userId))}>
                         {resetOpenId === u.userId ? "Cancel" : "Reset password"}
+                      </button>{" "}
+                      <button
+                        className="secondary"
+                        disabled={statusBusyId === u.companyUserId}
+                        onClick={() => toggleUserStatus(u.companyUserId, u.status)}
+                      >
+                        {u.status === "ACTIVE" ? "Suspend" : "Reactivate"}
+                      </button>{" "}
+                      <button
+                        className="danger"
+                        disabled={statusBusyId === u.companyUserId}
+                        onClick={() => removeUser(u.companyUserId, u.fullName)}
+                      >
+                        Remove
                       </button>
                     </td>
                   </tr>

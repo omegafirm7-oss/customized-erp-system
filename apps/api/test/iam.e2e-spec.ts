@@ -262,4 +262,167 @@ describe("IAM admin (e2e)", () => {
     // read access to reference data, not journal posting/management.
     await request(app.getHttpServer()).get("/gl/journal-entries").set(auth(memberToken)).expect(403);
   });
+
+  it("admin creates a user directly (no join-request needed) and they can immediately log in with the given password", async () => {
+    const ctx = await setupUserWithCompany(app);
+    const viewerRole = await getPrisma(app).role.findFirstOrThrow({ where: { companyId: ctx.companyId, name: "Viewer" } });
+
+    const newEmail = uniqueEmail("admincreated");
+    const newPassword = "AdminCreated123!";
+    const createRes = await request(app.getHttpServer())
+      .post("/iam/company-users")
+      .set(auth(ctx.accessToken))
+      .send({ email: newEmail, fullName: "Admin Created User", password: newPassword, roleId: viewerRole.id })
+      .expect(201);
+    expect(createRes.body.status).toBe("ACTIVE");
+
+    await request(app.getHttpServer()).post("/auth/login").send({ email: newEmail, password: newPassword }).expect(201);
+
+    // Creating the same email a second time for the same company is rejected.
+    await request(app.getHttpServer())
+      .post("/iam/company-users")
+      .set(auth(ctx.accessToken))
+      .send({ email: newEmail, fullName: "Admin Created User", password: newPassword, roleId: viewerRole.id })
+      .expect(409);
+  });
+
+  it("suspending a user's access blocks new logins and refreshes immediately, and reactivating restores it", async () => {
+    const ctx = await setupUserWithCompany(app);
+    const prisma = getPrisma(app);
+    const viewerRole = await prisma.role.findFirstOrThrow({ where: { companyId: ctx.companyId, name: "Viewer" } });
+    // Given IAM_USER_MANAGE (via the Administrator role) so the mid-test
+    // sensitive-route call below is meaningful — otherwise a Viewer would get
+    // 403 regardless of suspension and the assertion would prove nothing.
+    const adminRole = await prisma.role.findFirstOrThrow({ where: { companyId: ctx.companyId, name: "Administrator" } });
+
+    const memberEmail = uniqueEmail("suspendee");
+    const memberPassword = "SuspendMe123!";
+    const createRes = await request(app.getHttpServer())
+      .post("/iam/company-users")
+      .set(auth(ctx.accessToken))
+      .send({ email: memberEmail, fullName: "Suspend Me", password: memberPassword, roleId: adminRole.id })
+      .expect(201);
+    const companyUserId = createRes.body.id;
+
+    // Log in once while active, capture both the access token and refresh cookie.
+    const loginRes = await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({ email: memberEmail, password: memberPassword })
+      .expect(201);
+    const memberAccessToken = loginRes.body.accessToken;
+    const refreshCookie = loginRes.headers["set-cookie"][0];
+
+    // Refresh works fine before suspension.
+    const refreshBeforeSuspend = await request(app.getHttpServer())
+      .post("/auth/refresh")
+      .set("Cookie", refreshCookie)
+      .expect(201);
+    const refreshCookieAfterFirstRefresh = refreshBeforeSuspend.headers["set-cookie"][0];
+
+    // Before suspension, their (Administrator-role) access token can use a
+    // sensitive-marked route just fine.
+    await request(app.getHttpServer())
+      .patch(`/iam/company-users/${companyUserId}/role`)
+      .set(auth(memberAccessToken))
+      .send({ roleId: viewerRole.id })
+      .expect(200);
+    // ...restore them to admin so the later assertions still target an
+    // IAM_USER_MANAGE-capable membership.
+    await request(app.getHttpServer())
+      .patch(`/iam/company-users/${companyUserId}/role`)
+      .set(auth(ctx.accessToken))
+      .send({ roleId: adminRole.id })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .patch(`/iam/company-users/${companyUserId}/status`)
+      .set(auth(ctx.accessToken))
+      .send({ status: "SUSPENDED" })
+      .expect(200);
+
+    // New logins are rejected outright.
+    await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({ email: memberEmail, password: memberPassword })
+      .expect(401);
+
+    // The refresh token that was still valid pre-suspension no longer works.
+    await request(app.getHttpServer())
+      .post("/auth/refresh")
+      .set("Cookie", refreshCookieAfterFirstRefresh)
+      .expect(401);
+
+    // Their still-valid access token immediately loses effect on any
+    // sensitive-marked route (those re-check permissions live from the DB
+    // instead of trusting what was baked into the JWT at login) — proving
+    // suspension isn't just a login-time check.
+    await request(app.getHttpServer())
+      .patch(`/iam/company-users/${companyUserId}/role`)
+      .set(auth(memberAccessToken))
+      .send({ roleId: viewerRole.id })
+      .expect(403);
+
+    // Reactivate — login works again.
+    await request(app.getHttpServer())
+      .patch(`/iam/company-users/${companyUserId}/status`)
+      .set(auth(ctx.accessToken))
+      .send({ status: "ACTIVE" })
+      .expect(200);
+    await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({ email: memberEmail, password: memberPassword })
+      .expect(201);
+  });
+
+  it("removing a user's company access deletes their membership; they can no longer log into that company but the account itself survives", async () => {
+    const ctx = await setupUserWithCompany(app);
+    const prisma = getPrisma(app);
+    const viewerRole = await prisma.role.findFirstOrThrow({ where: { companyId: ctx.companyId, name: "Viewer" } });
+
+    const memberEmail = uniqueEmail("removee");
+    const memberPassword = "RemoveMe123!";
+    const createRes = await request(app.getHttpServer())
+      .post("/iam/company-users")
+      .set(auth(ctx.accessToken))
+      .send({ email: memberEmail, fullName: "Remove Me", password: memberPassword, roleId: viewerRole.id })
+      .expect(201);
+    const companyUserId = createRes.body.id;
+
+    await request(app.getHttpServer())
+      .delete(`/iam/company-users/${companyUserId}`)
+      .set(auth(ctx.accessToken))
+      .expect(200);
+
+    const stillExists = await prisma.user.findUnique({ where: { email: memberEmail } });
+    expect(stillExists).not.toBeNull();
+    const membershipGone = await prisma.companyUser.findFirst({ where: { id: companyUserId } });
+    expect(membershipGone).toBeNull();
+
+    // Login now issues a token with no active company (no memberships left) —
+    // distinct from "wrong password", confirming access to THIS company is gone.
+    const relogin = await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({ email: memberEmail, password: memberPassword })
+      .expect(201);
+    await request(app.getHttpServer())
+      .get("/iam/company-users")
+      .set(auth(relogin.body.accessToken))
+      .expect(403);
+  });
+
+  it("an admin cannot suspend or remove their own access", async () => {
+    const ctx = await setupUserWithCompany(app);
+    const prisma = getPrisma(app);
+    const selfMembership = await prisma.companyUser.findFirstOrThrow({ where: { companyId: ctx.companyId } });
+
+    await request(app.getHttpServer())
+      .patch(`/iam/company-users/${selfMembership.id}/status`)
+      .set(auth(ctx.accessToken))
+      .send({ status: "SUSPENDED" })
+      .expect(400);
+    await request(app.getHttpServer())
+      .delete(`/iam/company-users/${selfMembership.id}`)
+      .set(auth(ctx.accessToken))
+      .expect(400);
+  });
 });

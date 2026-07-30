@@ -11,7 +11,13 @@ import { UsersService } from "./users.service";
 import { CompanyJoinRequestsService } from "./company-join-requests.service";
 import { ResetPasswordDto } from "./dto/iam.dtos";
 import { ApproveJoinRequestDto } from "./dto/company-join-request.dtos";
-import { CreateRoleDto, UpdateCompanyUserRoleDto, UpdateRoleDto } from "./dto/role.dtos";
+import {
+  CreateCompanyUserDto,
+  CreateRoleDto,
+  UpdateCompanyUserRoleDto,
+  UpdateCompanyUserStatusDto,
+  UpdateRoleDto,
+} from "./dto/role.dtos";
 
 // JwtAuthGuard + PermissionsGuard are registered globally in AppModule.
 // Separate from IamController ("iam/me") since these routes are company-
@@ -76,6 +82,36 @@ export class IamAdminController {
     @Body() dto: UpdateCompanyUserRoleDto,
   ) {
     return this.iamService.updateCompanyUserRole(companyId, companyUserId, dto.roleId);
+  }
+
+  @Post("company-users")
+  @Permissions(PERMISSIONS.IAM_USER_MANAGE)
+  @SensitivePermission()
+  async createCompanyUser(@CurrentCompanyId() companyId: string, @Body() dto: CreateCompanyUserDto) {
+    return this.iamService.createCompanyUser(companyId, dto);
+  }
+
+  @Patch("company-users/:id/status")
+  @Permissions(PERMISSIONS.IAM_USER_MANAGE)
+  @SensitivePermission()
+  async updateCompanyUserStatus(
+    @CurrentCompanyId() companyId: string,
+    @Param("id") companyUserId: string,
+    @Body() dto: UpdateCompanyUserStatusDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.iamService.updateCompanyUserStatus(companyId, companyUserId, dto.status, user.sub);
+  }
+
+  @Delete("company-users/:id")
+  @Permissions(PERMISSIONS.IAM_USER_MANAGE)
+  @SensitivePermission()
+  async removeCompanyUser(
+    @CurrentCompanyId() companyId: string,
+    @Param("id") companyUserId: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.iamService.removeCompanyUser(companyId, companyUserId, user.sub);
   }
 
   @Patch("users/:id/reset-password")

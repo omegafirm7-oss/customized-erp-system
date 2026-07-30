@@ -58,6 +58,7 @@ interface LineForm {
   warehouseId: string;
   projectId: string;
   wbsTaskId: string;
+  attachmentFile: File | null;
 }
 
 const VAT_RATE: Record<string, number> = { STANDARD_15: 15, ZERO_RATED: 0, EXEMPT: 0 };
@@ -79,6 +80,7 @@ function emptyLine(side: "ar" | "ap"): LineForm {
     warehouseId: "",
     projectId: "",
     wbsTaskId: "",
+    attachmentFile: null,
   };
 }
 
@@ -195,7 +197,23 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
       } else {
         payload.vendorInvoiceNumber = vendorInvoiceNumber;
       }
-      await apiClient.post(`/${side}/invoices`, payload);
+      const created = await apiClient.post(`/${side}/invoices`, payload);
+      if (side === "ap") {
+        const createdLines: Array<{ id: string; lineNumber: number }> = created.data.lines ?? [];
+        const uploads = lines
+          .map((line, i) => ({ file: line.attachmentFile, lineNumber: i + 1 }))
+          .filter((l): l is { file: File; lineNumber: number } => l.file !== null)
+          .map(({ file, lineNumber }) => {
+            const createdLine = createdLines.find((l) => l.lineNumber === lineNumber);
+            if (!createdLine) return Promise.resolve();
+            const form = new FormData();
+            form.append("file", file);
+            return apiClient.post(`/ap/invoices/lines/${createdLine.id}/attachment`, form, {
+              headers: { "Content-Type": "multipart/form-data" },
+            });
+          });
+        await Promise.all(uploads);
+      }
       navigate(`/${side}/invoices`);
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "Failed to create invoice");
@@ -257,6 +275,7 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
               <th>Task</th>
               <th>Net</th>
               <th>VAT Amt</th>
+              {side === "ap" && <th>Evidence</th>}
               <th></th>
             </tr>
           </thead>
@@ -372,6 +391,19 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
                   </td>
                   <td>{amounts.net.toFixed(2)}</td>
                   <td>{amounts.vat.toFixed(2)}</td>
+                  {side === "ap" && (
+                    <td>
+                      <label style={{ cursor: "pointer", color: "#1e4fa3", fontSize: 12 }}>
+                        {line.attachmentFile ? line.attachmentFile.name.slice(0, 14) : "Attach"}
+                        <input
+                          type="file"
+                          accept="image/*,.pdf"
+                          style={{ display: "none" }}
+                          onChange={(e) => updateLine(index, { attachmentFile: e.target.files?.[0] ?? null })}
+                        />
+                      </label>
+                    </td>
+                  )}
                   <td>
                     {lines.length > 1 && (
                       <button type="button" className="secondary" onClick={() => setLines((prev) => prev.filter((_, i) => i !== index))}>

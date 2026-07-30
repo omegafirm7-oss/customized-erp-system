@@ -1,5 +1,5 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { ArrayUnique, IsArray, IsOptional, IsString, MinLength } from "class-validator";
+import { ArrayUnique, IsArray, IsEmail, IsIn, IsOptional, IsString, MinLength } from "class-validator";
 
 export class CreateRoleDto {
   @ApiProperty()
@@ -30,6 +30,32 @@ export class UpdateRoleDto {
 }
 
 export class UpdateCompanyUserRoleDto {
+  @ApiProperty()
+  @IsString()
+  roleId!: string;
+}
+
+export class UpdateCompanyUserStatusDto {
+  @ApiProperty({ enum: ["ACTIVE", "SUSPENDED"] })
+  @IsIn(["ACTIVE", "SUSPENDED"])
+  status!: "ACTIVE" | "SUSPENDED";
+}
+
+export class CreateCompanyUserDto {
+  @ApiProperty()
+  @IsEmail()
+  email!: string;
+
+  @ApiProperty()
+  @IsString()
+  @MinLength(2)
+  fullName!: string;
+
+  @ApiProperty({ description: "Only used if this email doesn't already have an account" })
+  @IsString()
+  @MinLength(10)
+  password!: string;
+
   @ApiProperty()
   @IsString()
   roleId!: string;
