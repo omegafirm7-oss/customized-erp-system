@@ -198,6 +198,10 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
         payload.vendorInvoiceNumber = vendorInvoiceNumber;
       }
       const created = await apiClient.post(`/${side}/invoices`, payload);
+      // Once the invoice itself is created, a failed attachment upload
+      // shouldn't block navigation or be reported as "invoice creation
+      // failed" — the invoice is real; only the evidence needs a retry
+      // (from the Purchase Invoices tab, where Attach is always available).
       if (side === "ap") {
         const createdLines: Array<{ id: string; lineNumber: number }> = created.data.lines ?? [];
         const uploads = lines
@@ -212,7 +216,15 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
               headers: { "Content-Type": "multipart/form-data" },
             });
           });
-        await Promise.all(uploads);
+        const results = await Promise.allSettled(uploads);
+        const failures = results.filter((r) => r.status === "rejected").length;
+        if (failures > 0) {
+          setError(
+            `Invoice saved, but ${failures} attachment${failures > 1 ? "s" : ""} failed to upload (file may be too large or an unsupported type) — attach ${failures > 1 ? "them" : "it"} again from the Purchase Invoices tab.`,
+          );
+          setSubmitting(false);
+          return;
+        }
       }
       navigate(`/${side}/invoices`);
     } catch (err: any) {

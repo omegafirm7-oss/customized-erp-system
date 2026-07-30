@@ -241,6 +241,7 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
   }
 
   async function uploadLineAttachment(lineId: string, file: File) {
+    setError(null);
     setUploadingFor(lineId);
     try {
       const form = new FormData();
@@ -249,6 +250,8 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
         headers: { "Content-Type": "multipart/form-data" },
       });
       await load();
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to attach evidence — the file may be too large or an unsupported type");
     } finally {
       setUploadingFor(null);
     }

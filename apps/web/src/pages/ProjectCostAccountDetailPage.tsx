@@ -22,6 +22,7 @@ export function ProjectCostAccountDetailPage() {
   const [lines, setLines] = useState<InvoiceLine[] | null>(null);
   const [uploadingFor, setUploadingFor] = useState<string | null>(null);
   const [viewer, setViewer] = useState<{ url: string; filename: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   function load() {
     if (!id || !accountId) return;
@@ -33,6 +34,7 @@ export function ProjectCostAccountDetailPage() {
   useEffect(load, [id, accountId]);
 
   async function uploadAttachment(lineId: string, file: File) {
+    setError(null);
     setUploadingFor(lineId);
     try {
       const form = new FormData();
@@ -41,6 +43,8 @@ export function ProjectCostAccountDetailPage() {
         headers: { "Content-Type": "multipart/form-data" },
       });
       load();
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to attach evidence — the file may be too large or an unsupported type");
     } finally {
       setUploadingFor(null);
     }
@@ -67,6 +71,7 @@ export function ProjectCostAccountDetailPage() {
       <Link to={`/projects/${id}`} className="intelligence-crumb">
         ← Back to project
       </Link>
+      {error && <div className="error-banner">{error}</div>}
       <div className="intelligence-panel-header">
         <div className="intelligence-panel-title">Recorded purchase invoice lines</div>
         <div style={{ display: "flex", gap: 12 }}>

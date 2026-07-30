@@ -87,6 +87,7 @@ export function EmployeeTimesheetDetailPage() {
   }, [scope, periodId, load]);
 
   async function uploadAttachment(entryId: string, file: File) {
+    setError(null);
     setUploadingFor(entryId);
     try {
       const form = new FormData();
@@ -95,6 +96,8 @@ export function EmployeeTimesheetDetailPage() {
         headers: { "Content-Type": "multipart/form-data" },
       });
       await load(scope, periodId);
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to attach evidence — the file may be too large or an unsupported type");
     } finally {
       setUploadingFor(null);
     }
