@@ -93,7 +93,7 @@ export function ProjectDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [taskForm, setTaskForm] = useState({ code: "", name: "", parentTaskId: "", costBudget: "" });
-  const [estimates, setEstimates] = useState({ name: "", contractValue: "", estimatedTotalCost: "" });
+  const [estimates, setEstimates] = useState({ code: "", name: "", contractValue: "", estimatedTotalCost: "" });
   const [costBreakdown, setCostBreakdown] = useState<CostBreakdown | null>(null);
   const [intelligence, setIntelligence] = useState<IntelligenceSummary | null>(null);
   const [costCenterForm, setCostCenterForm] = useState({ code: "", name: "" });
@@ -110,6 +110,7 @@ export function ProjectDetailPage() {
     setCostBreakdown(breakdownRes.data);
     setIntelligence(intelligenceRes.data);
     setEstimates({
+      code: projectRes.data.code,
       name: projectRes.data.name,
       contractValue: projectRes.data.contractValue,
       estimatedTotalCost: projectRes.data.estimatedTotalCost,
@@ -329,6 +330,13 @@ export function ProjectDetailPage() {
           </button>
         </form>
         <form onSubmit={saveEstimates} className="form-row">
+          <label>Code </label>
+          <input
+            value={estimates.code}
+            onChange={(e) => setEstimates({ ...estimates, code: e.target.value })}
+            style={{ width: 160 }}
+            disabled={project.status === "CLOSED"}
+          />
           <label>Name </label>
           <input
             value={estimates.name}

@@ -90,10 +90,19 @@ export class ProjectsService {
     if (dto.businessPartnerId) {
       await this.getCustomer(companyId, dto.businessPartnerId);
     }
+    if (dto.code && dto.code !== before.code) {
+      const clash = await this.prisma.project.findFirst({
+        where: { companyId, code: dto.code, id: { not: projectId } },
+      });
+      if (clash) {
+        throw new ConflictException(`Project code ${dto.code} is already in use`);
+      }
+    }
 
     const updated = await this.prisma.project.update({
       where: { id: projectId },
       data: {
+        code: dto.code,
         name: dto.name,
         description: dto.description,
         businessPartnerId: dto.businessPartnerId,

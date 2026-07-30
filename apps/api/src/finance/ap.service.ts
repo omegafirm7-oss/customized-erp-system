@@ -645,7 +645,13 @@ export class ApService {
       },
       orderBy: { createdAt: "desc" },
       include: {
-        lines: { include: { expenseAccount: { select: { code: true, name: true } }, costCenter: { select: { code: true, name: true } } } },
+        lines: {
+          include: {
+            expenseAccount: { select: { code: true, name: true } },
+            costCenter: { select: { code: true, name: true } },
+            attachment: { select: { filename: true } },
+          },
+        },
         businessPartner: { select: { code: true, name: true } },
       },
     });

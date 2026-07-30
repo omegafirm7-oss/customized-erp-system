@@ -62,6 +62,11 @@ export class UpdateProjectDto {
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
+  code?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
   name?: string;
 
   @ApiProperty({ required: false })

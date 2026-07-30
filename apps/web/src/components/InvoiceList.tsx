@@ -15,8 +15,10 @@ interface InvoiceRow {
   openAmount: string;
   businessPartner?: { code: string; name: string };
   lines?: Array<{
+    id: string;
     expenseAccount?: { code: string; name: string } | null;
     costCenter?: { code: string; name: string } | null;
+    attachment?: { filename: string } | null;
   }>;
   zatcaSubmission?: {
     id: string;
@@ -63,6 +65,8 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [dateSort, setDateSort] = useState<"asc" | "desc">("desc");
+  const [uploadingFor, setUploadingFor] = useState<string | null>(null);
+  const [viewer, setViewer] = useState<{ url: string; filename: string } | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -236,6 +240,31 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
     URL.revokeObjectURL(url);
   }
 
+  async function uploadLineAttachment(lineId: string, file: File) {
+    setUploadingFor(lineId);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      await apiClient.post(`/ap/invoices/lines/${lineId}/attachment`, form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      await load();
+    } finally {
+      setUploadingFor(null);
+    }
+  }
+
+  async function viewLineAttachment(lineId: string, filename: string) {
+    const res = await apiClient.get(`/ap/invoices/lines/${lineId}/attachment`, { responseType: "blob" });
+    const url = URL.createObjectURL(res.data as Blob);
+    setViewer({ url, filename });
+  }
+
+  function closeViewer() {
+    if (viewer) URL.revokeObjectURL(viewer.url);
+    setViewer(null);
+  }
+
   async function handleImportExpenses(file: File) {
     setError(null);
     setImportResult(null);
@@ -406,6 +435,7 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
               <th>Open</th>
               <th>Status</th>
               {side === "ar" && <th>ZATCA</th>}
+              {side === "ap" && <th>Evidence</th>}
               <th></th>
             </tr>
           </thead>
@@ -429,6 +459,34 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
                   </span>
                 </td>
                 {side === "ar" && <td>{zatcaBadge(inv)}</td>}
+                {side === "ap" && (
+                  <td>
+                    {(inv.lines ?? []).map((l) => (
+                      <div key={l.id} style={{ marginBottom: 2 }}>
+                        {l.attachment ? (
+                          <button className="secondary" style={{ padding: "2px 8px", fontSize: 11 }} onClick={() => viewLineAttachment(l.id, l.attachment!.filename)}>
+                            View
+                          </button>
+                        ) : (
+                          <label style={{ cursor: "pointer", color: "#1e4fa3", fontSize: 12 }}>
+                            {uploadingFor === l.id ? "Uploading…" : "Attach"}
+                            <input
+                              type="file"
+                              accept="image/*,.pdf"
+                              style={{ display: "none" }}
+                              disabled={uploadingFor === l.id}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) uploadLineAttachment(l.id, file);
+                                e.target.value = "";
+                              }}
+                            />
+                          </label>
+                        )}
+                      </div>
+                    ))}
+                  </td>
+                )}
                 <td>
                   {inv.status === "DRAFT" && (
                     <>
@@ -472,10 +530,39 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
               <td>
                 <strong>{filteredInvoices.reduce((sum, inv) => sum + Number(inv.openAmount), 0).toFixed(2)}</strong>
               </td>
-              <td colSpan={2 + (side === "ar" ? 1 : 0)} />
+              <td colSpan={2 + (side === "ar" ? 1 : 0) + (side === "ap" ? 1 : 0)} />
             </tr>
           </tfoot>
         </table>
+      )}
+
+      {viewer && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+          onClick={closeViewer}
+        >
+          <div style={{ background: "#fff", padding: 16, borderRadius: 8, maxWidth: "90vw", maxHeight: "90vh" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+              <strong>{viewer.filename}</strong>
+              <button className="secondary" onClick={closeViewer}>
+                Close
+              </button>
+            </div>
+            {viewer.filename.toLowerCase().endsWith(".pdf") ? (
+              <iframe src={viewer.url} title={viewer.filename} style={{ width: "80vw", height: "80vh", border: "none" }} />
+            ) : (
+              <img src={viewer.url} alt={viewer.filename} style={{ maxWidth: "80vw", maxHeight: "80vh", objectFit: "contain" }} />
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
