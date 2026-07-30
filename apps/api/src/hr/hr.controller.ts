@@ -357,6 +357,34 @@ export class HrController {
     return this.attendanceService.resetPeriodHours(companyId, dto.fiscalPeriodId, user.sub);
   }
 
+  @Post("employee-timesheet/entries/:entryId/attachment")
+  @Permissions(PERMISSIONS.HR_EMPLOYEE_MANAGE)
+  @ApiConsumes("multipart/form-data")
+  @UseInterceptors(FileInterceptor("file", { storage: memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }))
+  async uploadTimesheetEntryAttachment(
+    @CurrentCompanyId() companyId: string,
+    @Param("entryId") entryId: string,
+    @CurrentUser() user: JwtPayload,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException("No file uploaded");
+    }
+    return this.attendanceService.uploadEntryAttachment(companyId, entryId, user.sub, file);
+  }
+
+  @Get("employee-timesheet/entries/:entryId/attachment")
+  @Permissions(PERMISSIONS.HR_EMPLOYEE_VIEW)
+  async getTimesheetEntryAttachment(
+    @CurrentCompanyId() companyId: string,
+    @Param("entryId") entryId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const attachment = await this.attendanceService.getEntryAttachment(companyId, entryId);
+    res.set({ "Content-Type": attachment.mimeType, "Content-Disposition": `inline; filename="${attachment.filename}"` });
+    return new StreamableFile(attachment.data);
+  }
+
   // ── Employee payments (allowances & advances) ───────────────────────
 
   @Get("employees/:id/payments")

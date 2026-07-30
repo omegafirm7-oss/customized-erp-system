@@ -442,6 +442,8 @@ model Company {
   employeePayments          EmployeePayment[]
   employeePaymentRecoveries EmployeePaymentRecovery[]
   employeePaymentAttachments EmployeePaymentAttachment[]
+  purchaseInvoiceLineAttachments PurchaseInvoiceLineAttachment[]
+  employeeTimesheetEntryAttachments EmployeeTimesheetEntryAttachment[]
   joinRequests              CompanyJoinRequest[]
 
   @@map("companies")
@@ -1197,9 +1199,30 @@ model PurchaseInvoiceLine {
   expenseAccountId  String
   expenseAccount    Account         @relation(fields: [expenseAccountId], references: [id])
 
+  attachment PurchaseInvoiceLineAttachment?
+
   @@index([purchaseInvoiceId])
   @@index([companyId, itemId])
   @@map("purchase_invoice_lines")
+}
+
+// A single evidence file (receipt/bill scan) attached to a recorded expense
+// line — same storage pattern as EmployeePaymentAttachment (bytes in
+// Postgres, upsert-on-reupload, no separate file-storage infra).
+model PurchaseInvoiceLineAttachment {
+  id                    String              @id @default(uuid())
+  companyId             String
+  company               Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  purchaseInvoiceLineId String              @unique
+  purchaseInvoiceLine   PurchaseInvoiceLine @relation(fields: [purchaseInvoiceLineId], references: [id], onDelete: Cascade)
+  filename              String
+  mimeType              String
+  size                  Int
+  data                  Bytes
+  uploadedByUserId      String
+  createdAt             DateTime            @default(now())
+
+  @@map("purchase_invoice_line_attachments")
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1956,9 +1979,29 @@ model EmployeeTimesheetEntry {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
+  attachment EmployeeTimesheetEntryAttachment?
+
   @@unique([employeeId, date])
   @@index([companyId, date])
   @@map("employee_timesheet_entries")
+}
+
+// A single evidence file (site photo, delivery note, etc.) attached to one
+// day's timesheet entry — same storage pattern as EmployeePaymentAttachment.
+model EmployeeTimesheetEntryAttachment {
+  id                       String                 @id @default(uuid())
+  companyId                String
+  company                  Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employeeTimesheetEntryId String                 @unique
+  employeeTimesheetEntry   EmployeeTimesheetEntry @relation(fields: [employeeTimesheetEntryId], references: [id], onDelete: Cascade)
+  filename                 String
+  mimeType                 String
+  size                     Int
+  data                     Bytes
+  uploadedByUserId         String
+  createdAt                DateTime               @default(now())
+
+  @@map("employee_timesheet_entry_attachments")
 }
 
 // One-off cash paid to an employee outside formal payroll. ALLOWANCE is a

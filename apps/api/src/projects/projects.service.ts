@@ -433,6 +433,7 @@ export class ProjectsService {
     await this.getOwned(companyId, projectId);
     return this.prisma.$queryRaw<
       Array<{
+        lineId: string;
         invoiceId: string;
         invoiceNumber: string | null;
         vendorInvoiceNumber: string;
@@ -443,13 +444,16 @@ export class ProjectsService {
         vatAmount: Prisma.Decimal;
         grossAmount: Prisma.Decimal;
         status: string;
+        attachmentFilename: string | null;
       }>
     >`
-      SELECT pi."id" AS "invoiceId", pi."invoiceNumber", pi."vendorInvoiceNumber", bp."name" AS "partnerName",
-             pi."postingDate", pil."description", pil."netAmount", pil."vatAmount", pil."grossAmount", pi."status"
+      SELECT pil."id" AS "lineId", pi."id" AS "invoiceId", pi."invoiceNumber", pi."vendorInvoiceNumber", bp."name" AS "partnerName",
+             pi."postingDate", pil."description", pil."netAmount", pil."vatAmount", pil."grossAmount", pi."status",
+             pila."filename" AS "attachmentFilename"
       FROM "purchase_invoice_lines" pil
       JOIN "purchase_invoices" pi ON pi."id" = pil."purchaseInvoiceId"
       JOIN "business_partners" bp ON bp."id" = pi."businessPartnerId"
+      LEFT JOIN "purchase_invoice_line_attachments" pila ON pila."purchaseInvoiceLineId" = pil."id"
       WHERE pil."projectId" = ${projectId} AND pil."expenseAccountId" = ${accountId} AND pi."status" != 'CANCELLED'
         AND pi."companyId" = ${companyId}
       ORDER BY pi."postingDate" DESC

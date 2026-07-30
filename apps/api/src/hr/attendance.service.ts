@@ -105,7 +105,13 @@ export class AttendanceService {
     const entries = await this.prisma.employeeTimesheetEntry.findMany({
       where: { employeeId, ...(period ? { date: { gte: period.startDate, lte: period.endDate } } : {}) },
       orderBy: { date: "asc" },
-      select: { date: true, dayType: true, hoursWorked: true },
+      select: {
+        id: true,
+        date: true,
+        dayType: true,
+        hoursWorked: true,
+        attachment: { select: { filename: true } },
+      },
     });
 
     const hourlyRate = employee.basicSalary.div(HOURLY_DIVISOR).toDecimalPlaces(4);
@@ -115,7 +121,14 @@ export class AttendanceService {
       const cost = hourlyRate.mul(e.hoursWorked).toDecimalPlaces(2);
       totalHours = totalHours.add(e.hoursWorked);
       totalCost = totalCost.add(cost);
-      return { date: e.date, dayType: e.dayType, hoursWorked: e.hoursWorked, cost };
+      return {
+        id: e.id,
+        date: e.date,
+        dayType: e.dayType,
+        hoursWorked: e.hoursWorked,
+        cost,
+        attachmentFilename: e.attachment?.filename ?? null,
+      };
     });
 
     return {
@@ -258,5 +271,66 @@ export class AttendanceService {
     });
 
     return this.getPeriod(companyId, fiscalPeriodId);
+  }
+
+  private static readonly ALLOWED_ATTACHMENT_MIME_TYPES = new Set([
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+    "application/pdf",
+  ]);
+
+  /** Attaches (or replaces) the evidence file for one day's timesheet entry. */
+  async uploadEntryAttachment(companyId: string, entryId: string, userId: string, file: Express.Multer.File) {
+    if (!AttendanceService.ALLOWED_ATTACHMENT_MIME_TYPES.has(file.mimetype)) {
+      throw new BadRequestException("Attachment must be an image (JPEG/PNG/WEBP/GIF) or a PDF");
+    }
+    const entry = await this.prisma.employeeTimesheetEntry.findFirst({ where: { id: entryId, companyId } });
+    if (!entry) {
+      throw new NotFoundException("Timesheet entry not found");
+    }
+
+    const attachment = await this.prisma.employeeTimesheetEntryAttachment.upsert({
+      where: { employeeTimesheetEntryId: entryId },
+      create: {
+        companyId,
+        employeeTimesheetEntryId: entryId,
+        filename: file.originalname,
+        mimeType: file.mimetype,
+        size: file.size,
+        data: file.buffer,
+        uploadedByUserId: userId,
+      },
+      update: {
+        filename: file.originalname,
+        mimeType: file.mimetype,
+        size: file.size,
+        data: file.buffer,
+        uploadedByUserId: userId,
+      },
+      select: { id: true, filename: true, mimeType: true, size: true, createdAt: true },
+    });
+
+    await this.auditService.log({
+      companyId,
+      entityName: "EmployeeTimesheetEntryAttachment",
+      entityId: attachment.id,
+      action: "CREATE",
+      changedByUserId: userId,
+      afterSnapshot: attachment,
+    });
+
+    return attachment;
+  }
+
+  async getEntryAttachment(companyId: string, entryId: string) {
+    const attachment = await this.prisma.employeeTimesheetEntryAttachment.findFirst({
+      where: { employeeTimesheetEntryId: entryId, companyId },
+    });
+    if (!attachment) {
+      throw new NotFoundException("No attachment on this timesheet entry");
+    }
+    return attachment;
   }
 }

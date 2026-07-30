@@ -667,6 +667,67 @@ export class ApService {
     return this.getOwnedInvoice(companyId, invoiceId);
   }
 
+  private static readonly ALLOWED_ATTACHMENT_MIME_TYPES = new Set([
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+    "application/pdf",
+  ]);
+
+  /** Attaches (or replaces) the evidence file for one recorded expense line. */
+  async uploadLineAttachment(companyId: string, lineId: string, userId: string, file: Express.Multer.File) {
+    if (!ApService.ALLOWED_ATTACHMENT_MIME_TYPES.has(file.mimetype)) {
+      throw new BadRequestException("Attachment must be an image (JPEG/PNG/WEBP/GIF) or a PDF");
+    }
+    const line = await this.prisma.purchaseInvoiceLine.findFirst({ where: { id: lineId, companyId } });
+    if (!line) {
+      throw new NotFoundException("Purchase invoice line not found");
+    }
+
+    const attachment = await this.prisma.purchaseInvoiceLineAttachment.upsert({
+      where: { purchaseInvoiceLineId: lineId },
+      create: {
+        companyId,
+        purchaseInvoiceLineId: lineId,
+        filename: file.originalname,
+        mimeType: file.mimetype,
+        size: file.size,
+        data: file.buffer,
+        uploadedByUserId: userId,
+      },
+      update: {
+        filename: file.originalname,
+        mimeType: file.mimetype,
+        size: file.size,
+        data: file.buffer,
+        uploadedByUserId: userId,
+      },
+      select: { id: true, filename: true, mimeType: true, size: true, createdAt: true },
+    });
+
+    await this.auditService.log({
+      companyId,
+      entityName: "PurchaseInvoiceLineAttachment",
+      entityId: attachment.id,
+      action: "CREATE",
+      changedByUserId: userId,
+      afterSnapshot: attachment,
+    });
+
+    return attachment;
+  }
+
+  async getLineAttachment(companyId: string, lineId: string) {
+    const attachment = await this.prisma.purchaseInvoiceLineAttachment.findFirst({
+      where: { purchaseInvoiceLineId: lineId, companyId },
+    });
+    if (!attachment) {
+      throw new NotFoundException("No attachment on this expense line");
+    }
+    return attachment;
+  }
+
   private async getOwnedInvoice(companyId: string, invoiceId: string) {
     const invoice = await this.prisma.purchaseInvoice.findFirst({
       where: { id: invoiceId, companyId },

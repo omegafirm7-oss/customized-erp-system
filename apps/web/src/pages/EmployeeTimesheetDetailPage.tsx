@@ -10,10 +10,12 @@ interface FiscalPeriod {
 }
 
 interface TimesheetDetailEntry {
+  id: string;
   date: string;
   dayType: string;
   hoursWorked: string;
   cost: string;
+  attachmentFilename: string | null;
 }
 
 interface TimesheetDetailResponse {
@@ -49,6 +51,8 @@ export function EmployeeTimesheetDetailPage() {
   const [detail, setDetail] = useState<TimesheetDetailResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadingFor, setUploadingFor] = useState<string | null>(null);
+  const [viewer, setViewer] = useState<{ url: string; filename: string } | null>(null);
 
   useEffect(() => {
     apiClient.get<FiscalPeriod[]>("/companies/current/fiscal-periods").then((res) => {
@@ -81,6 +85,31 @@ export function EmployeeTimesheetDetailPage() {
   useEffect(() => {
     load(scope, periodId);
   }, [scope, periodId, load]);
+
+  async function uploadAttachment(entryId: string, file: File) {
+    setUploadingFor(entryId);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      await apiClient.post(`/hr/employee-timesheet/entries/${entryId}/attachment`, form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      await load(scope, periodId);
+    } finally {
+      setUploadingFor(null);
+    }
+  }
+
+  async function viewAttachment(entryId: string, filename: string) {
+    const res = await apiClient.get(`/hr/employee-timesheet/entries/${entryId}/attachment`, { responseType: "blob" });
+    const url = URL.createObjectURL(res.data);
+    setViewer({ url, filename });
+  }
+
+  function closeViewer() {
+    if (viewer) URL.revokeObjectURL(viewer.url);
+    setViewer(null);
+  }
 
   return (
     <div>
@@ -160,15 +189,38 @@ export function EmployeeTimesheetDetailPage() {
                     <th>Day type</th>
                     <th>Hours</th>
                     <th>Cost</th>
+                    <th>Evidence</th>
                   </tr>
                 </thead>
                 <tbody>
                   {detail.entries.map((e) => (
-                    <tr key={e.date}>
+                    <tr key={e.id}>
                       <td>{new Date(e.date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric", weekday: "short" })}</td>
                       <td>{DAY_TYPE_LABELS[e.dayType] ?? e.dayType}</td>
                       <td>{Number(e.hoursWorked)}</td>
                       <td>{money(e.cost)}</td>
+                      <td>
+                        {e.attachmentFilename ? (
+                          <button className="secondary" onClick={() => viewAttachment(e.id, e.attachmentFilename!)}>
+                            View
+                          </button>
+                        ) : (
+                          <label style={{ cursor: "pointer", color: "#1e4fa3", fontSize: 13 }}>
+                            {uploadingFor === e.id ? "Uploading…" : "Attach"}
+                            <input
+                              type="file"
+                              accept="image/*,.pdf"
+                              style={{ display: "none" }}
+                              disabled={uploadingFor === e.id}
+                              onChange={(ev) => {
+                                const file = ev.target.files?.[0];
+                                if (file) uploadAttachment(e.id, file);
+                                ev.target.value = "";
+                              }}
+                            />
+                          </label>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -176,6 +228,35 @@ export function EmployeeTimesheetDetailPage() {
             )}
           </div>
         </>
+      )}
+
+      {viewer && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+          onClick={closeViewer}
+        >
+          <div style={{ background: "#fff", padding: 16, borderRadius: 8, maxWidth: "90vw", maxHeight: "90vh" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+              <strong>{viewer.filename}</strong>
+              <button className="secondary" onClick={closeViewer}>
+                Close
+              </button>
+            </div>
+            {viewer.filename.toLowerCase().endsWith(".pdf") ? (
+              <iframe src={viewer.url} title={viewer.filename} style={{ width: "80vw", height: "80vh", border: "none" }} />
+            ) : (
+              <img src={viewer.url} alt={viewer.filename} style={{ maxWidth: "80vw", maxHeight: "80vh", objectFit: "contain" }} />
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
