@@ -28,29 +28,55 @@ export function RegisterPage() {
   }
 
   return (
-    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh" }}>
-      <form onSubmit={handleSubmit} className="card" style={{ width: 340 }}>
-        <h2>Create account</h2>
-        {error && <div className="error-banner">{error}</div>}
-        <div className="form-row" style={{ flexDirection: "column", alignItems: "stretch" }}>
-          <label>Full name</label>
-          <input value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+    <div className="auth-shell">
+      <div className="auth-visual">
+        <div className="auth-visual-top">
+          <h1>
+            Get
+            <br />
+            Started,
+          </h1>
         </div>
-        <div className="form-row" style={{ flexDirection: "column", alignItems: "stretch" }}>
-          <label>Email</label>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        <div className="auth-visual-bottom">
+          <div className="auth-brand">
+            <span className="auth-brand-mark">UC</span>
+            <span className="auth-brand-name">Universa Centrix</span>
+          </div>
+          <p>Enter your details and start managing your business today.</p>
         </div>
-        <div className="form-row" style={{ flexDirection: "column", alignItems: "stretch" }}>
-          <label>Password (min 10 characters)</label>
-          <input type="password" minLength={10} value={password} onChange={(e) => setPassword(e.target.value)} required />
-        </div>
-        <button type="submit" disabled={submitting} style={{ width: "100%", marginTop: 8 }}>
-          {submitting ? "Creating…" : "Create account"}
-        </button>
-        <p style={{ fontSize: 13, marginTop: 12 }}>
-          Already have an account? <Link to="/login">Sign in</Link>
-        </p>
-      </form>
+      </div>
+      <div className="auth-form-panel">
+        <form onSubmit={handleSubmit} className="auth-form-box">
+          <h2>Create account</h2>
+          <p className="auth-form-subtitle">Sign up to get started with Universa Centrix.</p>
+          {error && <div className="error-banner">{error}</div>}
+          <div className="auth-field">
+            <label>Full name</label>
+            <input placeholder="Your name" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+          </div>
+          <div className="auth-field">
+            <label>Email</label>
+            <input type="email" placeholder="mail@website.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          </div>
+          <div className="auth-field">
+            <label>Password (min 10 characters)</label>
+            <input
+              type="password"
+              placeholder="Min. 10 characters"
+              minLength={10}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </div>
+          <button type="submit" disabled={submitting} style={{ width: "100%" }}>
+            {submitting ? "Creating…" : "Create account"}
+          </button>
+          <p style={{ fontSize: 13, marginTop: 16, textAlign: "center" }}>
+            Already have an account? <Link to="/login">Sign in</Link>
+          </p>
+        </form>
+      </div>
     </div>
   );
 }

@@ -25,29 +25,54 @@ export function LoginPage() {
   }
 
   return (
-    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh" }}>
-      <form onSubmit={handleSubmit} className="card" style={{ width: 340 }}>
-        <h2>Sign in</h2>
-        {error && <div className="error-banner">{error}</div>}
-        <div className="form-row" style={{ flexDirection: "column", alignItems: "stretch" }}>
-          <label>Email</label>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+    <div className="auth-shell">
+      <div className="auth-visual">
+        <div className="auth-visual-top">
+          <h1>
+            Welcome
+            <br />
+            Back,
+          </h1>
         </div>
-        <div className="form-row" style={{ flexDirection: "column", alignItems: "stretch" }}>
-          <label>Password</label>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        <div className="auth-visual-bottom">
+          <div className="auth-brand">
+            <span className="auth-brand-mark">UC</span>
+            <span className="auth-brand-name">Universa Centrix</span>
+          </div>
+          <p>Run your business — finance, projects, HR, and more — from one place.</p>
         </div>
-        <button type="submit" disabled={submitting} style={{ width: "100%", marginTop: 8 }}>
-          {submitting ? "Signing in…" : "Sign in"}
-        </button>
-        <p style={{ fontSize: 13, marginTop: 12 }}>
-          No account? <Link to="/register">Register</Link>
-        </p>
-        <p style={{ fontSize: 13, marginTop: 4, color: "#667085" }}>
-          Forgot your password? Ask a company Administrator to reset it for you from Users in the sidebar — self-service
-          email reset isn't available yet.
-        </p>
-      </form>
+      </div>
+      <div className="auth-form-panel">
+        <form onSubmit={handleSubmit} className="auth-form-box">
+          <h2>Login</h2>
+          <p className="auth-form-subtitle">Sign in to continue to Universa Centrix.</p>
+          {error && <div className="error-banner">{error}</div>}
+          <div className="auth-field">
+            <label>Email</label>
+            <input type="email" placeholder="mail@website.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          </div>
+          <div className="auth-field">
+            <label>Password</label>
+            <input
+              type="password"
+              placeholder="Enter your password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </div>
+          <button type="submit" disabled={submitting} style={{ width: "100%" }}>
+            {submitting ? "Signing in…" : "Login"}
+          </button>
+          <p style={{ fontSize: 13, marginTop: 16, textAlign: "center" }}>
+            Not registered yet? <Link to="/register">Create an Account</Link>
+          </p>
+          <p style={{ fontSize: 12, marginTop: 12, color: "#98a2b3", textAlign: "center" }}>
+            Forgot your password? Ask a company Administrator to reset it for you — self-service email reset isn't
+            available yet.
+          </p>
+        </form>
+      </div>
     </div>
   );
 }
