@@ -121,6 +121,14 @@ export function Layout() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sidebarCollapsed") === "1");
   const [expandedSections, setExpandedSections] = useState<Set<string>>(loadExpandedSections);
 
+  // Cross-tenant SaaS-provider dashboard — visible only to the platform
+  // owner's account, kept as its own top-level section (not nested under
+  // Settings) since it isn't scoped to whichever company happens to be
+  // selected right now.
+  const sections: NavSection[] = user?.isPlatformAdmin
+    ? [{ label: "Platform", items: [{ to: "/platform", label: "Client Dashboard" }] }, ...NAV_SECTIONS]
+    : NAV_SECTIONS;
+
   function toggleSidebar() {
     setCollapsed((v) => {
       const next = !v;
@@ -146,7 +154,7 @@ export function Layout() {
   // following a link (e.g. from a KPI tile) never lands you on a page
   // whose own nav tab is collapsed.
   useEffect(() => {
-    const current = NAV_SECTIONS.find((s) => s.items.some((i) => routerLocation.pathname.startsWith(i.to)));
+    const current = sections.find((s) => s.items.some((i) => routerLocation.pathname.startsWith(i.to)));
     if (current && !expandedSections.has(current.label)) {
       setExpandedSections((prev) => new Set(prev).add(current.label));
     }
@@ -169,7 +177,7 @@ export function Layout() {
       <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
         <h1>Universa Centrix</h1>
         <nav>
-          {NAV_SECTIONS.map((section) => {
+          {sections.map((section) => {
             const isOpen = expandedSections.has(section.label);
             return (
               <div className="nav-section" key={section.label}>

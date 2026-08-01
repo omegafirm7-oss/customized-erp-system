@@ -153,6 +153,7 @@ export class AuthService {
       activeCompanyId,
       roleId,
       permissions,
+      isPlatformAdmin: user.isPlatformAdmin,
     };
 
     const jwtConfig = this.configService.get("jwt", { infer: true });

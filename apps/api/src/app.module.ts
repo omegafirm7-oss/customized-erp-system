@@ -24,6 +24,7 @@ import { ProjectsModule } from "./projects/projects.module";
 import { HrModule } from "./hr/hr.module";
 import { ManpowerModule } from "./manpower/manpower.module";
 import { EquipmentModule } from "./equipment/equipment.module";
+import { PlatformModule } from "./platform/platform.module";
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { EquipmentModule } from "./equipment/equipment.module";
     HrModule,
     ManpowerModule,
     EquipmentModule,
+    PlatformModule,
   ],
   providers: [
     // Global by default — every route requires a valid JWT unless explicitly

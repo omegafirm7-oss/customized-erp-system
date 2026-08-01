@@ -43,6 +43,7 @@ import { EmployeesOverviewPage } from "./pages/EmployeesOverviewPage";
 import { ActiveEmployeesDetailPage } from "./pages/ActiveEmployeesDetailPage";
 import { ReleasedEmployeesDetailPage } from "./pages/ReleasedEmployeesDetailPage";
 import { AdminUsersPage } from "./pages/AdminUsersPage";
+import { PlatformDashboardPage } from "./pages/PlatformDashboardPage";
 import { UpdateTimesheetsPage } from "./pages/UpdateTimesheetsPage";
 import { PayrollRunsPage } from "./pages/PayrollRunsPage";
 import { PayrollRunDetailPage } from "./pages/PayrollRunDetailPage";
@@ -116,6 +117,7 @@ const companyRoutes: Array<{ path: string; element: JSX.Element }> = [
   { path: "/hr/employees/:id/timesheets", element: <EmployeeTimesheetDetailPage /> },
   { path: "/hr/employees/:id", element: <EmployeeDetailPage /> },
   { path: "/admin/users", element: <AdminUsersPage /> },
+  { path: "/platform", element: <PlatformDashboardPage /> },
   { path: "/hr/payroll-runs", element: <PayrollRunsPage /> },
   { path: "/hr/payroll-runs/:id", element: <PayrollRunDetailPage /> },
   { path: "/hr/settings", element: <HrSettingsPage /> },

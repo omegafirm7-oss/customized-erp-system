@@ -359,6 +359,9 @@ model User {
   passwordHash String
   fullName     String
   isActive     Boolean  @default(true)
+  /// Cross-tenant SaaS-provider view (see PlatformModule) — not a company
+  /// permission, this bypasses tenant scoping entirely.
+  isPlatformAdmin Boolean @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

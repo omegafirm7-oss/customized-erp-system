@@ -4,6 +4,7 @@ export interface DecodedAccessToken {
   activeCompanyId: string | null;
   roleId: string | null;
   permissions: string[];
+  isPlatformAdmin: boolean;
   exp: number;
 }
 
