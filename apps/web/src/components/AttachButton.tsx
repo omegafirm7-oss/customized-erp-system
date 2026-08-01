@@ -1,5 +1,36 @@
 import { useEffect, useRef, useState } from "react";
 
+const MAX_DIMENSION = 1600;
+const JPEG_QUALITY = 0.82;
+
+/**
+ * Phone camera photos routinely come in at 3-8MB (or more) at full sensor
+ * resolution — every later View has to download that in full before it can
+ * even start rendering. Downscaling to a sane on-screen size and re-encoding
+ * as JPEG client-side, before upload, cuts that by an order of magnitude
+ * with no visible quality loss for viewing evidence photos.
+ */
+async function compressImage(file: File): Promise<File> {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
+  const width = Math.round(bitmap.width * scale);
+  const height = Math.round(bitmap.height * scale);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("canvas unsupported");
+  ctx.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close();
+
+  const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", JPEG_QUALITY));
+  if (!blob || blob.size >= file.size) return file;
+
+  const newName = file.name.replace(/\.[^.]+$/, "") + ".jpg";
+  return new File([blob], newName, { type: "image/jpeg" });
+}
+
 /**
  * Attach control with an explicit choice between picking an existing file
  * and capturing a new photo — two separate hidden file inputs (only the
@@ -31,9 +62,17 @@ export function AttachButton({
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [open]);
 
-  function pick(file: File | undefined) {
+  async function pick(file: File | undefined) {
     setOpen(false);
-    if (file) onFile(file);
+    if (!file) return;
+    if (file.type.startsWith("image/") && file.type !== "image/gif") {
+      try {
+        file = await compressImage(file);
+      } catch {
+        // fall through and upload the original if compression fails for any reason
+      }
+    }
+    onFile(file);
   }
 
   if (uploading) {
