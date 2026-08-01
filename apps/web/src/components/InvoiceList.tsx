@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import QRCode from "qrcode";
 import { apiClient } from "../api/client";
+import { AttachButton } from "./AttachButton";
 
 interface InvoiceRow {
   id: string;
@@ -471,20 +472,7 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
                             View
                           </button>
                         ) : (
-                          <label style={{ cursor: "pointer", color: "#1e4fa3", fontSize: 12 }}>
-                            {uploadingFor === l.id ? "Uploading…" : "Attach"}
-                            <input
-                              type="file"
-                              accept="image/*,.pdf"
-                              style={{ display: "none" }}
-                              disabled={uploadingFor === l.id}
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) uploadLineAttachment(l.id, file);
-                                e.target.value = "";
-                              }}
-                            />
-                          </label>
+                          <AttachButton uploading={uploadingFor === l.id} onFile={(file) => uploadLineAttachment(l.id, file)} />
                         )}
                       </div>
                     ))}

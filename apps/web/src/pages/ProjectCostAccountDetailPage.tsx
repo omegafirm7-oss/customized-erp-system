@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { AttachButton } from "../components/AttachButton";
 
 interface InvoiceLine {
   lineId: string;
@@ -119,20 +120,7 @@ export function ProjectCostAccountDetailPage() {
                     View
                   </button>
                 ) : (
-                  <label style={{ cursor: "pointer", color: "#1e4fa3", fontSize: 13 }}>
-                    {uploadingFor === l.lineId ? "Uploading…" : "Attach"}
-                    <input
-                      type="file"
-                      accept="image/*,.pdf"
-                      style={{ display: "none" }}
-                      disabled={uploadingFor === l.lineId}
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) uploadAttachment(l.lineId, file);
-                        e.target.value = "";
-                      }}
-                    />
-                  </label>
+                  <AttachButton uploading={uploadingFor === l.lineId} onFile={(file) => uploadAttachment(l.lineId, file)} />
                 )}
               </td>
             </tr>

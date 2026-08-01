@@ -1,6 +1,7 @@
 import { FormEvent, SyntheticEvent, WheelEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { AttachButton } from "../components/AttachButton";
 
 interface Loan {
   id: string;
@@ -844,20 +845,7 @@ export function EmployeeDetailPage() {
                             View
                           </button>
                         ) : !p.reversedAt ? (
-                          <label style={{ cursor: "pointer", color: "#1e4fa3", fontSize: 13 }}>
-                            {receiptUploadingFor === p.id ? "Uploading…" : "Attach"}
-                            <input
-                              type="file"
-                              accept="image/*,.pdf"
-                              style={{ display: "none" }}
-                              disabled={receiptUploadingFor === p.id}
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) uploadReceipt(p.id, file);
-                                e.target.value = "";
-                              }}
-                            />
-                          </label>
+                          <AttachButton uploading={receiptUploadingFor === p.id} onFile={(file) => uploadReceipt(p.id, file)} />
                         ) : (
                           "—"
                         )}

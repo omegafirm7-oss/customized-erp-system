@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { AttachButton } from "../components/AttachButton";
 
 interface FiscalPeriod {
   id: string;
@@ -208,20 +209,7 @@ export function EmployeeTimesheetDetailPage() {
                             View
                           </button>
                         ) : (
-                          <label style={{ cursor: "pointer", color: "#1e4fa3", fontSize: 13 }}>
-                            {uploadingFor === e.id ? "Uploading…" : "Attach"}
-                            <input
-                              type="file"
-                              accept="image/*,.pdf"
-                              style={{ display: "none" }}
-                              disabled={uploadingFor === e.id}
-                              onChange={(ev) => {
-                                const file = ev.target.files?.[0];
-                                if (file) uploadAttachment(e.id, file);
-                                ev.target.value = "";
-                              }}
-                            />
-                          </label>
+                          <AttachButton uploading={uploadingFor === e.id} onFile={(file) => uploadAttachment(e.id, file)} />
                         )}
                       </td>
                     </tr>

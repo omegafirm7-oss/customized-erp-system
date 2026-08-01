@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { AttachButton } from "./AttachButton";
 
 interface Partner {
   id: string;
@@ -405,15 +406,11 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
                   <td>{amounts.vat.toFixed(2)}</td>
                   {side === "ap" && (
                     <td>
-                      <label style={{ cursor: "pointer", color: "#1e4fa3", fontSize: 12 }}>
-                        {line.attachmentFile ? line.attachmentFile.name.slice(0, 14) : "Attach"}
-                        <input
-                          type="file"
-                          accept="image/*,.pdf"
-                          style={{ display: "none" }}
-                          onChange={(e) => updateLine(index, { attachmentFile: e.target.files?.[0] ?? null })}
-                        />
-                      </label>
+                      <AttachButton
+                        uploading={false}
+                        label={line.attachmentFile ? line.attachmentFile.name.slice(0, 14) : "Attach"}
+                        onFile={(file) => updateLine(index, { attachmentFile: file })}
+                      />
                     </td>
                   )}
                   <td>
