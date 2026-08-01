@@ -1,7 +1,8 @@
-import { FormEvent, SyntheticEvent, WheelEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { AttachButton } from "../components/AttachButton";
+import { AttachmentViewer } from "../components/AttachmentViewer";
 
 interface Loan {
   id: string;
@@ -202,12 +203,7 @@ export function EmployeeDetailPage() {
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [recoveryOpenId, setRecoveryOpenId] = useState<string | null>(null);
   const [recoveryForm, setRecoveryForm] = useState({ amount: "", bankCashAccountId: "", recoveryDate: new Date().toISOString().slice(0, 10) });
-  const [receiptViewer, setReceiptViewer] = useState<{ url: string; mimeType: string; filename: string } | null>(null);
-  const [receiptZoom, setReceiptZoom] = useState(1);
-  const [receiptOffset, setReceiptOffset] = useState({ x: 0, y: 0 });
-  const [receiptFitSize, setReceiptFitSize] = useState<{ width: number; height: number } | null>(null);
-  const receiptImgRef = useRef<HTMLImageElement | null>(null);
-  const receiptContainerRef = useRef<HTMLDivElement | null>(null);
+  const [receiptViewer, setReceiptViewer] = useState<{ paymentId: string; mimeType: string; filename: string } | null>(null);
   const [receiptUploadingFor, setReceiptUploadingFor] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -415,79 +411,14 @@ export function EmployeeDetailPage() {
     }
   }
 
-  async function viewReceipt(payment: EmployeePayment) {
+  function viewReceipt(payment: EmployeePayment) {
     if (!payment.attachment) return;
     setError(null);
-    try {
-      const res = await apiClient.get(`/hr/employee-payments/${payment.id}/receipt`, { responseType: "blob" });
-      const url = URL.createObjectURL(res.data as Blob);
-      setReceiptZoom(1);
-      setReceiptOffset({ x: 0, y: 0 });
-      setReceiptFitSize(null);
-      setReceiptViewer({ url, mimeType: payment.attachment.mimeType, filename: payment.attachment.filename });
-    } catch (err: any) {
-      setError(err?.response?.data?.message ?? "Failed to load receipt");
-    }
+    setReceiptViewer({ paymentId: payment.id, mimeType: payment.attachment.mimeType, filename: payment.attachment.filename });
   }
 
   function closeReceiptViewer() {
-    if (receiptViewer) URL.revokeObjectURL(receiptViewer.url);
     setReceiptViewer(null);
-  }
-
-  /** Computes the image's displayed (unzoomed) box in JS instead of leaning on CSS
-   * max-width/max-height + object-fit: percentage-based max-height sizing for a bare <img>
-   * doesn't reliably shrink inside a flex container (a tall receipt screenshot rendered at
-   * full native height and got clipped by the viewer's overflow:hidden). Computing the exact
-   * fitted pixel box also keeps the img's own box equal to its visible content — no
-   * object-fit letterboxing — which the cursor-anchored zoom math in zoomReceiptAt relies on. */
-  function handleReceiptImageLoad(e: SyntheticEvent<HTMLImageElement>) {
-    const img = e.currentTarget;
-    const container = receiptContainerRef.current;
-    if (!container || img.naturalWidth === 0 || img.naturalHeight === 0) return;
-    const containerRect = container.getBoundingClientRect();
-    const scale = Math.min(containerRect.width / img.naturalWidth, containerRect.height / img.naturalHeight, 1);
-    setReceiptFitSize({ width: img.naturalWidth * scale, height: img.naturalHeight * scale });
-  }
-
-  /** Zooms in/out anchored to a screen point (defaults to the image's own center) so the
-   * area under the cursor stays put — the same feel as Google Maps/Figma zoom — instead of
-   * scaling from the top-left, which used to make the image drift as you scrolled.
-   *
-   * Reads `receiptZoom` from the closure rather than a setState updater: updater functions
-   * run twice under React StrictMode to catch impurity, and the previous version called
-   * setReceiptOffset as a side effect from inside the zoom updater, which doubled the pan
-   * offset in dev. Both setters here are now plain/pure. */
-  function zoomReceiptAt(factor: number, clientX?: number, clientY?: number) {
-    const prevZoom = receiptZoom;
-    const newZoom = Math.min(4, Math.max(1, prevZoom * factor));
-    if (newZoom === prevZoom) return;
-    if (newZoom <= 1) {
-      setReceiptZoom(1);
-      setReceiptOffset({ x: 0, y: 0 });
-      return;
-    }
-    const imgEl = receiptImgRef.current;
-    if (imgEl) {
-      const rect = imgEl.getBoundingClientRect();
-      const cx = (clientX ?? rect.left + rect.width / 2) - rect.left;
-      const cy = (clientY ?? rect.top + rect.height / 2) - rect.top;
-      setReceiptOffset((prevOffset) => ({
-        x: prevOffset.x + cx * (1 - newZoom / prevZoom),
-        y: prevOffset.y + cy * (1 - newZoom / prevZoom),
-      }));
-    }
-    setReceiptZoom(newZoom);
-  }
-
-  function resetReceiptZoom() {
-    setReceiptZoom(1);
-    setReceiptOffset({ x: 0, y: 0 });
-  }
-
-  function handleReceiptWheel(e: WheelEvent) {
-    e.preventDefault();
-    zoomReceiptAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY);
   }
 
   async function recordRecovery(paymentId: string) {
@@ -1166,95 +1097,14 @@ export function EmployeeDetailPage() {
       )}
 
       {receiptViewer && (
-        <div
-          onClick={closeReceiptViewer}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.6)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: "#fff",
-              borderRadius: 8,
-              padding: 16,
-              maxWidth: "90vw",
-              maxHeight: "90vh",
-              display: "flex",
-              flexDirection: "column",
-              gap: 12,
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 24 }}>
-              <strong style={{ color: "#101828" }}>{receiptViewer.filename}</strong>
-              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {receiptViewer.mimeType.startsWith("image/") && (
-                  <>
-                    <button className="secondary" onClick={() => zoomReceiptAt(1 / 1.25)} title="Zoom out">
-                      −
-                    </button>
-                    <span style={{ color: "#667085", fontSize: 13, minWidth: 42, textAlign: "center" }}>
-                      {Math.round(receiptZoom * 100)}%
-                    </span>
-                    <button className="secondary" onClick={() => zoomReceiptAt(1.25)} title="Zoom in">
-                      +
-                    </button>
-                    <button className="secondary" onClick={resetReceiptZoom} title="Reset zoom">
-                      Reset
-                    </button>
-                  </>
-                )}
-                <button className="secondary" onClick={closeReceiptViewer}>
-                  Close
-                </button>
-              </span>
-            </div>
-            <div
-              ref={receiptContainerRef}
-              onWheel={receiptViewer.mimeType.startsWith("image/") ? handleReceiptWheel : undefined}
-              style={{
-                overflow: "hidden",
-                flex: 1,
-                width: "85vw",
-                height: "75vh",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              {receiptViewer.mimeType.startsWith("image/") ? (
-                <img
-                  ref={receiptImgRef}
-                  src={receiptViewer.url}
-                  alt={receiptViewer.filename}
-                  onLoad={handleReceiptImageLoad}
-                  style={{
-                    ...(receiptFitSize
-                      ? { width: receiptFitSize.width, height: receiptFitSize.height }
-                      : { maxWidth: "100%", maxHeight: "100%", visibility: "hidden" }),
-                    display: "block",
-                    transform: `translate(${receiptOffset.x}px, ${receiptOffset.y}px) scale(${receiptZoom})`,
-                    transformOrigin: "0 0",
-                    cursor: receiptZoom < 4 ? "zoom-in" : "default",
-                  }}
-                  onClick={(e) => zoomReceiptAt(1.5, e.clientX, e.clientY)}
-                />
-              ) : (
-                <iframe
-                  src={receiptViewer.url}
-                  title={receiptViewer.filename}
-                  style={{ width: "100%", height: "100%", border: "none" }}
-                />
-              )}
-            </div>
-          </div>
-        </div>
+        <AttachmentViewer
+          filename={receiptViewer.filename}
+          mimeType={receiptViewer.mimeType}
+          fetchBlob={() =>
+            apiClient.get(`/hr/employee-payments/${receiptViewer.paymentId}/receipt`, { responseType: "blob" }).then((res) => res.data as Blob)
+          }
+          onClose={closeReceiptViewer}
+        />
       )}
     </div>
   );

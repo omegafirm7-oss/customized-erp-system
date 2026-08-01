@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { AttachButton } from "../components/AttachButton";
+import { AttachmentViewer } from "../components/AttachmentViewer";
 
 interface FiscalPeriod {
   id: string;
@@ -53,7 +54,7 @@ export function EmployeeTimesheetDetailPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploadingFor, setUploadingFor] = useState<string | null>(null);
-  const [viewer, setViewer] = useState<{ url: string; filename: string } | null>(null);
+  const [viewer, setViewer] = useState<{ entryId: string; filename: string } | null>(null);
 
   useEffect(() => {
     apiClient.get<FiscalPeriod[]>("/companies/current/fiscal-periods").then((res) => {
@@ -104,14 +105,11 @@ export function EmployeeTimesheetDetailPage() {
     }
   }
 
-  async function viewAttachment(entryId: string, filename: string) {
-    const res = await apiClient.get(`/hr/employee-timesheet/entries/${entryId}/attachment`, { responseType: "blob" });
-    const url = URL.createObjectURL(res.data);
-    setViewer({ url, filename });
+  function viewAttachment(entryId: string, filename: string) {
+    setViewer({ entryId, filename });
   }
 
   function closeViewer() {
-    if (viewer) URL.revokeObjectURL(viewer.url);
     setViewer(null);
   }
 
@@ -222,32 +220,15 @@ export function EmployeeTimesheetDetailPage() {
       )}
 
       {viewer && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.6)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
-          onClick={closeViewer}
-        >
-          <div style={{ background: "#fff", padding: 16, borderRadius: 8, maxWidth: "90vw", maxHeight: "90vh" }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-              <strong>{viewer.filename}</strong>
-              <button className="secondary" onClick={closeViewer}>
-                Close
-              </button>
-            </div>
-            {viewer.filename.toLowerCase().endsWith(".pdf") ? (
-              <iframe src={viewer.url} title={viewer.filename} style={{ width: "80vw", height: "80vh", border: "none" }} />
-            ) : (
-              <img src={viewer.url} alt={viewer.filename} style={{ maxWidth: "80vw", maxHeight: "80vh", objectFit: "contain" }} />
-            )}
-          </div>
-        </div>
+        <AttachmentViewer
+          filename={viewer.filename}
+          fetchBlob={() =>
+            apiClient
+              .get(`/hr/employee-timesheet/entries/${viewer.entryId}/attachment`, { responseType: "blob" })
+              .then((res) => res.data as Blob)
+          }
+          onClose={closeViewer}
+        />
       )}
     </div>
   );

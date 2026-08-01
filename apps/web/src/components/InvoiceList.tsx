@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import QRCode from "qrcode";
 import { apiClient } from "../api/client";
 import { AttachButton } from "./AttachButton";
+import { AttachmentViewer } from "./AttachmentViewer";
 
 interface InvoiceRow {
   id: string;
@@ -67,7 +68,7 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
   const [toDate, setToDate] = useState("");
   const [dateSort, setDateSort] = useState<"asc" | "desc">("desc");
   const [uploadingFor, setUploadingFor] = useState<string | null>(null);
-  const [viewer, setViewer] = useState<{ url: string; filename: string } | null>(null);
+  const [viewer, setViewer] = useState<{ lineId: string; filename: string } | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -258,14 +259,11 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
     }
   }
 
-  async function viewLineAttachment(lineId: string, filename: string) {
-    const res = await apiClient.get(`/ap/invoices/lines/${lineId}/attachment`, { responseType: "blob" });
-    const url = URL.createObjectURL(res.data as Blob);
-    setViewer({ url, filename });
+  function viewLineAttachment(lineId: string, filename: string) {
+    setViewer({ lineId, filename });
   }
 
   function closeViewer() {
-    if (viewer) URL.revokeObjectURL(viewer.url);
     setViewer(null);
   }
 
@@ -528,32 +526,13 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
       )}
 
       {viewer && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.6)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
-          onClick={closeViewer}
-        >
-          <div style={{ background: "#fff", padding: 16, borderRadius: 8, maxWidth: "90vw", maxHeight: "90vh" }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-              <strong>{viewer.filename}</strong>
-              <button className="secondary" onClick={closeViewer}>
-                Close
-              </button>
-            </div>
-            {viewer.filename.toLowerCase().endsWith(".pdf") ? (
-              <iframe src={viewer.url} title={viewer.filename} style={{ width: "80vw", height: "80vh", border: "none" }} />
-            ) : (
-              <img src={viewer.url} alt={viewer.filename} style={{ maxWidth: "80vw", maxHeight: "80vh", objectFit: "contain" }} />
-            )}
-          </div>
-        </div>
+        <AttachmentViewer
+          filename={viewer.filename}
+          fetchBlob={() =>
+            apiClient.get(`/ap/invoices/lines/${viewer.lineId}/attachment`, { responseType: "blob" }).then((res) => res.data as Blob)
+          }
+          onClose={closeViewer}
+        />
       )}
     </div>
   );
