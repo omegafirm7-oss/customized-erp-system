@@ -161,23 +161,4 @@ export class IamService {
       select: { id: true, userId: true, roleId: true, status: true },
     });
   }
-
-  /**
-   * Server-wide (not company-scoped) database size, shown against the
-   * Oracle Cloud Always Free block-storage allowance so an admin can see
-   * at a glance how much of that 200GB has actually been consumed by
-   * uploaded attachments and other data — without needing SSH access.
-   */
-  async getStorageUsage() {
-    const ORACLE_FREE_TIER_LIMIT_BYTES = 200 * 1024 * 1024 * 1024;
-    const [{ bytes }] = await this.prisma.$queryRaw<
-      { bytes: bigint }[]
-    >`SELECT pg_database_size(current_database()) AS bytes`;
-    const usedBytes = Number(bytes);
-    return {
-      usedBytes,
-      limitBytes: ORACLE_FREE_TIER_LIMIT_BYTES,
-      usedPercent: Math.round((usedBytes / ORACLE_FREE_TIER_LIMIT_BYTES) * 1000) / 10,
-    };
-  }
 }

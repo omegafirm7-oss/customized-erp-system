@@ -39,12 +39,6 @@ export class IamAdminController {
     return this.iamService.listCompanyUsers(companyId);
   }
 
-  @Get("storage-usage")
-  @Permissions(PERMISSIONS.IAM_USER_MANAGE)
-  async getStorageUsage() {
-    return this.iamService.getStorageUsage();
-  }
-
   @Get("roles")
   @Permissions(PERMISSIONS.IAM_USER_MANAGE)
   async listRoles(@CurrentCompanyId() companyId: string) {

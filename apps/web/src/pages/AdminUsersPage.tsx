@@ -34,18 +34,6 @@ interface PermissionEntry {
   module: string;
 }
 
-interface StorageUsage {
-  usedBytes: number;
-  limitBytes: number;
-  usedPercent: number;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
-
 const MODULE_LABELS: Record<string, string> = {
   iam: "Users & Roles",
   companies: "Company Settings",
@@ -112,13 +100,6 @@ export function AdminUsersPage() {
   const [newUserError, setNewUserError] = useState<string | null>(null);
   const [newUserConfirmed, setNewUserConfirmed] = useState<{ email: string; password: string } | null>(null);
 
-  const [storage, setStorage] = useState<StorageUsage | null>(null);
-
-  const loadStorage = useCallback(async () => {
-    const res = await apiClient.get<StorageUsage>("/iam/storage-usage");
-    setStorage(res.data);
-  }, []);
-
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -147,8 +128,7 @@ export function AdminUsersPage() {
     load();
     loadRoles();
     loadJoinRequests();
-    loadStorage();
-  }, [load, loadRoles, loadJoinRequests, loadStorage]);
+  }, [load, loadRoles, loadJoinRequests]);
 
   const permissionsByModule = useMemo(() => {
     const groups = new Map<string, PermissionEntry[]>();
@@ -326,24 +306,6 @@ export function AdminUsersPage() {
 
   return (
     <div>
-      {storage && (
-        <div className="card">
-          <h2>Storage usage</h2>
-          <p style={{ color: "#667085", marginTop: -4 }}>
-            {formatBytes(storage.usedBytes)} used of {formatBytes(storage.limitBytes)} Oracle Cloud Always Free
-            allowance ({storage.usedPercent}%)
-          </p>
-          <div style={{ background: "#eaecf0", borderRadius: 6, height: 10, overflow: "hidden" }}>
-            <div
-              style={{
-                width: `${Math.min(100, storage.usedPercent)}%`,
-                background: storage.usedPercent > 80 ? "#d92d20" : storage.usedPercent > 50 ? "#f79009" : "#12b76a",
-                height: "100%",
-              }}
-            />
-          </div>
-        </div>
-      )}
       {joinRequests.length > 0 && (
         <div className="card">
           <h2>Pending join requests</h2>
