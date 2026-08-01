@@ -362,6 +362,10 @@ model User {
   /// Cross-tenant SaaS-provider view (see PlatformModule) — not a company
   /// permission, this bypasses tenant scoping entirely.
   isPlatformAdmin Boolean @default(false)
+  /// Set when this account was created (or later linked) via "Sign in with
+  /// Google" — passwordHash still exists for these rows (schema requires it)
+  /// but holds a random, never-communicated value, not a real password.
+  googleId     String?  @unique
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

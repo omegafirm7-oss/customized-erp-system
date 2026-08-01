@@ -2,6 +2,8 @@ import { FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { AuthVisual } from "../components/AuthVisual";
+import { GoogleSignInButton } from "../components/GoogleSignInButton";
 
 export function RegisterPage() {
   const { login } = useAuth();
@@ -30,6 +32,7 @@ export function RegisterPage() {
   return (
     <div className="auth-shell">
       <div className="auth-visual">
+        <AuthVisual />
         <div className="auth-visual-top">
           <h1>
             Get
@@ -50,6 +53,8 @@ export function RegisterPage() {
           <h2>Create account</h2>
           <p className="auth-form-subtitle">Sign up to get started with Universa Centrix.</p>
           {error && <div className="error-banner">{error}</div>}
+          <GoogleSignInButton />
+          <div className="auth-divider">Or sign up with email</div>
           <div className="auth-field">
             <label>Full name</label>
             <input placeholder="Your name" value={fullName} onChange={(e) => setFullName(e.target.value)} required />

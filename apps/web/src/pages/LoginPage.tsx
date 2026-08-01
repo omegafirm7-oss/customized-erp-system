@@ -1,6 +1,8 @@
 import { FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { AuthVisual } from "../components/AuthVisual";
+import { GoogleSignInButton } from "../components/GoogleSignInButton";
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -27,6 +29,7 @@ export function LoginPage() {
   return (
     <div className="auth-shell">
       <div className="auth-visual">
+        <AuthVisual />
         <div className="auth-visual-top">
           <h1>
             Welcome
@@ -47,6 +50,8 @@ export function LoginPage() {
           <h2>Login</h2>
           <p className="auth-form-subtitle">Sign in to continue to Universa Centrix.</p>
           {error && <div className="error-banner">{error}</div>}
+          <GoogleSignInButton />
+          <div className="auth-divider">Or sign in with email</div>
           <div className="auth-field">
             <label>Email</label>
             <input type="email" placeholder="mail@website.com" value={email} onChange={(e) => setEmail(e.target.value)} required />

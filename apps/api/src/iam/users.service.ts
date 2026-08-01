@@ -1,5 +1,6 @@
 import { ConflictException, Injectable } from "@nestjs/common";
 import * as argon2 from "argon2";
+import { randomBytes } from "crypto";
 import { PrismaService } from "../common/prisma/prisma.service";
 
 @Injectable()
@@ -14,6 +15,19 @@ export class UsersService {
     const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
     return this.prisma.user.create({
       data: { email, passwordHash, fullName },
+    });
+  }
+
+  /**
+   * `passwordHash` is a required column (not nullable — every other code
+   * path assumes it exists), so a Google-only account still gets one: a
+   * random, unusable value nobody is ever told. They can only sign in via
+   * Google unless they later set a real password some other way.
+   */
+  async createGoogleUser(googleId: string, email: string, fullName: string) {
+    const passwordHash = await argon2.hash(randomBytes(32).toString("hex"), { type: argon2.argon2id });
+    return this.prisma.user.create({
+      data: { email, passwordHash, fullName, googleId },
     });
   }
 

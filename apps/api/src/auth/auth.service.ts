@@ -35,6 +35,25 @@ export class AuthService {
     return this.usersService.createUser(email, password, fullName);
   }
 
+  /**
+   * Finds the user behind a Google account, linking by email if they
+   * already registered with a password (so they can use either method
+   * afterward), or creating a brand-new account if this is their first
+   * time — mirrors plain register() otherwise (no company yet; they land
+   * on /companies to create/join one just like a fresh email signup).
+   */
+  async findOrCreateGoogleUser(googleId: string, email: string, fullName: string) {
+    const byGoogleId = await this.prisma.user.findUnique({ where: { googleId } });
+    if (byGoogleId) {
+      return byGoogleId;
+    }
+    const byEmail = await this.usersService.findByEmail(email);
+    if (byEmail) {
+      return this.prisma.user.update({ where: { id: byEmail.id }, data: { googleId } });
+    }
+    return this.usersService.createGoogleUser(googleId, email, fullName);
+  }
+
   async validateUserCredentials(email: string, password: string) {
     const user = await this.usersService.findByEmail(email);
     if (!user || !user.isActive) {

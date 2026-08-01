@@ -1,6 +1,8 @@
-import { Body, Controller, Post, Req, Res, UnauthorizedException } from "@nestjs/common";
+import { Body, Controller, Get, Post, Req, Res, UnauthorizedException, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { AuthGuard } from "@nestjs/passport";
 import { Request, Response } from "express";
+import { User } from "@prisma/client";
 import { AuthService, IssuedTokens } from "./auth.service";
 import { RegisterDto } from "./dto/register.dto";
 import { LoginDto } from "./dto/login.dto";
@@ -45,6 +47,29 @@ export class AuthController {
     const tokens = await this.authService.refresh(rawToken, this.requestMeta(req));
     this.setRefreshCookie(res, tokens);
     return { accessToken: tokens.accessToken, expiresIn: tokens.expiresIn };
+  }
+
+  @Public()
+  @Get("google")
+  @UseGuards(AuthGuard("google"))
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
+  async googleAuth(): Promise<void> {
+    // Passport's Google strategy intercepts this request and redirects to
+    // Google's consent screen — this handler body never actually runs.
+  }
+
+  @Public()
+  @Get("google/callback")
+  @UseGuards(AuthGuard("google"))
+  async googleCallback(@Req() req: Request, @Res() res: Response): Promise<void> {
+    const user = req.user as User;
+    const tokens = await this.authService.login(user.id, this.requestMeta(req));
+    this.setRefreshCookie(res, tokens);
+    // This request is a top-level browser navigation back from Google, not
+    // an AJAX call — the access token can't be handed back as JSON. Redirect
+    // to a frontend route that picks up the session from the refresh cookie
+    // just set above, the same way a page reload already does on app load.
+    res.redirect("/auth/callback");
   }
 
   @Public()
