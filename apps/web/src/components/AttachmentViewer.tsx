@@ -28,6 +28,7 @@ export function AttachmentViewer({ filename, mimeType, fetchBlob, onClose }: Att
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const isImage = mimeType ? mimeType.startsWith("image/") : !filename.toLowerCase().endsWith(".pdf");
+  const [pdfAutoOpened, setPdfAutoOpened] = useState(false);
 
   useEffect(() => {
     let objectUrl: string | null = null;
@@ -37,6 +38,17 @@ export function AttachmentViewer({ filename, mimeType, fetchBlob, onClose }: Att
         if (cancelled) return;
         objectUrl = URL.createObjectURL(blob);
         setUrl(objectUrl);
+        // A PDF embedded in this modal via <iframe> fights the browser's own
+        // PDF viewer for layout (it renders as a cramped strip instead of a
+        // full page) — opening it in its own tab gives it the full window
+        // and the browser's real zoom/page controls instead. Best-effort:
+        // this fires from an async callback, not a synchronous click, so
+        // some browsers' popup blockers may still block it — the fallback
+        // "Open PDF" link below always works regardless.
+        if (!isImage) {
+          const opened = window.open(objectUrl, "_blank", "noopener,noreferrer");
+          setPdfAutoOpened(!!opened);
+        }
       })
       .catch(() => {
         if (!cancelled) setError("Failed to load attachment");
@@ -152,7 +164,18 @@ export function AttachmentViewer({ filename, mimeType, fetchBlob, onClose }: Att
               onClick={(e) => zoomAt(1.5, e.clientX, e.clientY)}
             />
           )}
-          {url && !isImage && <iframe src={url} title={filename} style={{ width: "100%", height: "100%", border: "none" }} />}
+          {url && !isImage && (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, textAlign: "center" }}>
+              <p style={{ color: "#667085" }}>
+                {pdfAutoOpened
+                  ? "Opened in a new tab for full-page viewing with your browser's own zoom and page controls."
+                  : "Your browser blocked the automatic pop-up — open it manually:"}
+              </p>
+              <a href={url} target="_blank" rel="noopener noreferrer" className="secondary" style={{ padding: "8px 16px", textDecoration: "none" }}>
+                Open PDF in new tab
+              </a>
+            </div>
+          )}
         </div>
       </div>
     </div>
