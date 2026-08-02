@@ -781,18 +781,30 @@ button.danger:hover:not(:disabled) {
 }
 
 /* --- Auth (login/register/forgot-password/reset-password): full-bleed
-   photo background with a frosted-glass panel docked on the right holding
-   everything — wordmark, feature circles, the actual form, trust badges.
+   photo background. The wordmark + feature circles sit directly over the
+   open mountain/sky area on the left (no glass box — just bold light-blue
+   text with a shadow for legibility against the photo); the actual
+   sign-in form stays in a compact frosted-glass card docked on the right.
    See AuthVisual.tsx for the photo's source/license. --- */
 .auth-page {
   position: relative;
   min-height: 100vh;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
+  gap: 24px;
   padding: 40px;
   overflow: hidden;
   color: #e4e7ec;
+}
+
+.auth-left-content {
+  position: relative;
+  z-index: 2;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
 }
 
 .auth-visual-photo {
@@ -808,68 +820,65 @@ button.danger:hover:not(:disabled) {
   inset: 0;
   z-index: 1;
   pointer-events: none;
-  /* Darkens the right side (behind the glass panel) more than the left, so
-     the panel reads clearly without needing to wash out the whole photo. */
-  background: linear-gradient(100deg, rgba(3, 6, 12, 0.15) 0%, rgba(3, 6, 12, 0.35) 45%, rgba(3, 6, 12, 0.55) 100%);
+  /* The wordmark + feature circles now sit directly on the photo on the
+     left (no glass box under them), so that side needs real darkening for
+     legibility too — not just the side behind the glass panel. */
+  background: linear-gradient(100deg, rgba(3, 6, 12, 0.42) 0%, rgba(3, 6, 12, 0.22) 40%, rgba(3, 6, 12, 0.4) 100%),
+    linear-gradient(0deg, rgba(3, 6, 12, 0.35) 0%, transparent 35%);
 }
 
 .auth-glass-panel {
   position: relative;
   z-index: 2;
-  width: 440px;
+  width: 400px;
   max-width: 100%;
-  max-height: calc(100vh - 56px);
+  max-height: calc(100vh - 80px);
   overflow-y: auto;
   scrollbar-width: none;
+  flex-shrink: 0;
   background: rgba(10, 15, 25, 0.5);
   backdrop-filter: blur(22px) saturate(160%);
   -webkit-backdrop-filter: blur(22px) saturate(160%);
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 22px;
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
-  padding: 18px 26px;
+  padding: 28px 30px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
 }
 
 .auth-glass-panel::-webkit-scrollbar {
   display: none;
 }
 
-.auth-glass-header {
-  text-align: center;
-}
-
 .auth-glass-header h1 {
-  font-size: 22px;
+  font-size: 38px;
   font-weight: 800;
   margin: 0;
-  letter-spacing: 0.2px;
+  letter-spacing: 0.3px;
   color: #a9d4ff;
-  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.7);
 }
 
 .auth-glass-header p {
-  color: #b6c0d6;
-  font-size: 11px;
-  margin: 4px 0 0;
-  line-height: 1.35;
+  color: #d4dcec;
+  font-size: 14.5px;
+  margin: 8px 0 0;
+  line-height: 1.5;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.6);
+  max-width: 480px;
 }
 
-/* Feature circles + trust badges, scoped down to fit the narrower panel
-   (the components themselves are unchanged — same markup used previously
-   in the full-width layout, just restyled here via descendant selectors). */
-.auth-glass-panel .auth-features {
+/* Feature circles, sized generously since they now sit in the open photo
+   area rather than a narrow panel (the AuthFeatureCircles component's
+   markup is unchanged — only this page-level sizing differs). */
+.auth-left-content .auth-features {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 10px 6px;
-  max-width: none;
+  gap: 22px 18px;
+  max-width: 480px;
   margin: 0;
-}
-
-.auth-glass-panel .auth-feature {
-  width: auto;
 }
 
 .auth-feature {
@@ -879,29 +888,30 @@ button.danger:hover:not(:disabled) {
   text-align: center;
 }
 
-.auth-glass-panel .auth-feature-circle {
-  width: 40px;
-  height: 40px;
-  margin: 0 auto 5px;
+.auth-left-content .auth-feature-circle {
+  width: 62px;
+  height: 62px;
+  margin: 0 auto 8px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(169, 212, 255, 0.35);
+  border: 1.5px solid rgba(169, 212, 255, 0.45);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
 }
 
 .auth-feature-emoji {
-  font-size: 18px;
+  font-size: 26px;
   line-height: 1;
 }
 
-.auth-glass-panel .auth-feature span {
-  font-size: 8.6px;
+.auth-left-content .auth-feature span {
+  font-size: 11.5px;
   font-weight: 800;
   color: #a9d4ff;
-  line-height: 1.2;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+  line-height: 1.25;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.7);
 }
 
 .auth-glass-divider {
@@ -1083,12 +1093,24 @@ button.danger:hover:not(:disabled) {
   height: 1px;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 900px) {
   .auth-page {
+    flex-direction: column;
     justify-content: center;
-    padding: 20px;
+    padding: 24px;
   }
-  .auth-glass-panel .auth-features {
-    grid-template-columns: repeat(4, 1fr);
+  .auth-left-content {
+    align-items: center;
+    text-align: center;
+  }
+  .auth-glass-header {
+    text-align: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .auth-left-content .auth-feature-circle {
+    width: 50px;
+    height: 50px;
   }
 }

@@ -35,16 +35,16 @@ export function RegisterPage() {
     <div className="auth-page">
       <AuthVisual />
       <div className="auth-page-overlay" />
-      <div className="auth-glass-panel">
+
+      <div className="auth-left-content">
         <div className="auth-glass-header">
           <h1>Universa Centrix</h1>
           <p>The complete business platform — Finance, Projects, HR, and more, built for Saudi compliance.</p>
         </div>
-
         <AuthFeatureCircles />
+      </div>
 
-        <div className="auth-glass-divider" />
-
+      <div className="auth-glass-panel">
         <form onSubmit={handleSubmit} className="auth-glass-form">
           <h2>Create account</h2>
           <p className="auth-form-subtitle">Sign up to get started with Universa Centrix.</p>
