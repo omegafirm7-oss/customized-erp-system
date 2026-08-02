@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { AuthVisual } from "../components/AuthVisual";
 
 export function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -23,10 +24,12 @@ export function ForgotPasswordPage() {
 
   return (
     <div className="auth-page">
-      <div className="auth-page-header">
-        <h1>Universa Centrix</h1>
-      </div>
+      <AuthVisual />
+      <div className="auth-page-overlay" />
       <div className="auth-simple-card">
+        <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.3, color: "#9aa5bb", marginBottom: 18, textAlign: "center" }}>
+          UNIVERSA CENTRIX
+        </p>
         {sent ? (
           <>
             <div className="auth-check-icon">

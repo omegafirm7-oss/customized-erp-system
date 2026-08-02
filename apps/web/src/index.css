@@ -780,188 +780,228 @@ button.danger:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.03);
 }
 
-/* --- Auth (login/register/forgot-password/reset-password): a scrollable
-   page — bold wordmark header, feature circles, the login/register card
-   (photo + form), and trust badges at the bottom. See AuthVisual.tsx for
-   the photo's source/license. --- */
+/* --- Auth (login/register/forgot-password/reset-password): full-bleed
+   photo background with a frosted-glass panel docked on the right holding
+   everything — wordmark, feature circles, the actual form, trust badges.
+   See AuthVisual.tsx for the photo's source/license. --- */
 .auth-page {
-  min-height: 100vh;
-  background: #0b0e14;
-  color: #e4e7ec;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 40px 20px 56px;
-}
-
-.auth-page-header {
-  text-align: center;
-  margin-bottom: 8px;
-}
-
-.auth-page-header h1 {
-  font-size: 32px;
-  font-weight: 800;
-  margin: 0;
-  letter-spacing: 0.3px;
-}
-
-.auth-page-header p {
-  color: #8b95a8;
-  font-size: 14px;
-  margin: 8px 0 0;
-}
-
-.auth-features {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 24px;
-  max-width: 980px;
-  margin: 28px 0 8px;
-}
-
-.auth-feature {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 108px;
-  text-align: center;
-}
-
-.auth-feature-circle {
-  width: 62px;
-  height: 62px;
-  border-radius: 50%;
-  background: linear-gradient(155deg, #182338, #101828);
-  border: 1px solid #263149;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
-  margin-bottom: 8px;
-}
-
-.auth-feature-circle svg {
-  width: 27px;
-  height: 27px;
-  stroke: #7fa8f2;
-}
-
-.auth-feature span {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: #c2c9d6;
-  line-height: 1.3;
-}
-
-.auth-shell {
-  display: flex;
-  width: 100%;
-  max-width: 980px;
-  min-height: 600px;
-  border-radius: 16px;
-  overflow: hidden;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
-  margin: 30px 0;
-}
-
-.auth-visual {
-  flex: 1 1 46%;
-  min-width: 340px;
   position: relative;
-  overflow: hidden;
+  min-height: 100vh;
   display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 44px;
-  color: #fff;
-  background: #050810;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 40px;
+  overflow: hidden;
+  color: #e4e7ec;
 }
 
 .auth-visual-photo {
-  position: absolute;
+  position: fixed;
   inset: 0;
   background-size: cover;
   background-position: center;
   z-index: 0;
 }
 
-.auth-visual::after {
-  content: "";
-  position: absolute;
+.auth-page-overlay {
+  position: fixed;
   inset: 0;
-  /* Darkens top (behind "Welcome Back") and bottom (behind the brand text)
-     while leaving the middle of the photo clearest. */
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0.15) 35%, rgba(0, 0, 0, 0.25) 60%, rgba(0, 0, 0, 0.75) 100%);
-  pointer-events: none;
   z-index: 1;
+  pointer-events: none;
+  /* Darkens the right side (behind the glass panel) more than the left, so
+     the panel reads clearly without needing to wash out the whole photo. */
+  background: linear-gradient(100deg, rgba(3, 6, 12, 0.15) 0%, rgba(3, 6, 12, 0.35) 45%, rgba(3, 6, 12, 0.55) 100%);
 }
 
-.auth-visual-top,
-.auth-visual-bottom {
+.auth-glass-panel {
   position: relative;
   z-index: 2;
+  width: 440px;
+  max-width: 100%;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  background: rgba(12, 17, 28, 0.55);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 22px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+  padding: 32px 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
 }
 
-.auth-visual-top h1 {
-  font-size: 28px;
-  font-weight: 700;
+.auth-glass-header {
+  text-align: center;
+}
+
+.auth-glass-header h1 {
+  font-size: 24px;
+  font-weight: 800;
   margin: 0;
-  line-height: 1.25;
-}
-
-.auth-brand-name {
-  display: block;
-  font-size: 17px;
-  font-weight: 700;
   letter-spacing: 0.2px;
-  margin-bottom: 10px;
+  color: #fff;
 }
 
-.auth-visual-bottom p {
-  color: #c3ccdd;
-  font-size: 13px;
-  max-width: 300px;
+.auth-glass-header p {
+  color: #b6c0d6;
+  font-size: 12px;
+  margin: 6px 0 0;
+  line-height: 1.4;
+}
+
+/* Feature circles + trust badges, scoped down to fit the narrower panel
+   (the components themselves are unchanged — same markup used previously
+   in the full-width layout, just restyled here via descendant selectors). */
+.auth-glass-panel .auth-features {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px 10px;
+  max-width: none;
   margin: 0;
 }
 
-.auth-form-panel {
-  flex: 1 1 54%;
+.auth-glass-panel .auth-feature {
+  width: auto;
+}
+
+.auth-glass-panel .auth-feature-circle {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 6px;
+}
+
+.auth-glass-panel .auth-feature-circle svg {
+  width: 19px;
+  height: 19px;
+}
+
+.auth-glass-panel .auth-feature span {
+  font-size: 9.5px;
+  color: #c7cede;
+}
+
+.auth-glass-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.auth-glass-form h2 {
+  font-size: 21px;
+  margin: 0 0 3px;
+  color: #fff;
+}
+
+.auth-glass-form .auth-form-subtitle {
+  color: #b6c0d6;
+  font-size: 13px;
+  margin: 0 0 18px;
+}
+
+.auth-glass-form .auth-field label {
+  color: #d7dce8;
+}
+
+.auth-glass-form .auth-field input {
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.auth-glass-form .auth-divider {
+  color: #9aa5bb;
+}
+
+.auth-glass-form .auth-divider::before,
+.auth-glass-form .auth-divider::after {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.auth-glass-form .auth-field-row a {
+  color: #9cc0ff;
+}
+
+.auth-glass-form p a {
+  color: #9cc0ff;
+}
+
+.auth-glass-panel .auth-badges {
+  max-width: none;
+  margin-top: 0;
+  gap: 8px;
+}
+
+.auth-glass-panel .auth-badge {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+  font-size: 10.5px;
+  padding: 7px 12px;
+}
+
+/* Simple centered card used by Forgot/Reset password — same glass
+   treatment, no feature circles/badges (utility screens, not the
+   marketing gateway). */
+.auth-simple-card {
+  position: relative;
+  z-index: 2;
+  width: 400px;
+  max-width: 100%;
+  background: rgba(12, 17, 28, 0.55);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 22px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+  padding: 34px 30px;
+  color: #fff;
+}
+
+.auth-simple-card h2 {
+  font-size: 22px;
+  margin: 0 0 4px;
+  color: #fff;
+}
+
+.auth-simple-card .auth-form-subtitle {
+  color: #b6c0d6;
+  margin-bottom: 20px;
+}
+
+.auth-simple-card .auth-field label {
+  color: #d7dce8;
+}
+
+.auth-simple-card .auth-field input {
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.auth-simple-card p,
+.auth-simple-card p a {
+  color: #b6c0d6;
+}
+
+.auth-simple-card p a {
+  color: #9cc0ff;
+}
+
+.auth-check-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: rgba(111, 191, 115, 0.18);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 30px;
-  background: #fff;
-  color: #1a1f28;
+  margin: 4px auto 16px;
 }
 
-.auth-form-box {
-  width: 360px;
-  max-width: 100%;
-}
-
-.auth-form-box h2 {
-  font-size: 26px;
-  margin: 0 0 4px;
-}
-
-.auth-form-subtitle {
-  color: #667085;
-  font-size: 14px;
-  margin: 0 0 24px;
+.auth-check-icon svg {
+  width: 22px;
+  height: 22px;
+  stroke: #7bd97e;
 }
 
 .auth-field {
   margin-bottom: 15px;
-}
-
-.auth-field label {
-  display: block;
-  font-size: 13px;
-  font-weight: 600;
-  color: #344054;
-  margin-bottom: 6px;
 }
 
 .auth-field input {
@@ -977,7 +1017,6 @@ button.danger:hover:not(:disabled) {
 
 .auth-field-row a {
   font-size: 13px;
-  color: #1e4fa3;
   text-decoration: none;
 }
 
@@ -994,7 +1033,6 @@ button.danger:hover:not(:disabled) {
   display: flex;
   align-items: center;
   gap: 12px;
-  color: #98a2b3;
   font-size: 12px;
   margin: 20px 0;
 }
@@ -1004,82 +1042,14 @@ button.danger:hover:not(:disabled) {
   content: "";
   flex: 1;
   height: 1px;
-  background: #eaecf0;
 }
 
-/* Simple centered card used by Forgot/Reset password (no photo panel —
-   these are utility screens, not the marketing gateway). */
-.auth-simple-card {
-  width: 380px;
-  max-width: 100%;
-  background: #fff;
-  color: #1a1f28;
-  border-radius: 14px;
-  padding: 32px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
-  margin: 30px 0;
-}
-
-.auth-simple-card h2 {
-  font-size: 24px;
-  margin: 0 0 4px;
-}
-
-.auth-simple-card .auth-form-subtitle {
-  margin-bottom: 22px;
-}
-
-.auth-check-icon {
-  width: 46px;
-  height: 46px;
-  border-radius: 50%;
-  background: #eaf6ec;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 4px auto 16px;
-}
-
-.auth-check-icon svg {
-  width: 22px;
-  height: 22px;
-  stroke: #2f9e44;
-}
-
-.auth-badges {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 14px;
-  max-width: 900px;
-  margin-top: 4px;
-}
-
-.auth-badge {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: #12161f;
-  border: 1px solid #2a3345;
-  padding: 10px 18px;
-  border-radius: 999px;
-  font-size: 13.5px;
-  font-weight: 800;
-  color: #eef1f6;
-  letter-spacing: 0.2px;
-}
-
-.auth-badge svg {
-  width: 16px;
-  height: 16px;
-  stroke: #6fbf73;
-}
-
-@media (max-width: 860px) {
-  .auth-visual {
-    display: none;
+@media (max-width: 640px) {
+  .auth-page {
+    justify-content: center;
+    padding: 20px;
   }
-  .auth-shell {
-    min-height: unset;
+  .auth-glass-panel .auth-features {
+    grid-template-columns: repeat(4, 1fr);
   }
 }
