@@ -73,7 +73,7 @@ export function RegisterPage() {
           <button type="submit" disabled={submitting} style={{ width: "100%" }}>
             {submitting ? "Creating…" : "Create account"}
           </button>
-          <p style={{ fontSize: 13, marginTop: 16, textAlign: "center" }}>
+          <p style={{ fontSize: 13, marginTop: 10, textAlign: "center" }}>
             Already have an account? <Link to="/login">Sign in</Link>
           </p>
         </form>
