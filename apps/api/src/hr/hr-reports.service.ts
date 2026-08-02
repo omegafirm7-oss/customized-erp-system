@@ -436,6 +436,83 @@ export class HrReportsService {
   }
 
   /**
+   * Labor cost for an arbitrary date range (not tied to a fiscal period —
+   * like the Purchase Invoices list's own "Period from/to" filter), with
+   * optional trade filtering. "Labor cost" here is the same accrued-cost
+   * definition used everywhere else on the Overview page: hoursWorked ×
+   * hourlyRate (basicSalary / 260) from real timesheet entries — not
+   * amounts actually paid. Covers active AND released employees, same as
+   * employeesDashboard's own grandTotal + releasedGrandTotal.
+   */
+  async laborCostByDateRange(companyId: string, fromDate: string, toDate: string, trades?: string[]) {
+    const HOURLY_DIVISOR = new Prisma.Decimal(260);
+    const start = new Date(`${fromDate}T00:00:00.000Z`);
+    const end = new Date(`${toDate}T23:59:59.999Z`);
+    // "Unspecified" is a display label for a null/blank designation, not a real
+    // value in the column — match it separately or the Prisma `in` filter would
+    // silently exclude every employee without a trade set.
+    const wantsUnspecified = trades?.includes("Unspecified") ?? false;
+    const namedTrades = trades?.filter((t) => t !== "Unspecified") ?? [];
+    let tradeFilter: Prisma.EmployeeWhereInput = {};
+    if (trades && trades.length > 0) {
+      const or: Prisma.EmployeeWhereInput[] = [];
+      if (namedTrades.length > 0) or.push({ designation: { in: namedTrades } });
+      if (wantsUnspecified) or.push({ OR: [{ designation: null }, { designation: "" }] });
+      tradeFilter = { OR: or };
+    }
+
+    const employees = await this.prisma.employee.findMany({
+      where: { companyId, ...tradeFilter },
+      select: {
+        id: true,
+        code: true,
+        nameEn: true,
+        designation: true,
+        basicSalary: true,
+        employeeTimesheetEntries: {
+          where: { date: { gte: start, lte: end } },
+          select: { hoursWorked: true },
+        },
+      },
+    });
+
+    const byTrade = new Map<string, { trade: string; cost: Prisma.Decimal; hours: Prisma.Decimal; employeeCount: number }>();
+    let totalCost = ZERO;
+    let totalHours = ZERO;
+    let employeeCount = 0;
+
+    for (const employee of employees) {
+      if (employee.employeeTimesheetEntries.length === 0) continue;
+      const hourlyRate = employee.basicSalary.div(HOURLY_DIVISOR).toDecimalPlaces(4);
+      const hours = employee.employeeTimesheetEntries.reduce((sum, t) => sum.add(t.hoursWorked), ZERO);
+      const cost = hourlyRate.mul(hours).toDecimalPlaces(2);
+
+      totalCost = totalCost.add(cost);
+      totalHours = totalHours.add(hours);
+      employeeCount += 1;
+
+      const tradeKey = employee.designation?.trim() || "Unspecified";
+      if (!byTrade.has(tradeKey)) {
+        byTrade.set(tradeKey, { trade: tradeKey, cost: ZERO, hours: ZERO, employeeCount: 0 });
+      }
+      const row = byTrade.get(tradeKey)!;
+      row.cost = row.cost.add(cost);
+      row.hours = row.hours.add(hours);
+      row.employeeCount += 1;
+    }
+
+    return {
+      fromDate,
+      toDate,
+      trades: trades ?? [],
+      totalCost,
+      totalHours,
+      employeeCount,
+      breakdown: [...byTrade.values()].sort((a, b) => a.trade.localeCompare(b.trade)),
+    };
+  }
+
+  /**
    * Drill-down for the "Active Employees" KPI tile — per-employee timesheet
    * + allowance/advance detail. Overall (all-time) by default; pass
    * `fiscalPeriodId` to scope hours/cost/timesheetEntries to one period

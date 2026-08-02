@@ -990,6 +990,108 @@ describe("HR & Saudi Payroll (e2e)", () => {
     expect(Number(releasedTradeRow.cost)).toBe(100);
   });
 
+  it("labor-cost-by-date-range: sums accrued cost within an arbitrary date range, filters by trade, and excludes entries outside the range", async () => {
+    const ctx = await setupUserWithCompany(app);
+    const { period } = await currentPeriod(ctx);
+    const inRangeDate = new Date(period.startDate).toISOString().slice(0, 10);
+    // Still a valid, already-provisioned working day (end of the same fiscal
+    // period) — just outside the narrow fromDate=toDate=inRangeDate query
+    // range below, which is all that's needed to prove the date filter is
+    // real without risking an unprovisioned future period.
+    const outOfRangeDate = new Date(period.endDate).toISOString().slice(0, 10);
+
+    const csv = [
+      CSV_HEADER,
+      // Basic 5,200 → hourlyRate 20.00
+      `EMPR1,Mason One,,Mason,SA,true,,,,,,${inRangeDate},UNLIMITED,,,,21,5200,0,0,0,false`,
+      // Basic 2,600 → hourlyRate 10.00
+      `EMPR2,Helper One,,Helper,SA,true,,,,,,${inRangeDate},UNLIMITED,,,,21,2600,0,0,0,false`,
+      // No designation → should bucket into "Unspecified". Basic 2,600 → hourlyRate 10.00
+      `EMPR3,No Trade One,,,SA,true,,,,,,${inRangeDate},UNLIMITED,,,,21,2600,0,0,0,false`,
+    ].join("\n");
+    await request(app.getHttpServer()).post("/hr/employees/import").set(auth(ctx.accessToken)).send({ csv }).expect(201);
+    const employees = (
+      await request(app.getHttpServer()).get("/hr/employees").set(auth(ctx.accessToken)).expect(200)
+    ).body;
+    const empR1 = employees.find((e: any) => e.code === "EMPR1");
+    const empR2 = employees.find((e: any) => e.code === "EMPR2");
+    const empR3 = employees.find((e: any) => e.code === "EMPR3");
+
+    // In range: EMPR1 10h × 20.00 = 200.00; EMPR2 5h × 10.00 = 50.00; EMPR3 4h × 10.00 = 40.00
+    await request(app.getHttpServer())
+      .post("/hr/employee-timesheet/entry")
+      .set(auth(ctx.accessToken))
+      .send({ employeeId: empR1.id, date: inRangeDate, dayType: "WORKED", hoursWorked: "10" })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post("/hr/employee-timesheet/entry")
+      .set(auth(ctx.accessToken))
+      .send({ employeeId: empR2.id, date: inRangeDate, dayType: "WORKED", hoursWorked: "5" })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post("/hr/employee-timesheet/entry")
+      .set(auth(ctx.accessToken))
+      .send({ employeeId: empR3.id, date: inRangeDate, dayType: "WORKED", hoursWorked: "4" })
+      .expect(201);
+    // Out of range: must not be counted at all
+    await request(app.getHttpServer())
+      .post("/hr/employee-timesheet/entry")
+      .set(auth(ctx.accessToken))
+      .send({ employeeId: empR1.id, date: outOfRangeDate, dayType: "WORKED", hoursWorked: "12" })
+      .expect(201);
+
+    const all = (
+      await request(app.getHttpServer())
+        .get(`/hr/reports/labor-cost-by-date-range?fromDate=${inRangeDate}&toDate=${inRangeDate}`)
+        .set(auth(ctx.accessToken))
+        .expect(200)
+    ).body;
+    expect(Number(all.totalCost)).toBe(290);
+    expect(Number(all.totalHours)).toBe(19);
+    expect(all.employeeCount).toBe(3);
+    const masonRow = all.breakdown.find((b: any) => b.trade === "Mason");
+    const helperRow = all.breakdown.find((b: any) => b.trade === "Helper");
+    const unspecifiedRow = all.breakdown.find((b: any) => b.trade === "Unspecified");
+    expect(Number(masonRow.cost)).toBe(200);
+    expect(Number(helperRow.cost)).toBe(50);
+    expect(Number(unspecifiedRow.cost)).toBe(40);
+
+    // Ticking just "Mason" excludes the Helper and Unspecified employees entirely.
+    const masonOnly = (
+      await request(app.getHttpServer())
+        .get(`/hr/reports/labor-cost-by-date-range?fromDate=${inRangeDate}&toDate=${inRangeDate}&trades=Mason`)
+        .set(auth(ctx.accessToken))
+        .expect(200)
+    ).body;
+    expect(Number(masonOnly.totalCost)).toBe(200);
+    expect(masonOnly.employeeCount).toBe(1);
+    expect(masonOnly.breakdown).toHaveLength(1);
+    expect(masonOnly.breakdown[0].trade).toBe("Mason");
+
+    // Ticking "Unspecified" must match the employee with a null designation —
+    // the raw column never literally contains the string "Unspecified".
+    const unspecifiedOnly = (
+      await request(app.getHttpServer())
+        .get(`/hr/reports/labor-cost-by-date-range?fromDate=${inRangeDate}&toDate=${inRangeDate}&trades=Unspecified`)
+        .set(auth(ctx.accessToken))
+        .expect(200)
+    ).body;
+    expect(Number(unspecifiedOnly.totalCost)).toBe(40);
+    expect(unspecifiedOnly.employeeCount).toBe(1);
+    expect(unspecifiedOnly.breakdown).toHaveLength(1);
+    expect(unspecifiedOnly.breakdown[0].trade).toBe("Unspecified");
+
+    // A range that excludes the 12-hour out-of-range entry proves the date
+    // filter is real, not just "everything this employee ever logged".
+    const wideButStillExcluding = (
+      await request(app.getHttpServer())
+        .get(`/hr/reports/labor-cost-by-date-range?fromDate=${inRangeDate}&toDate=${inRangeDate}`)
+        .set(auth(ctx.accessToken))
+        .expect(200)
+    ).body;
+    expect(Number(wideButStillExcluding.totalCost)).toBe(290);
+  });
+
   it("employee payments ledger: allowance posts a straight expense, advance stays pending, recovery clears it, over-recovery and allowance-recovery are rejected", async () => {
     const ctx = await setupUserWithCompany(app);
     const { period } = await currentPeriod(ctx);

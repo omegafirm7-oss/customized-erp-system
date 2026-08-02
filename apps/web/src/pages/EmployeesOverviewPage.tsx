@@ -53,6 +53,16 @@ interface DashboardResponse {
   releasedTradeRows: Array<{ employeeId: string; code: string; nameEn: string; designation: string | null; cost: string }>;
 }
 
+interface LaborCostByDateRangeResponse {
+  fromDate: string;
+  toDate: string;
+  trades: string[];
+  totalCost: string;
+  totalHours: string;
+  employeeCount: number;
+  breakdown: Array<{ trade: string; cost: string; hours: string; employeeCount: number }>;
+}
+
 function money(v: string | number): string {
   return Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -235,6 +245,52 @@ export function EmployeesOverviewPage() {
         },
       ],
     );
+  }
+
+  // All trades ever seen (active + released), independent of the
+  // Overall/This-period toggle above — this date-range tool searches
+  // across whatever range the user picks, not the dashboard's own scope.
+  const tradeOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const row of allRows) set.add(row.designation?.trim() || "Unspecified");
+    for (const row of dashboard?.releasedTradeRows ?? []) set.add(row.designation?.trim() || "Unspecified");
+    return [...set].sort();
+  }, [allRows, dashboard]);
+
+  const [rangeFromDate, setRangeFromDate] = useState("");
+  const [rangeToDate, setRangeToDate] = useState("");
+  const [rangeTrades, setRangeTrades] = useState<Set<string>>(new Set());
+  const [rangeResult, setRangeResult] = useState<LaborCostByDateRangeResponse | null>(null);
+  const [rangeLoading, setRangeLoading] = useState(false);
+  const [rangeError, setRangeError] = useState<string | null>(null);
+
+  function toggleRangeTrade(trade: string) {
+    setRangeTrades((prev) => {
+      const next = new Set(prev);
+      if (next.has(trade)) next.delete(trade);
+      else next.add(trade);
+      return next;
+    });
+  }
+
+  async function calculateRangeLaborCost() {
+    if (!rangeFromDate || !rangeToDate) {
+      setRangeError("Pick both a from date and a to date");
+      return;
+    }
+    setRangeLoading(true);
+    setRangeError(null);
+    try {
+      const tradesParam = rangeTrades.size > 0 ? `&trades=${encodeURIComponent([...rangeTrades].join(","))}` : "";
+      const res = await apiClient.get<LaborCostByDateRangeResponse>(
+        `/hr/reports/labor-cost-by-date-range?fromDate=${rangeFromDate}&toDate=${rangeToDate}${tradesParam}`,
+      );
+      setRangeResult(res.data);
+    } catch (err: any) {
+      setRangeError(err?.response?.data?.message ?? "Failed to calculate labor cost");
+    } finally {
+      setRangeLoading(false);
+    }
   }
 
   function downloadEmployeeCostReportPdf() {
@@ -449,6 +505,88 @@ export function EmployeesOverviewPage() {
                   </tbody>
                 </table>
               </>
+            )}
+          </div>
+
+          <div className="card">
+            <h3>Labor cost by date range</h3>
+            <p style={{ color: "#667085", fontSize: 13, marginTop: 2 }}>
+              Like the Purchase Invoices date filter — pick any from/to date range (not tied to a fiscal period) and,
+              optionally, tick specific trades to only count those employees. Same accrued cost basis as the rest of
+              this page (hours worked × hourly rate).
+            </p>
+            <div className="form-row" style={{ marginTop: 10, flexWrap: "wrap" }}>
+              <label style={{ display: "flex", flexDirection: "column", fontSize: 12, color: "#475467" }}>
+                From
+                <input type="date" value={rangeFromDate} onChange={(e) => setRangeFromDate(e.target.value)} />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", fontSize: 12, color: "#475467" }}>
+                To
+                <input type="date" value={rangeToDate} onChange={(e) => setRangeToDate(e.target.value)} />
+              </label>
+              <button onClick={calculateRangeLaborCost} disabled={rangeLoading} style={{ alignSelf: "flex-end" }}>
+                {rangeLoading ? "Calculating…" : "Calculate"}
+              </button>
+            </div>
+            {tradeOptions.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <p style={{ fontSize: 12, color: "#475467", marginBottom: 6 }}>
+                  Trades (tick one or more — leave all unticked to include everyone):
+                </p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px" }}>
+                  {tradeOptions.map((trade) => (
+                    <label key={trade} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 13 }}>
+                      <input
+                        type="checkbox"
+                        checked={rangeTrades.has(trade)}
+                        onChange={() => toggleRangeTrade(trade)}
+                      />
+                      {trade}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+            {rangeError && <div className="error-banner" style={{ marginTop: 10 }}>{rangeError}</div>}
+            {rangeResult && (
+              <div style={{ marginTop: 16 }}>
+                <div className="kpi-grid">
+                  <div className="kpi-tile" style={{ cursor: "default" }}>
+                    <span className="kpi-label">Total labor cost</span>
+                    <span className="kpi-value">{money(rangeResult.totalCost)}</span>
+                  </div>
+                  <div className="kpi-tile" style={{ cursor: "default" }}>
+                    <span className="kpi-label">Total hours</span>
+                    <span className="kpi-value">{Number(rangeResult.totalHours).toFixed(0)}</span>
+                  </div>
+                  <div className="kpi-tile" style={{ cursor: "default" }}>
+                    <span className="kpi-label">Employees</span>
+                    <span className="kpi-value">{rangeResult.employeeCount}</span>
+                  </div>
+                </div>
+                {rangeResult.breakdown.length > 0 && (
+                  <table style={{ marginTop: 16 }}>
+                    <thead>
+                      <tr>
+                        <th>Trade</th>
+                        <th>Employees</th>
+                        <th>Hours</th>
+                        <th>Cost</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rangeResult.breakdown.map((row) => (
+                        <tr key={row.trade}>
+                          <td>{row.trade}</td>
+                          <td>{row.employeeCount}</td>
+                          <td>{Number(row.hours).toFixed(0)}</td>
+                          <td>{money(row.cost)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
             )}
           </div>
 

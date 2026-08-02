@@ -482,6 +482,18 @@ export class HrController {
     return this.hrReportsService.employeesDashboard(companyId, fiscalPeriodId);
   }
 
+  @Get("reports/labor-cost-by-date-range")
+  @Permissions(PERMISSIONS.HR_EMPLOYEE_VIEW)
+  async laborCostByDateRange(
+    @CurrentCompanyId() companyId: string,
+    @Query("fromDate") fromDate: string,
+    @Query("toDate") toDate: string,
+    @Query("trades") trades?: string,
+  ) {
+    const tradeList = trades ? trades.split(",").filter(Boolean) : undefined;
+    return this.hrReportsService.laborCostByDateRange(companyId, fromDate, toDate, tradeList);
+  }
+
   @Get("reports/active-employees-detail")
   @Permissions(PERMISSIONS.HR_EMPLOYEE_VIEW)
   async activeEmployeesDetail(@CurrentCompanyId() companyId: string, @Query("fiscalPeriodId") fiscalPeriodId?: string) {
