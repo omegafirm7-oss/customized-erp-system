@@ -7,6 +7,8 @@ import { AuthService, IssuedTokens } from "./auth.service";
 import { RegisterDto } from "./dto/register.dto";
 import { LoginDto } from "./dto/login.dto";
 import { SwitchCompanyDto } from "./dto/switch-company.dto";
+import { ForgotPasswordDto } from "./dto/forgot-password.dto";
+import { ResetPasswordDto } from "./dto/reset-password.dto";
 import { Public } from "../common/decorators/public.decorator";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { JwtPayload } from "./types/jwt-payload.type";
@@ -70,6 +72,22 @@ export class AuthController {
     // to a frontend route that picks up the session from the refresh cookie
     // just set above, the same way a page reload already does on app load.
     res.redirect("/auth/callback");
+  }
+
+  @Public()
+  @Post("forgot-password")
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    await this.authService.requestPasswordReset(dto.email);
+    // Identical response whether or not the email is registered — see
+    // AuthService.requestPasswordReset for why.
+    return { message: "If that email is registered, a reset link has been sent." };
+  }
+
+  @Public()
+  @Post("reset-password")
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    await this.authService.resetPassword(dto.token, dto.newPassword);
+    return { success: true };
   }
 
   @Public()

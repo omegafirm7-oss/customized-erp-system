@@ -7,12 +7,14 @@ import { AuthController } from "./auth.controller";
 import { JwtStrategy } from "./strategies/jwt.strategy";
 import { GoogleStrategy } from "./strategies/google.strategy";
 import { IamModule } from "../iam/iam.module";
+import { MailModule } from "../common/mail/mail.module";
 import { AppConfig } from "../core/config/configuration";
 
 @Module({
   imports: [
     PassportModule,
     IamModule,
+    MailModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

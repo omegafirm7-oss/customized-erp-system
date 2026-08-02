@@ -11,6 +11,15 @@ export interface AppConfig {
     clientSecret: string;
     callbackUrl: string;
   };
+  mail: {
+    smtpHost: string;
+    smtpPort: number;
+    smtpUser: string;
+    smtpPass: string;
+    fromAddress: string;
+    /** Origin the reset link points at, e.g. https://universa.omegaprofessionals.com */
+    appUrl: string;
+  };
   zatca: {
     /** 32-byte key (base64 or hex) for AES-256-GCM encryption of device
      * private keys and CSID secrets at rest. */
@@ -39,6 +48,17 @@ export default (): AppConfig => ({
     clientId: process.env.GOOGLE_CLIENT_ID ?? "not-configured",
     clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "not-configured",
     callbackUrl: process.env.GOOGLE_CALLBACK_URL ?? "http://localhost:3000/auth/google/callback",
+  },
+  mail: {
+    // Empty host = SMTP not configured yet — MailService skips the actual
+    // send (logs a warning) instead of throwing, same "inert until real
+    // credentials arrive" pattern as the Google strategy above.
+    smtpHost: process.env.SMTP_HOST ?? "",
+    smtpPort: process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : 587,
+    smtpUser: process.env.SMTP_USER ?? "",
+    smtpPass: process.env.SMTP_PASS ?? "",
+    fromAddress: process.env.MAIL_FROM ?? "Universa Centrix <no-reply@universa.omegaprofessionals.com>",
+    appUrl: process.env.APP_URL ?? "http://localhost:5173",
   },
   zatca: {
     encryptionKey: process.env.ZATCA_KEY_ENCRYPTION_KEY ?? "",

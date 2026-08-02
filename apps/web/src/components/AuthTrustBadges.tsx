@@ -1,0 +1,23 @@
+const BADGES = ["ZATCA PHASE 2 COMPLIANT", "ENCRYPTED DATA STORAGE", "ROLE-BASED ACCESS CONTROL"];
+
+/**
+ * Only claims that are actually true are listed here — e.g. ZATCA Phase 2
+ * compliance was verified against ZATCA's live sandbox (see
+ * project_erp_phase3_zatca memory). Deliberately no ISO 27001 / SOC 2 /
+ * GDPR-style badges — Universa Centrix doesn't hold those certifications,
+ * and displaying them would be a false claim on a real login page.
+ */
+export function AuthTrustBadges() {
+  return (
+    <div className="auth-badges">
+      {BADGES.map((b) => (
+        <span className="auth-badge" key={b}>
+          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2">
+            <path d="M20 6 9 17l-5-5" />
+          </svg>
+          {b}
+        </span>
+      ))}
+    </div>
+  );
+}

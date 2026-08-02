@@ -1,9 +1,10 @@
-import { ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
 import { randomBytes, randomUUID, createHash } from "crypto";
 import ms from "ms";
 import { PrismaService } from "../common/prisma/prisma.service";
+import { MailService } from "../common/mail/mail.service";
 import { IamService } from "../iam/iam.service";
 import { UsersService } from "../iam/users.service";
 import { JwtPayload } from "./types/jwt-payload.type";
@@ -29,6 +30,7 @@ export class AuthService {
     private readonly configService: ConfigService<AppConfig, true>,
     private readonly iamService: IamService,
     private readonly usersService: UsersService,
+    private readonly mailService: MailService,
   ) {}
 
   async register(email: string, password: string, fullName: string) {
@@ -204,6 +206,40 @@ export class AuthService {
       refreshToken: `${refreshId}.${refreshSecret}`,
       refreshExpiresAt,
     };
+  }
+
+  /**
+   * Always resolves the same way regardless of whether the email is
+   * registered — the caller-facing response must never reveal which emails
+   * exist (a standard anti-enumeration measure). Only sends an email, and
+   * only creates a token, when a matching active user is actually found.
+   */
+  async requestPasswordReset(email: string): Promise<void> {
+    const user = await this.usersService.findByEmail(email);
+    if (!user || !user.isActive) {
+      return;
+    }
+    const rawToken = randomBytes(32).toString("hex");
+    await this.prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: this.hashSecret(rawToken),
+        expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+      },
+    });
+    const appUrl = this.configService.get("mail", { infer: true }).appUrl;
+    const resetUrl = `${appUrl}/reset-password?token=${rawToken}`;
+    await this.mailService.sendPasswordResetEmail(user.email, resetUrl);
+  }
+
+  async resetPassword(rawToken: string, newPassword: string): Promise<void> {
+    const tokenHash = this.hashSecret(rawToken);
+    const record = await this.prisma.passwordResetToken.findUnique({ where: { tokenHash } });
+    if (!record || record.usedAt || record.expiresAt < new Date()) {
+      throw new BadRequestException("This reset link is invalid or has expired — request a new one");
+    }
+    await this.usersService.adminResetPassword(record.userId, newPassword);
+    await this.prisma.passwordResetToken.update({ where: { id: record.id }, data: { usedAt: new Date() } });
   }
 
   private hashSecret(secret: string): string {
