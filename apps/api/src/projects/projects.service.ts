@@ -365,6 +365,22 @@ export class ProjectsService {
       pendingLabor = pendingLabor.add(Prisma.Decimal.max(new Prisma.Decimal(0), accrued.sub(paid)));
     }
 
+    // Machinery cost also includes internal-use equipment (Hiace vans,
+    // buses, etc. assigned directly to this project, never billed to a
+    // customer) — a flat dayRate for every day logged as used, mirroring
+    // Labor's own accrual-only pattern. There is no "paid" side to net
+    // against here (unlike Labor's payroll/allowance payments) — internal
+    // equipment usage is never itself paid or invoiced, so the full accrued
+    // amount is always pending.
+    const equipmentAssignments = await this.prisma.projectEquipmentAssignment.findMany({
+      where: { companyId, projectId },
+      select: { dayRate: true, entries: { where: { used: true }, select: { id: true } } },
+    });
+    const pendingMachinery = equipmentAssignments.reduce(
+      (sum, a) => sum.add(a.dayRate.mul(a.entries.length)),
+      new Prisma.Decimal(0),
+    );
+
     const categories: Record<
       "MATERIAL" | "MACHINERY" | "LABOR" | "OTHER",
       { total: string; paid: string; pending: string; accounts: Array<{ id: string; code: string; name: string; amount: string }> }
@@ -426,12 +442,14 @@ export class ProjectsService {
     categories.LABOR.pending = pendingLabor.toFixed(2);
     categories.LABOR.total = totals.LABOR.add(pendingLabor).toFixed(2);
     categories.MATERIAL.total = categories.MATERIAL.paid;
-    categories.MACHINERY.total = categories.MACHINERY.paid;
+    categories.MACHINERY.pending = pendingMachinery.toFixed(2);
+    categories.MACHINERY.total = totals.MACHINERY.add(pendingMachinery).toFixed(2);
     categories.OTHER.total = categories.OTHER.paid;
 
     const grandTotal = Object.values(totals)
       .reduce((sum, t) => sum.add(t), new Prisma.Decimal(0))
       .add(pendingLabor)
+      .add(pendingMachinery)
       .toFixed(2);
 
     return { categories, grandTotal };

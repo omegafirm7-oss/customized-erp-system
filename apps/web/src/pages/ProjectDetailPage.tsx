@@ -295,6 +295,11 @@ export function ProjectDetailPage() {
             <span className={`badge ${project.status === "ACTIVE" ? "posted" : project.status === "CLOSED" ? "reversed" : "draft"}`}>
               {project.status}
             </span>{" "}
+            <Link to={`/projects/${id}/equipment-timesheet`}>
+              <button type="button" className="secondary">
+                Equipment Timesheet
+              </button>
+            </Link>{" "}
             {NEXT_STATUS[project.status]?.map((s) => (
               <button key={s} className="secondary" disabled={busy} onClick={() => transition(s)}>
                 → {s}
@@ -400,6 +405,10 @@ export function ProjectDetailPage() {
             <div className="pi-kpi-card">
               <div className="pi-kpi-label">Machinery Cost</div>
               <div className="pi-kpi-value">{formatMoney(intelligence.categories.MACHINERY?.total)}</div>
+              <div style={{ fontSize: 11, color: "#98a2b3", marginTop: 4 }}>
+                Paid {formatMoney(intelligence.categories.MACHINERY?.paid)} · Pending{" "}
+                {formatMoney(intelligence.categories.MACHINERY?.pending)}
+              </div>
             </div>
             <div className="pi-kpi-card">
               <div className="pi-kpi-label">Labor Cost</div>

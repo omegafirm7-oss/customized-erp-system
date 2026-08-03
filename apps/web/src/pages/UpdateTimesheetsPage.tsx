@@ -18,7 +18,6 @@ interface TimesheetEntry {
   dayType: string;
   hoursWorked: string;
   overtimeHours: string;
-  attachmentFilename: string | null;
 }
 
 interface TimesheetEmployee {
@@ -31,6 +30,7 @@ interface TimesheetEmployee {
 }
 
 interface TimesheetResponse {
+  periodAttachmentFilename: string | null;
   employees: TimesheetEmployee[];
 }
 
@@ -89,11 +89,6 @@ const STICKY_DATE_COL_STYLE: CSSProperties = {
 // below the first, using its measured height as the offset. zIndex 2 wins
 // over the sticky Date column (1) at their shared top-left corner cells.
 const GRID_SCROLL_STYLE: CSSProperties = { overflow: "auto", maxHeight: "calc(100vh - 360px)" };
-// The Attachments tab deliberately drops the height bound. AttachButton's
-// menu is absolutely positioned, and a bounded `overflow: auto` box clips it
-// — an unbounded box grows to fit its content instead, so the menu stays
-// visible. The trade is that the header no longer sticks on that tab.
-const ATTACHMENTS_SCROLL_STYLE: CSSProperties = { overflowX: "auto" };
 // px — two lines (code + name) at 8px/10px padding
 const HEADER_ROW_HEIGHT = 48;
 const STICKY_HEADER_ROW1_STYLE: CSSProperties = { position: "sticky", top: 0, background: "#fff", zIndex: 2 };
@@ -131,8 +126,8 @@ export function UpdateTimesheetsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirtyKeys, setDirtyKeys] = useState<Set<string>>(new Set());
-  const [uploadingFor, setUploadingFor] = useState<string | null>(null);
-  const [viewer, setViewer] = useState<{ entryId: string; filename: string } | null>(null);
+  const [uploadingPeriodAttachment, setUploadingPeriodAttachment] = useState(false);
+  const [viewingPeriodAttachment, setViewingPeriodAttachment] = useState(false);
 
   useEffect(() => {
     apiClient.get<FiscalPeriod[]>("/companies/current/fiscal-periods").then((res) => {
@@ -315,20 +310,20 @@ export function UpdateTimesheetsPage() {
     navigate("/hr/employees/overview");
   }
 
-  async function uploadAttachment(entryId: string, file: File) {
+  async function uploadPeriodAttachment(file: File) {
     setError(null);
-    setUploadingFor(entryId);
+    setUploadingPeriodAttachment(true);
     try {
       const form = new FormData();
       form.append("file", file);
-      await apiClient.post(`/hr/employee-timesheet/entries/${entryId}/attachment`, form, {
+      await apiClient.post(`/hr/employee-timesheet/period-attachment?fiscalPeriodId=${periodId}`, form, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       await loadRaw(periodId);
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "Upload failed");
     } finally {
-      setUploadingFor(null);
+      setUploadingPeriodAttachment(false);
     }
   }
 
@@ -352,10 +347,6 @@ export function UpdateTimesheetsPage() {
   );
   const overtimePosted = visibleEmployees.reduce(
     (sum, e) => sum + e.entries.reduce((s, en) => s + Number(en.overtimeHours), 0),
-    0,
-  );
-  const attachmentCount = visibleEmployees.reduce(
-    (sum, e) => sum + e.entries.filter((en) => en.attachmentFilename).length,
     0,
   );
 
@@ -425,22 +416,24 @@ export function UpdateTimesheetsPage() {
               onClick={() => setTab(t.id)}
             >
               {t.label}
-              {t.id === "attachments" && attachmentCount > 0 ? ` (${attachmentCount})` : ""}
+              {t.id === "attachments" && timesheet?.periodAttachmentFilename ? " (1)" : ""}
             </button>
           ))}
         </div>
 
-        <div className="form-row" style={{ justifyContent: "flex-start" }}>
-          <button className="secondary" onClick={manualRefill} disabled={busy}>
-            {busy ? "Working…" : "Refill missing days"}
-          </button>
-          <button className="secondary" onClick={resetHours} disabled={busy}>
-            {busy ? "Working…" : "Reset hours to zero"}
-          </button>
-          <button onClick={saveAllDirty} disabled={busy || dirtyKeys.size === 0}>
-            {dirtyKeys.size > 0 ? `Save changes (${dirtyKeys.size})` : "All changes saved"}
-          </button>
-        </div>
+        {tab !== "attachments" && (
+          <div className="form-row" style={{ justifyContent: "flex-start" }}>
+            <button className="secondary" onClick={manualRefill} disabled={busy}>
+              {busy ? "Working…" : "Refill missing days"}
+            </button>
+            <button className="secondary" onClick={resetHours} disabled={busy}>
+              {busy ? "Working…" : "Reset hours to zero"}
+            </button>
+            <button onClick={saveAllDirty} disabled={busy || dirtyKeys.size === 0}>
+              {dirtyKeys.size > 0 ? `Save changes (${dirtyKeys.size})` : "All changes saved"}
+            </button>
+          </div>
+        )}
 
         {tab === "overtime" && (
           <p style={{ color: "#667085", fontSize: 13 }}>
@@ -448,14 +441,34 @@ export function UpdateTimesheetsPage() {
             Overtime is still paid through the payroll run, where you enter it as you do today.
           </p>
         )}
+
         {tab === "attachments" && (
-          <p style={{ color: "#667085", fontSize: 13 }}>
-            Attach evidence to a single day — a signed site sheet, a gate pass, a photo. One file per employee per day;
-            attach again to replace it.
-          </p>
+          <div>
+            <p style={{ color: "#667085", fontSize: 13 }}>
+              One attachment per period — the whole month's signed paper timesheet, scanned once. Uploading again
+              replaces it.
+            </p>
+            {!periodId ? (
+              <p>Select a period first.</p>
+            ) : timesheet?.periodAttachmentFilename ? (
+              <div className="form-row" style={{ justifyContent: "flex-start", alignItems: "center" }}>
+                <span>{timesheet.periodAttachmentFilename}</span>
+                <button className="secondary" onClick={() => setViewingPeriodAttachment(true)}>
+                  View
+                </button>
+                <AttachButton
+                  label="Replace"
+                  uploading={uploadingPeriodAttachment}
+                  onFile={(file) => uploadPeriodAttachment(file)}
+                />
+              </div>
+            ) : (
+              <AttachButton uploading={uploadingPeriodAttachment} onFile={(file) => uploadPeriodAttachment(file)} />
+            )}
+          </div>
         )}
 
-        {filterEmployeeId && (
+        {filterEmployeeId && tab !== "attachments" && (
           <p style={{ fontSize: 13 }}>
             Showing one employee only —{" "}
             <button
@@ -468,14 +481,14 @@ export function UpdateTimesheetsPage() {
           </p>
         )}
 
-        {loading ? (
+        {tab === "attachments" ? null : loading ? (
           <p>Loading…</p>
         ) : !timesheet || visibleEmployees.length === 0 ? (
           <p>No active employees.</p>
         ) : dates.length === 0 ? (
           <p>No days in this period yet.</p>
         ) : (
-          <div style={tab === "attachments" ? ATTACHMENTS_SCROLL_STYLE : GRID_SCROLL_STYLE}>
+          <div style={GRID_SCROLL_STYLE}>
             <table>
               <thead>
                 <tr>
@@ -499,7 +512,7 @@ export function UpdateTimesheetsPage() {
                       </Fragment>
                     ) : (
                       <th key={e.employeeId} style={STICKY_HEADER_ROW2_STYLE}>
-                        {tab === "overtime" ? "OT hrs" : "File"}
+                        OT hrs
                       </th>
                     ),
                   )}
@@ -568,47 +581,26 @@ export function UpdateTimesheetsPage() {
                         );
                       }
 
-                      if (tab === "overtime") {
-                        const worked = entry.dayType === "WORKED";
-                        return (
-                          <td key={e.employeeId} style={dirtyStyle}>
-                            <input
-                              type="number"
-                              min="0"
-                              max="24"
-                              step="0.5"
-                              style={{ width: 55 }}
-                              // A non-worked day can't carry overtime — the server
-                              // zeroes it there, so don't offer an input that lies.
-                              disabled={!worked}
-                              title={worked ? undefined : `Day is ${entry.dayType.toLowerCase().replace("_", " ")}`}
-                              value={Number(entry.overtimeHours)}
-                              onChange={(ev) => patchLocal(e.employeeId, date, { overtimeHours: ev.target.value })}
-                              onBlur={(ev) => {
-                                const v = ev.target.value || "0";
-                                if (v !== entry.overtimeHours) updateEntry(e.employeeId, date, { overtimeHours: v });
-                              }}
-                            />
-                          </td>
-                        );
-                      }
-
+                      const worked = entry.dayType === "WORKED";
                       return (
-                        <td key={e.employeeId}>
-                          {entry.attachmentFilename ? (
-                            <button
-                              className="secondary"
-                              style={{ padding: "2px 8px", fontSize: 12 }}
-                              onClick={() => setViewer({ entryId: entry.id, filename: entry.attachmentFilename! })}
-                            >
-                              View
-                            </button>
-                          ) : (
-                            <AttachButton
-                              uploading={uploadingFor === entry.id}
-                              onFile={(file) => uploadAttachment(entry.id, file)}
-                            />
-                          )}
+                        <td key={e.employeeId} style={dirtyStyle}>
+                          <input
+                            type="number"
+                            min="0"
+                            max="24"
+                            step="0.5"
+                            style={{ width: 55 }}
+                            // A non-worked day can't carry overtime — the server
+                            // zeroes it there, so don't offer an input that lies.
+                            disabled={!worked}
+                            title={worked ? undefined : `Day is ${entry.dayType.toLowerCase().replace("_", " ")}`}
+                            value={Number(entry.overtimeHours)}
+                            onChange={(ev) => patchLocal(e.employeeId, date, { overtimeHours: ev.target.value })}
+                            onBlur={(ev) => {
+                              const v = ev.target.value || "0";
+                              if (v !== entry.overtimeHours) updateEntry(e.employeeId, date, { overtimeHours: v });
+                            }}
+                          />
                         </td>
                       );
                     })}
@@ -620,15 +612,15 @@ export function UpdateTimesheetsPage() {
         )}
       </div>
 
-      {viewer && (
+      {viewingPeriodAttachment && timesheet?.periodAttachmentFilename && (
         <AttachmentViewer
-          filename={viewer.filename}
+          filename={timesheet.periodAttachmentFilename}
           fetchBlob={() =>
             apiClient
-              .get(`/hr/employee-timesheet/entries/${viewer.entryId}/attachment`, { responseType: "blob" })
+              .get(`/hr/employee-timesheet/period-attachment?fiscalPeriodId=${periodId}`, { responseType: "blob" })
               .then((res) => res.data as Blob)
           }
-          onClose={() => setViewer(null)}
+          onClose={() => setViewingPeriodAttachment(false)}
         />
       )}
     </div>

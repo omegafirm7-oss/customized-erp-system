@@ -173,7 +173,13 @@ export class EquipmentService {
     }
     const updated = await this.prisma.equipment.update({
       where: { id: equipmentId },
-      data: { name: dto.name, category: dto.category, serialNumber: dto.serialNumber, updatedByUserId: userId },
+      data: {
+        name: dto.name,
+        category: dto.category,
+        serialNumber: dto.serialNumber,
+        internalDayRate: dto.internalDayRate !== undefined ? new Prisma.Decimal(dto.internalDayRate) : undefined,
+        updatedByUserId: userId,
+      },
     });
     await this.auditService.log({
       companyId,

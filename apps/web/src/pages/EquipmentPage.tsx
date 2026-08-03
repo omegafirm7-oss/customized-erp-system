@@ -15,6 +15,7 @@ interface FleetRow {
   netBookValue: string;
   currentContract: { code: string; name: string } | null;
   disposalProceeds: string | null;
+  internalDayRate: string | null;
 }
 
 interface Account {
@@ -91,6 +92,20 @@ export function EquipmentPage() {
     }
   }
 
+  const [dayRateEditing, setDayRateEditing] = useState<string | null>(null);
+  const [dayRateValue, setDayRateValue] = useState("");
+
+  async function saveDayRate(equipmentId: string) {
+    setError(null);
+    try {
+      await apiClient.patch(`/equipment/units/${equipmentId}`, { internalDayRate: dayRateValue || "0" });
+      setDayRateEditing(null);
+      await load();
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to save day rate");
+    }
+  }
+
   async function handleDispose(equipmentId: string) {
     setError(null);
     try {
@@ -125,6 +140,7 @@ export function EquipmentPage() {
                 <th>NBV</th>
                 <th>Life (mo)</th>
                 <th>On contract</th>
+                <th>Internal day rate</th>
                 <th>Status</th>
                 <th></th>
               </tr>
@@ -140,6 +156,36 @@ export function EquipmentPage() {
                   <td>{Number(u.netBookValue).toFixed(2)}</td>
                   <td>{u.usefulLifeMonths}</td>
                   <td>{u.currentContract ? u.currentContract.code : "—"}</td>
+                  <td>
+                    {dayRateEditing === u.equipmentId ? (
+                      <span style={{ display: "inline-flex", gap: 4 }}>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          style={{ width: 90 }}
+                          value={dayRateValue}
+                          onChange={(e) => setDayRateValue(e.target.value)}
+                          autoFocus
+                        />
+                        <button onClick={() => saveDayRate(u.equipmentId)}>Save</button>
+                        <button className="secondary" onClick={() => setDayRateEditing(null)}>
+                          ×
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        className="secondary"
+                        style={{ padding: "2px 8px" }}
+                        onClick={() => {
+                          setDayRateEditing(u.equipmentId);
+                          setDayRateValue(u.internalDayRate ?? "");
+                        }}
+                      >
+                        {u.internalDayRate ? Number(u.internalDayRate).toFixed(2) : "Set…"}
+                      </button>
+                    )}
+                  </td>
                   <td>
                     <span className={`badge ${u.status === "ACTIVE" ? "posted" : "reversed"}`}>{u.status}</span>
                   </td>

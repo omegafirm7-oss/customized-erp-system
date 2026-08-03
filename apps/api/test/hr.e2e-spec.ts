@@ -1672,4 +1672,69 @@ describe("HR & Saudi Payroll (e2e)", () => {
       .set(auth(ctx.accessToken))
       .expect(404);
   });
+
+  it("timesheet period attachment: one file per fiscal period, replacing not accumulating, distinct across periods", async () => {
+    const ctx = await setupUserWithCompany(app);
+    const { periods } = await currentPeriod(ctx);
+    const periodA = periods[0];
+    const periodB = periods[1];
+
+    // No attachment yet — the grid reports null, not a 404.
+    const before = (
+      await request(app.getHttpServer())
+        .get(`/hr/employee-timesheet?fiscalPeriodId=${periodA.id}`)
+        .set(auth(ctx.accessToken))
+        .expect(200)
+    ).body;
+    expect(before.periodAttachmentFilename).toBeNull();
+    await request(app.getHttpServer())
+      .get(`/hr/employee-timesheet/period-attachment?fiscalPeriodId=${periodA.id}`)
+      .set(auth(ctx.accessToken))
+      .expect(404);
+
+    const firstBytes = Buffer.from("january timesheet scan");
+    await request(app.getHttpServer())
+      .post(`/hr/employee-timesheet/period-attachment?fiscalPeriodId=${periodA.id}`)
+      .set(auth(ctx.accessToken))
+      .attach("file", firstBytes, { filename: "period-a.pdf", contentType: "application/pdf" })
+      .expect(201);
+
+    const afterFirst = (
+      await request(app.getHttpServer())
+        .get(`/hr/employee-timesheet?fiscalPeriodId=${periodA.id}`)
+        .set(auth(ctx.accessToken))
+        .expect(200)
+    ).body;
+    expect(afterFirst.periodAttachmentFilename).toBe("period-a.pdf");
+
+    const download = await request(app.getHttpServer())
+      .get(`/hr/employee-timesheet/period-attachment?fiscalPeriodId=${periodA.id}`)
+      .set(auth(ctx.accessToken))
+      .expect(200);
+    expect(download.body.equals(firstBytes)).toBe(true);
+
+    // Re-uploading for the same period replaces it, not adds a second one.
+    const secondBytes = Buffer.from("january timesheet scan v2");
+    await request(app.getHttpServer())
+      .post(`/hr/employee-timesheet/period-attachment?fiscalPeriodId=${periodA.id}`)
+      .set(auth(ctx.accessToken))
+      .attach("file", secondBytes, { filename: "period-a-v2.pdf", contentType: "application/pdf" })
+      .expect(201);
+    const afterReplace = (
+      await request(app.getHttpServer())
+        .get(`/hr/employee-timesheet?fiscalPeriodId=${periodA.id}`)
+        .set(auth(ctx.accessToken))
+        .expect(200)
+    ).body;
+    expect(afterReplace.periodAttachmentFilename).toBe("period-a-v2.pdf");
+
+    // A different period has no attachment of its own — periods don't share one.
+    const periodBGrid = (
+      await request(app.getHttpServer())
+        .get(`/hr/employee-timesheet?fiscalPeriodId=${periodB.id}`)
+        .set(auth(ctx.accessToken))
+        .expect(200)
+    ).body;
+    expect(periodBGrid.periodAttachmentFilename).toBeNull();
+  });
 });

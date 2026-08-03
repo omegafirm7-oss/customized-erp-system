@@ -224,6 +224,116 @@ describe("Equipment Rental & Fixed Assets (e2e)", () => {
     expect(revenueLegs.reduce((acc, l) => acc + Number(l.credit), 0)).toBeCloseTo(15000 + expectedGenAmount, 2);
   });
 
+  it("project equipment: internal-use assignment accrues dayRate × days-used into the project's Machinery cost, blocks cross-assignment overlap", async () => {
+    const ctx = await setupManpowerlessContext();
+    const { period } = await currentPeriod(ctx);
+    const startDate = new Date(period.startDate).toISOString().slice(0, 10);
+
+    const project = (
+      await request(app.getHttpServer())
+        .post("/projects")
+        .set(auth(ctx.accessToken))
+        .send({ code: "PEQ-1", name: "Site A", businessPartnerId: ctx.customer.id, contractValue: "0", estimatedTotalCost: "0" })
+        .expect(201)
+    ).body;
+
+    // Equipment with no internalDayRate set — assigning without an override is rejected.
+    const van = (
+      await request(app.getHttpServer())
+        .post("/equipment/units")
+        .set(auth(ctx.accessToken))
+        .send({ code: "HIACE-2", name: "Hiace Van", acquisitionDate: startDate, acquisitionCost: "70000", usefulLifeMonths: 60 })
+        .expect(201)
+    ).body;
+    await request(app.getHttpServer())
+      .post("/equipment/project-assignments")
+      .set(auth(ctx.accessToken))
+      .send({ projectId: project.id, equipmentId: van.id, startDate })
+      .expect(400);
+
+    // Set a day rate on the unit, then assign — should succeed and snapshot the rate.
+    await request(app.getHttpServer())
+      .patch(`/equipment/units/${van.id}`)
+      .set(auth(ctx.accessToken))
+      .send({ internalDayRate: "250" })
+      .expect(200);
+    const assignment = (
+      await request(app.getHttpServer())
+        .post("/equipment/project-assignments")
+        .set(auth(ctx.accessToken))
+        .send({ projectId: project.id, equipmentId: van.id, startDate })
+        .expect(201)
+    ).body;
+    expect(Number(assignment.dayRate)).toBe(250);
+
+    // A second project can't take the same still-active unit.
+    const project2 = (
+      await request(app.getHttpServer())
+        .post("/projects")
+        .set(auth(ctx.accessToken))
+        .send({ code: "PEQ-2", name: "Site B", businessPartnerId: ctx.customer.id, contractValue: "0", estimatedTotalCost: "0" })
+        .expect(201)
+    ).body;
+    await request(app.getHttpServer())
+      .post("/equipment/project-assignments")
+      .set(auth(ctx.accessToken))
+      .send({ projectId: project2.id, equipmentId: van.id, startDate, dayRate: "300" })
+      .expect(409);
+
+    // Prefill the timesheet, mark 3 days used, 1 day unused — accrual is 3 × 250.
+    const filled = (
+      await request(app.getHttpServer())
+        .post(`/equipment/projects/${project.id}/timesheet/prefill?fiscalPeriodId=${period.id}`)
+        .set(auth(ctx.accessToken))
+        .expect(201)
+    ).body;
+    const entries = filled.assignments[0].entries;
+    expect(entries.length).toBeGreaterThanOrEqual(4);
+    for (let i = 0; i < 3; i++) {
+      await request(app.getHttpServer())
+        .post(`/equipment/projects/${project.id}/timesheet/entries`)
+        .set(auth(ctx.accessToken))
+        .send({ assignmentId: assignment.id, date: entries[i].date.slice(0, 10), used: true, hoursUsed: "8" })
+        .expect(201);
+    }
+    // entries[3] stays at its prefilled default (used: false) — proves the accrual is real, not "every entry".
+
+    const intelligence = (
+      await request(app.getHttpServer())
+        .get(`/projects/${project.id}/intelligence`)
+        .set(auth(ctx.accessToken))
+        .expect(200)
+    ).body;
+    expect(Number(intelligence.categories.MACHINERY.pending)).toBe(750);
+    expect(Number(intelligence.categories.MACHINERY.total)).toBe(750);
+
+    // Attachment is one per project per period, same as the HR timesheet's own period attachment.
+    const fileBytes = Buffer.from("hiace log sheet");
+    await request(app.getHttpServer())
+      .post(`/equipment/projects/${project.id}/period-attachment?fiscalPeriodId=${period.id}`)
+      .set(auth(ctx.accessToken))
+      .attach("file", fileBytes, { filename: "hiace-log.pdf", contentType: "application/pdf" })
+      .expect(201);
+    const withAttachment = (
+      await request(app.getHttpServer())
+        .get(`/equipment/projects/${project.id}/timesheet?fiscalPeriodId=${period.id}`)
+        .set(auth(ctx.accessToken))
+        .expect(200)
+    ).body;
+    expect(withAttachment.periodAttachmentFilename).toBe("hiace-log.pdf");
+
+    // Ending the assignment frees the unit for a new one.
+    await request(app.getHttpServer())
+      .post(`/equipment/project-assignments/${assignment.id}/end`)
+      .set(auth(ctx.accessToken))
+      .expect(201);
+    await request(app.getHttpServer())
+      .post("/equipment/project-assignments")
+      .set(auth(ctx.accessToken))
+      .send({ projectId: project2.id, equipmentId: van.id, startDate, dayRate: "300" })
+      .expect(201);
+  });
+
   it("usage-log entries record overtime hours (reporting only) and accept an attachment per day", async () => {
     const ctx = await setupManpowerlessContext();
     const { period } = await currentPeriod(ctx);

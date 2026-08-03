@@ -464,8 +464,10 @@ model Company {
   employeePaymentRecoveries EmployeePaymentRecovery[]
   employeePaymentAttachments EmployeePaymentAttachment[]
   purchaseInvoiceLineAttachments PurchaseInvoiceLineAttachment[]
-  employeeTimesheetEntryAttachments EmployeeTimesheetEntryAttachment[]
+  timesheetPeriodAttachments TimesheetPeriodAttachment[]
   usageLogEntryAttachments  UsageLogEntryAttachment[]
+  projectEquipmentAssignments ProjectEquipmentAssignment[]
+  projectEquipmentPeriodAttachments ProjectEquipmentPeriodAttachment[]
   joinRequests              CompanyJoinRequest[]
 
   @@map("companies")
@@ -604,6 +606,8 @@ model FiscalPeriod {
   timesheets             Timesheet[]
   usageLogs              UsageLog[]
   depreciationRuns       DepreciationRun[]
+  timesheetPeriodAttachment TimesheetPeriodAttachment?
+  projectEquipmentPeriodAttachments ProjectEquipmentPeriodAttachment[]
 
   @@unique([fiscalYearId, periodNumber])
   @@index([companyId])
@@ -1665,10 +1669,86 @@ model Project {
   revenueRecognitionRuns RevenueRecognitionRun[]
   salesInvoiceLines      SalesInvoiceLine[]
   purchaseInvoiceLines   PurchaseInvoiceLine[]
+  equipmentAssignments   ProjectEquipmentAssignment[]
+  equipmentPeriodAttachments ProjectEquipmentPeriodAttachment[]
 
   @@unique([companyId, code])
   @@index([companyId, status])
   @@map("projects")
+}
+
+// Internal-use equipment on our own projects — a Hiace van, a bus, etc.,
+// never billed to a customer (unlike EquipmentAssignment, which is scoped
+// to an EquipmentRentalContract). dayRate is snapshotted from
+// Equipment.internalDayRate at assignment time so a later rate change never
+// silently reprices an already-logged historical day.
+model ProjectEquipmentAssignment {
+  id              String    @id @default(uuid())
+  companyId       String
+  company         Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  equipmentId     String
+  equipment       Equipment @relation(fields: [equipmentId], references: [id])
+  dayRate         Decimal   @db.Decimal(18, 4)
+  startDate       DateTime
+  endDate         DateTime?
+  isActive        Boolean   @default(true)
+  createdByUserId String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  entries ProjectEquipmentLogEntry[]
+
+  @@index([projectId])
+  @@index([equipmentId, isActive])
+  @@map("project_equipment_assignments")
+}
+
+// Day-by-day log for one project-equipment assignment — mirrors
+// EmployeeTimesheetEntry's shape (used flag instead of dayType, hours are
+// reporting-only). Cost accrual is a flat dayRate per day marked used,
+// never prorated by hoursUsed/overtimeHours.
+model ProjectEquipmentLogEntry {
+  id              String                     @id @default(uuid())
+  assignmentId    String
+  assignment      ProjectEquipmentAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  companyId       String
+  date            DateTime
+  used            Boolean                    @default(true)
+  hoursUsed       Decimal                    @default(0) @db.Decimal(5, 2)
+  overtimeHours   Decimal                    @default(0) @db.Decimal(5, 2)
+  enteredByUserId String
+  updatedByUserId String?
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+
+  @@unique([assignmentId, date])
+  @@index([companyId, date])
+  @@map("project_equipment_log_entries")
+}
+
+// One evidence file per project per fiscal period — same "one scan for the
+// whole month" model as TimesheetPeriodAttachment, scoped to a project
+// since a project can have several assigned vehicles/equipment sharing one
+// physical log sheet.
+model ProjectEquipmentPeriodAttachment {
+  id               String       @id @default(uuid())
+  companyId        String
+  company          Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  projectId        String
+  project          Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fiscalPeriodId   String
+  fiscalPeriod     FiscalPeriod @relation(fields: [fiscalPeriodId], references: [id], onDelete: Cascade)
+  filename         String
+  mimeType         String
+  size             Int
+  data             Bytes
+  uploadedByUserId String
+  createdAt        DateTime     @default(now())
+
+  @@unique([projectId, fiscalPeriodId])
+  @@map("project_equipment_period_attachments")
 }
 
 // WBS task tree (arbitrary depth). Budget rollup is informational —
@@ -2005,29 +2085,29 @@ model EmployeeTimesheetEntry {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
-  attachment EmployeeTimesheetEntryAttachment?
-
   @@unique([employeeId, date])
   @@index([companyId, date])
   @@map("employee_timesheet_entries")
 }
 
-// A single evidence file (site photo, delivery note, etc.) attached to one
-// day's timesheet entry — same storage pattern as EmployeePaymentAttachment.
-model EmployeeTimesheetEntryAttachment {
-  id                       String                 @id @default(uuid())
-  companyId                String
-  company                  Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  employeeTimesheetEntryId String                 @unique
-  employeeTimesheetEntry   EmployeeTimesheetEntry @relation(fields: [employeeTimesheetEntryId], references: [id], onDelete: Cascade)
-  filename                 String
-  mimeType                 String
-  size                     Int
-  data                     Bytes
-  uploadedByUserId         String
-  createdAt                DateTime               @default(now())
+// One evidence file per fiscal period — the whole month's signed paper
+// timesheet, scanned once and attached here, rather than one file per
+// employee per day. Superseded the old per-entry EmployeeTimesheetEntryAttachment
+// model (never had any production rows) with this simpler, period-scoped shape.
+model TimesheetPeriodAttachment {
+  id               String       @id @default(uuid())
+  companyId        String
+  company          Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fiscalPeriodId   String       @unique
+  fiscalPeriod     FiscalPeriod @relation(fields: [fiscalPeriodId], references: [id], onDelete: Cascade)
+  filename         String
+  mimeType         String
+  size             Int
+  data             Bytes
+  uploadedByUserId String
+  createdAt        DateTime     @default(now())
 
-  @@map("employee_timesheet_entry_attachments")
+  @@map("timesheet_period_attachments")
 }
 
 // One-off cash paid to an employee outside formal payroll. ALLOWANCE is a
@@ -2250,6 +2330,12 @@ model Equipment {
   disposalProceeds               Decimal?        @db.Decimal(18, 4)
   disposalJournalEntryId         String?         @unique
   disposalJournalEntry           JournalEntry?   @relation("EquipmentDisposalJournal", fields: [disposalJournalEntryId], references: [id])
+  // Internal costing rate — flat cost per day this equipment is used on one
+  // of our own projects (Hiace vans, buses, etc.), never billed to a
+  // customer. Distinct from EquipmentAssignment.billRate, which is what a
+  // rental-contract customer is charged. Null until an admin sets it for a
+  // unit that's actually used internally.
+  internalDayRate                Decimal?        @db.Decimal(18, 4)
   createdByUserId                String
   updatedByUserId                String?
   createdAt                      DateTime        @default(now())
@@ -2258,6 +2344,7 @@ model Equipment {
   assignments          EquipmentAssignment[]
   usageLogEntries      UsageLogEntry[]
   depreciationRunLines DepreciationRunLine[]
+  projectAssignments   ProjectEquipmentAssignment[]
 
   @@unique([companyId, code])
   @@index([companyId, status])

@@ -13,6 +13,7 @@ import { UsageLogsService } from "./usage-logs.service";
 import { EquipmentBillingService } from "./equipment-billing.service";
 import { DepreciationService } from "./depreciation.service";
 import { EquipmentReportsService } from "./equipment-reports.service";
+import { ProjectEquipmentService } from "./project-equipment.service";
 import { EquipmentController } from "./equipment.controller";
 
 @Module({
@@ -26,6 +27,7 @@ import { EquipmentController } from "./equipment.controller";
     EquipmentBillingService,
     DepreciationService,
     EquipmentReportsService,
+    ProjectEquipmentService,
   ],
   exports: [EquipmentService],
 })

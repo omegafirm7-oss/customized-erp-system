@@ -29,15 +29,18 @@ import { UsageLogsService } from "./usage-logs.service";
 import { EquipmentBillingService } from "./equipment-billing.service";
 import { DepreciationService } from "./depreciation.service";
 import { EquipmentReportsService } from "./equipment-reports.service";
+import { ProjectEquipmentService } from "./project-equipment.service";
 import {
   CreateEquipmentAssignmentDto,
   CreateEquipmentContractDto,
   CreateEquipmentDto,
+  CreateProjectEquipmentAssignmentDto,
   CreateUsageLogDto,
   DisposeEquipmentDto,
   RunDepreciationDto,
   UpdateEquipmentAssignmentDto,
   UpdateEquipmentDto,
+  UpsertProjectEquipmentEntryDto,
   UpsertUsageEntryDto,
 } from "./dto/equipment.dtos";
 
@@ -53,6 +56,7 @@ export class EquipmentController {
     private readonly billingService: EquipmentBillingService,
     private readonly depreciationService: DepreciationService,
     private readonly reportsService: EquipmentReportsService,
+    private readonly projectEquipmentService: ProjectEquipmentService,
   ) {}
 
   // ── Fleet register ───────────────────────────────────────────────────
@@ -278,5 +282,90 @@ export class EquipmentController {
   @Permissions(PERMISSIONS.EQUIPMENT_VIEW)
   async contractProfitability(@CurrentCompanyId() companyId: string) {
     return this.reportsService.contractProfitability(companyId);
+  }
+
+  // ── Project equipment (internal use — not billed to a customer) ────────
+
+  @Get("project-assignments")
+  @Permissions(PERMISSIONS.EQUIPMENT_VIEW)
+  async listProjectAssignments(@CurrentCompanyId() companyId: string, @Query("projectId") projectId: string) {
+    return this.projectEquipmentService.listAssignments(companyId, projectId);
+  }
+
+  @Post("project-assignments")
+  @Permissions(PERMISSIONS.EQUIPMENT_MANAGE)
+  async assignToProject(
+    @CurrentCompanyId() companyId: string,
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: CreateProjectEquipmentAssignmentDto,
+  ) {
+    return this.projectEquipmentService.assign(companyId, user.sub, dto);
+  }
+
+  @Post("project-assignments/:id/end")
+  @Permissions(PERMISSIONS.EQUIPMENT_MANAGE)
+  async endProjectAssignment(@CurrentCompanyId() companyId: string, @Param("id") id: string, @CurrentUser() user: JwtPayload) {
+    return this.projectEquipmentService.endAssignment(companyId, id, user.sub);
+  }
+
+  @Get("projects/:projectId/timesheet")
+  @Permissions(PERMISSIONS.EQUIPMENT_VIEW)
+  async getProjectEquipmentTimesheet(
+    @CurrentCompanyId() companyId: string,
+    @Param("projectId") projectId: string,
+    @Query("fiscalPeriodId") fiscalPeriodId: string,
+  ) {
+    return this.projectEquipmentService.getTimesheet(companyId, projectId, fiscalPeriodId);
+  }
+
+  @Post("projects/:projectId/timesheet/prefill")
+  @Permissions(PERMISSIONS.EQUIPMENT_MANAGE)
+  async prefillProjectEquipmentTimesheet(
+    @CurrentCompanyId() companyId: string,
+    @Param("projectId") projectId: string,
+    @CurrentUser() user: JwtPayload,
+    @Query("fiscalPeriodId") fiscalPeriodId: string,
+  ) {
+    return this.projectEquipmentService.prefill(companyId, projectId, user.sub, fiscalPeriodId);
+  }
+
+  @Post("projects/:projectId/timesheet/entries")
+  @Permissions(PERMISSIONS.EQUIPMENT_MANAGE)
+  async upsertProjectEquipmentEntry(
+    @CurrentCompanyId() companyId: string,
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: UpsertProjectEquipmentEntryDto,
+  ) {
+    return this.projectEquipmentService.upsertEntry(companyId, user.sub, dto);
+  }
+
+  @Post("projects/:projectId/period-attachment")
+  @Permissions(PERMISSIONS.EQUIPMENT_MANAGE)
+  @ApiConsumes("multipart/form-data")
+  @UseInterceptors(FileInterceptor("file", { storage: memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }))
+  async uploadProjectEquipmentPeriodAttachment(
+    @CurrentCompanyId() companyId: string,
+    @Param("projectId") projectId: string,
+    @Query("fiscalPeriodId") fiscalPeriodId: string,
+    @CurrentUser() user: JwtPayload,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException("No file uploaded");
+    }
+    return this.projectEquipmentService.uploadPeriodAttachment(companyId, projectId, fiscalPeriodId, user.sub, file);
+  }
+
+  @Get("projects/:projectId/period-attachment")
+  @Permissions(PERMISSIONS.EQUIPMENT_VIEW)
+  async getProjectEquipmentPeriodAttachment(
+    @CurrentCompanyId() companyId: string,
+    @Param("projectId") projectId: string,
+    @Query("fiscalPeriodId") fiscalPeriodId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const attachment = await this.projectEquipmentService.getPeriodAttachment(companyId, projectId, fiscalPeriodId);
+    res.set({ "Content-Type": attachment.mimeType, "Content-Disposition": `inline; filename="${attachment.filename}"` });
+    return new StreamableFile(attachment.data);
   }
 }

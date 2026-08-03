@@ -9,17 +9,27 @@ export class PlatformService {
 
   /** Storage attributable to each company's uploaded evidence, summed across
    * every attachment table (the only tables in the schema holding binary
-   * data — see PurchaseInvoiceLineAttachment/EmployeeTimesheetEntryAttachment/
-   * EmployeePaymentAttachment). Merged in JS since it's 3 small groupBy calls,
-   * not worth a raw-SQL UNION. */
+   * data — see PurchaseInvoiceLineAttachment/TimesheetPeriodAttachment/
+   * EmployeePaymentAttachment/UsageLogEntryAttachment/
+   * ProjectEquipmentPeriodAttachment). Merged in JS since it's several small
+   * groupBy calls, not worth a raw-SQL UNION. */
   private async storageByCompany(): Promise<Map<string, number>> {
-    const [invoiceAttachments, timesheetAttachments, paymentAttachments] = await Promise.all([
-      this.prisma.purchaseInvoiceLineAttachment.groupBy({ by: ["companyId"], _sum: { size: true } }),
-      this.prisma.employeeTimesheetEntryAttachment.groupBy({ by: ["companyId"], _sum: { size: true } }),
-      this.prisma.employeePaymentAttachment.groupBy({ by: ["companyId"], _sum: { size: true } }),
-    ]);
+    const [invoiceAttachments, timesheetAttachments, paymentAttachments, usageLogAttachments, projectEquipmentAttachments] =
+      await Promise.all([
+        this.prisma.purchaseInvoiceLineAttachment.groupBy({ by: ["companyId"], _sum: { size: true } }),
+        this.prisma.timesheetPeriodAttachment.groupBy({ by: ["companyId"], _sum: { size: true } }),
+        this.prisma.employeePaymentAttachment.groupBy({ by: ["companyId"], _sum: { size: true } }),
+        this.prisma.usageLogEntryAttachment.groupBy({ by: ["companyId"], _sum: { size: true } }),
+        this.prisma.projectEquipmentPeriodAttachment.groupBy({ by: ["companyId"], _sum: { size: true } }),
+      ]);
     const byCompany = new Map<string, number>();
-    for (const group of [...invoiceAttachments, ...timesheetAttachments, ...paymentAttachments]) {
+    for (const group of [
+      ...invoiceAttachments,
+      ...timesheetAttachments,
+      ...paymentAttachments,
+      ...usageLogAttachments,
+      ...projectEquipmentAttachments,
+    ]) {
       const prior = byCompany.get(group.companyId) ?? 0;
       byCompany.set(group.companyId, prior + (group._sum.size ?? 0));
     }

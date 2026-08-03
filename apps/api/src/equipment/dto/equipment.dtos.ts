@@ -87,6 +87,14 @@ export class UpdateEquipmentDto {
   @IsOptional()
   @IsString()
   serialNumber?: string;
+
+  @ApiProperty({
+    required: false,
+    description: "Internal cost-per-day when used on our own projects — never billed to a customer.",
+  })
+  @IsOptional()
+  @IsNumberString()
+  internalDayRate?: string;
 }
 
 export class DisposeEquipmentDto {
@@ -211,4 +219,51 @@ export class RunDepreciationDto {
   @ApiProperty()
   @IsUUID()
   fiscalPeriodId!: string;
+}
+
+export class CreateProjectEquipmentAssignmentDto {
+  @ApiProperty()
+  @IsUUID()
+  projectId!: string;
+
+  @ApiProperty()
+  @IsUUID()
+  equipmentId!: string;
+
+  @ApiProperty()
+  @IsDateString()
+  startDate!: string;
+
+  @ApiProperty({
+    required: false,
+    description: "Overrides the equipment's own internalDayRate for this assignment; required if the equipment has no internalDayRate set.",
+  })
+  @IsOptional()
+  @IsNumberString()
+  dayRate?: string;
+}
+
+export class UpsertProjectEquipmentEntryDto {
+  @ApiProperty()
+  @IsUUID()
+  assignmentId!: string;
+
+  @ApiProperty({ description: "Calendar date within the assignment's fiscal period (YYYY-MM-DD)" })
+  @IsDateString()
+  date!: string;
+
+  @ApiProperty({ required: false, default: true })
+  @IsOptional()
+  @IsBoolean()
+  used?: boolean;
+
+  @ApiProperty({ required: false, description: "Reporting only — does not affect the accrued dayRate cost" })
+  @IsOptional()
+  @IsNumberString()
+  hoursUsed?: string;
+
+  @ApiProperty({ required: false, description: "Reporting only — does not affect the accrued dayRate cost" })
+  @IsOptional()
+  @IsNumberString()
+  overtimeHours?: string;
 }

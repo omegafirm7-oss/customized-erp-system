@@ -357,30 +357,30 @@ export class HrController {
     return this.attendanceService.resetPeriodHours(companyId, dto.fiscalPeriodId, user.sub);
   }
 
-  @Post("employee-timesheet/entries/:entryId/attachment")
+  @Post("employee-timesheet/period-attachment")
   @Permissions(PERMISSIONS.HR_EMPLOYEE_MANAGE)
   @ApiConsumes("multipart/form-data")
   @UseInterceptors(FileInterceptor("file", { storage: memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }))
-  async uploadTimesheetEntryAttachment(
+  async uploadTimesheetPeriodAttachment(
     @CurrentCompanyId() companyId: string,
-    @Param("entryId") entryId: string,
+    @Query("fiscalPeriodId") fiscalPeriodId: string,
     @CurrentUser() user: JwtPayload,
     @UploadedFile() file?: Express.Multer.File,
   ) {
     if (!file) {
       throw new BadRequestException("No file uploaded");
     }
-    return this.attendanceService.uploadEntryAttachment(companyId, entryId, user.sub, file);
+    return this.attendanceService.uploadPeriodAttachment(companyId, fiscalPeriodId, user.sub, file);
   }
 
-  @Get("employee-timesheet/entries/:entryId/attachment")
+  @Get("employee-timesheet/period-attachment")
   @Permissions(PERMISSIONS.HR_EMPLOYEE_VIEW)
-  async getTimesheetEntryAttachment(
+  async getTimesheetPeriodAttachment(
     @CurrentCompanyId() companyId: string,
-    @Param("entryId") entryId: string,
+    @Query("fiscalPeriodId") fiscalPeriodId: string,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const attachment = await this.attendanceService.getEntryAttachment(companyId, entryId);
+    const attachment = await this.attendanceService.getPeriodAttachment(companyId, fiscalPeriodId);
     res.set({ "Content-Type": attachment.mimeType, "Content-Disposition": `inline; filename="${attachment.filename}"` });
     return new StreamableFile(attachment.data);
   }

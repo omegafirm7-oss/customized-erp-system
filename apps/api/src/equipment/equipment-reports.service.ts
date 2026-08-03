@@ -46,6 +46,7 @@ export class EquipmentReportsService {
           unit.status === EquipmentStatus.DISPOSED ? ZERO : netBookValue(unit.acquisitionCost, accumulated),
         currentContract: unit.assignments[0]?.contract ?? null,
         disposalProceeds: unit.disposalProceeds,
+        internalDayRate: unit.internalDayRate,
       });
     }
     return rows;

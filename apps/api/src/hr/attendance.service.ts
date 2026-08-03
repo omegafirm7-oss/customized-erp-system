@@ -52,23 +52,22 @@ export class AttendanceService {
         employeeTimesheetEntries: {
           where: { date: { gte: period.startDate, lte: period.endDate } },
           orderBy: { date: "asc" },
-          // `id` and the attachment filename are needed by the Update
-          // Timesheets grid's Attachments tab, which attaches per day entry.
           select: {
             id: true,
             date: true,
             dayType: true,
             hoursWorked: true,
             overtimeHours: true,
-            attachment: { select: { filename: true } },
           },
         },
       },
     });
+    const periodAttachment = await this.getPeriodAttachmentMeta(companyId, fiscalPeriodId);
     return {
       fiscalPeriodId,
       periodStart: period.startDate,
       periodEnd: period.endDate,
+      periodAttachmentFilename: periodAttachment?.filename ?? null,
       employees: employees.map((e) => ({
         employeeId: e.id,
         code: e.code,
@@ -81,7 +80,6 @@ export class AttendanceService {
           dayType: entry.dayType,
           hoursWorked: entry.hoursWorked,
           overtimeHours: entry.overtimeHours,
-          attachmentFilename: entry.attachment?.filename ?? null,
         })),
       })),
     };
@@ -124,7 +122,6 @@ export class AttendanceService {
         dayType: true,
         hoursWorked: true,
         overtimeHours: true,
-        attachment: { select: { filename: true } },
       },
     });
 
@@ -146,7 +143,6 @@ export class AttendanceService {
         hoursWorked: e.hoursWorked,
         overtimeHours: e.overtimeHours,
         cost,
-        attachmentFilename: e.attachment?.filename ?? null,
       };
     });
 
@@ -317,21 +313,25 @@ export class AttendanceService {
     "application/pdf",
   ]);
 
-  /** Attaches (or replaces) the evidence file for one day's timesheet entry. */
-  async uploadEntryAttachment(companyId: string, entryId: string, userId: string, file: Express.Multer.File) {
+  /**
+   * Attaches (or replaces) the evidence file for a whole fiscal period — one
+   * scanned document per month (e.g. the signed paper timesheet), not one
+   * per employee per day.
+   */
+  async uploadPeriodAttachment(companyId: string, fiscalPeriodId: string, userId: string, file: Express.Multer.File) {
     if (!AttendanceService.ALLOWED_ATTACHMENT_MIME_TYPES.has(file.mimetype)) {
       throw new BadRequestException("Attachment must be an image (JPEG/PNG/WEBP/GIF) or a PDF");
     }
-    const entry = await this.prisma.employeeTimesheetEntry.findFirst({ where: { id: entryId, companyId } });
-    if (!entry) {
-      throw new NotFoundException("Timesheet entry not found");
+    const period = await this.prisma.fiscalPeriod.findFirst({ where: { id: fiscalPeriodId, companyId } });
+    if (!period) {
+      throw new NotFoundException("Fiscal period not found");
     }
 
-    const attachment = await this.prisma.employeeTimesheetEntryAttachment.upsert({
-      where: { employeeTimesheetEntryId: entryId },
+    const attachment = await this.prisma.timesheetPeriodAttachment.upsert({
+      where: { fiscalPeriodId },
       create: {
         companyId,
-        employeeTimesheetEntryId: entryId,
+        fiscalPeriodId,
         filename: file.originalname,
         mimeType: file.mimetype,
         size: file.size,
@@ -350,7 +350,7 @@ export class AttendanceService {
 
     await this.auditService.log({
       companyId,
-      entityName: "EmployeeTimesheetEntryAttachment",
+      entityName: "TimesheetPeriodAttachment",
       entityId: attachment.id,
       action: "CREATE",
       changedByUserId: userId,
@@ -360,12 +360,19 @@ export class AttendanceService {
     return attachment;
   }
 
-  async getEntryAttachment(companyId: string, entryId: string) {
-    const attachment = await this.prisma.employeeTimesheetEntryAttachment.findFirst({
-      where: { employeeTimesheetEntryId: entryId, companyId },
+  async getPeriodAttachmentMeta(companyId: string, fiscalPeriodId: string) {
+    return this.prisma.timesheetPeriodAttachment.findFirst({
+      where: { fiscalPeriodId, companyId },
+      select: { filename: true },
+    });
+  }
+
+  async getPeriodAttachment(companyId: string, fiscalPeriodId: string) {
+    const attachment = await this.prisma.timesheetPeriodAttachment.findFirst({
+      where: { fiscalPeriodId, companyId },
     });
     if (!attachment) {
-      throw new NotFoundException("No attachment on this timesheet entry");
+      throw new NotFoundException("No attachment for this period");
     }
     return attachment;
   }

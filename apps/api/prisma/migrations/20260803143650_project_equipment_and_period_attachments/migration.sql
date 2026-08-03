@@ -1,0 +1,2 @@
+-- RenameIndex
+ALTER INDEX "project_equipment_period_attachments_projectId_fiscalPeriodId_k" RENAME TO "project_equipment_period_attachments_projectId_fiscalPeriod_key";
