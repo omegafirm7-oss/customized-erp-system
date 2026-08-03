@@ -197,6 +197,14 @@ export class UpsertUsageEntryDto {
   @IsOptional()
   @IsNumberString()
   hoursUsed?: string;
+
+  @ApiProperty({
+    required: false,
+    description: "Overtime hours for the day. Recorded and reported only — never feeds billing.",
+  })
+  @IsOptional()
+  @IsNumberString()
+  overtimeHours?: string;
 }
 
 export class RunDepreciationDto {

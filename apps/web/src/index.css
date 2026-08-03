@@ -786,6 +786,17 @@ button.danger:hover:not(:disabled) {
    text with a shadow for legibility against the photo); the actual
    sign-in form stays in a compact frosted-glass card docked on the right.
    See AuthVisual.tsx for the photo's source/license. --- */
+/* Tab strip — segmented row of buttons where the active one uses the
+   primary button style and the rest stay secondary. */
+.tab-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid #e4e7ec;
+  padding-bottom: 12px;
+}
+
 .auth-page {
   --wheel: 480px; /* diameter of the whole module wheel */
   --disc: 18.5%; /* each module disc, as a share of the wheel */

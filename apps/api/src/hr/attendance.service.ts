@@ -52,6 +52,16 @@ export class AttendanceService {
         employeeTimesheetEntries: {
           where: { date: { gte: period.startDate, lte: period.endDate } },
           orderBy: { date: "asc" },
+          // `id` and the attachment filename are needed by the Update
+          // Timesheets grid's Attachments tab, which attaches per day entry.
+          select: {
+            id: true,
+            date: true,
+            dayType: true,
+            hoursWorked: true,
+            overtimeHours: true,
+            attachment: { select: { filename: true } },
+          },
         },
       },
     });
@@ -66,9 +76,12 @@ export class AttendanceService {
         designation: e.designation,
         basicSalary: e.basicSalary,
         entries: e.employeeTimesheetEntries.map((entry) => ({
+          id: entry.id,
           date: entry.date,
           dayType: entry.dayType,
           hoursWorked: entry.hoursWorked,
+          overtimeHours: entry.overtimeHours,
+          attachmentFilename: entry.attachment?.filename ?? null,
         })),
       })),
     };
@@ -110,22 +123,28 @@ export class AttendanceService {
         date: true,
         dayType: true,
         hoursWorked: true,
+        overtimeHours: true,
         attachment: { select: { filename: true } },
       },
     });
 
     const hourlyRate = employee.basicSalary.div(HOURLY_DIVISOR).toDecimalPlaces(4);
     let totalHours = new Prisma.Decimal(0);
+    let totalOvertimeHours = new Prisma.Decimal(0);
     let totalCost = new Prisma.Decimal(0);
     const rows = entries.map((e) => {
+      // Cost deliberately ignores overtimeHours — overtime is recorded for
+      // reporting only and is paid through the payroll run, not accrued here.
       const cost = hourlyRate.mul(e.hoursWorked).toDecimalPlaces(2);
       totalHours = totalHours.add(e.hoursWorked);
+      totalOvertimeHours = totalOvertimeHours.add(e.overtimeHours);
       totalCost = totalCost.add(cost);
       return {
         id: e.id,
         date: e.date,
         dayType: e.dayType,
         hoursWorked: e.hoursWorked,
+        overtimeHours: e.overtimeHours,
         cost,
         attachmentFilename: e.attachment?.filename ?? null,
       };
@@ -140,6 +159,7 @@ export class AttendanceService {
       hourlyRate,
       entries: rows,
       totalHours,
+      totalOvertimeHours,
       totalCost,
     };
   }
@@ -221,6 +241,20 @@ export class AttendanceService {
       throw new BadRequestException(`hoursWorked must be between 0 and 24 (got ${hoursWorked.toString()})`);
     }
 
+    // Overtime is edited on its own tab, so a day-type/hours edit must not
+    // clobber it: left `undefined` here, Prisma skips the column entirely and
+    // whatever was recorded survives. The one exception is switching a day to
+    // a non-worked type, where carrying overtime forward would be nonsense.
+    const overtimeHours =
+      dto.overtimeHours !== undefined
+        ? new Prisma.Decimal(dto.overtimeHours)
+        : dto.dayType === TimesheetDayType.WORKED
+          ? undefined
+          : new Prisma.Decimal(0);
+    if (overtimeHours && (overtimeHours.lt(0) || overtimeHours.gt(24))) {
+      throw new BadRequestException(`overtimeHours must be between 0 and 24 (got ${overtimeHours.toString()})`);
+    }
+
     await this.prisma.employeeTimesheetEntry.upsert({
       where: { employeeId_date: { employeeId: dto.employeeId, date } },
       create: {
@@ -229,11 +263,13 @@ export class AttendanceService {
         date,
         dayType: dto.dayType,
         hoursWorked,
+        overtimeHours: overtimeHours ?? new Prisma.Decimal(0),
         enteredByUserId: userId,
       },
       update: {
         dayType: dto.dayType,
         hoursWorked,
+        overtimeHours,
         updatedByUserId: userId,
       },
     });
@@ -242,10 +278,10 @@ export class AttendanceService {
   }
 
   /**
-   * Explicit, opt-in bulk clear: zeroes hoursWorked (dayType untouched) for
-   * every entry in one period. For periods that were prefilled before hours
-   * defaulted to 0 (or that just need a clean slate) — never runs
-   * automatically, only when the user asks for this specific period.
+   * Explicit, opt-in bulk clear: zeroes hoursWorked and overtimeHours
+   * (dayType untouched) for every entry in one period. For periods that were
+   * prefilled before hours defaulted to 0 (or that just need a clean slate)
+   * — never runs automatically, only when the user asks for this period.
    */
   async resetPeriodHours(companyId: string, fiscalPeriodId: string, userId: string) {
     const period = await this.prisma.fiscalPeriod.findFirst({ where: { id: fiscalPeriodId, companyId } });
@@ -258,7 +294,7 @@ export class AttendanceService {
 
     await this.prisma.employeeTimesheetEntry.updateMany({
       where: { employeeId: { in: employeeIds }, date: { gte: period.startDate, lte: period.endDate } },
-      data: { hoursWorked: ZERO_HOURS, updatedByUserId: userId },
+      data: { hoursWorked: ZERO_HOURS, overtimeHours: ZERO_HOURS, updatedByUserId: userId },
     });
 
     await this.auditService.log({

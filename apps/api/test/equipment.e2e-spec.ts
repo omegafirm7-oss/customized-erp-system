@@ -224,6 +224,81 @@ describe("Equipment Rental & Fixed Assets (e2e)", () => {
     expect(revenueLegs.reduce((acc, l) => acc + Number(l.credit), 0)).toBeCloseTo(15000 + expectedGenAmount, 2);
   });
 
+  it("usage-log entries record overtime hours (reporting only) and accept an attachment per day", async () => {
+    const ctx = await setupManpowerlessContext();
+    const { period } = await currentPeriod(ctx);
+    const startDate = new Date(period.startDate).toISOString().slice(0, 10);
+
+    const van = (
+      await request(app.getHttpServer())
+        .post("/equipment/units")
+        .set(auth(ctx.accessToken))
+        .send({
+          code: "HIACE-1",
+          name: "Hiace Van",
+          acquisitionDate: startDate,
+          acquisitionCost: "80000",
+          usefulLifeMonths: 60,
+        })
+        .expect(201)
+    ).body;
+    const contract = (
+      await request(app.getHttpServer())
+        .post("/equipment/contracts")
+        .set(auth(ctx.accessToken))
+        .send({ code: "EQC-OT", name: "Project Transport", businessPartnerId: ctx.customer.id, startDate })
+        .expect(201)
+    ).body;
+    const assignment = (
+      await request(app.getHttpServer())
+        .post(`/equipment/contracts/${contract.id}/assignments`)
+        .set(auth(ctx.accessToken))
+        .send({ equipmentId: van.id, rateBasis: "DAILY", billRate: "300", startDate })
+        .expect(201)
+    ).body;
+    const log = (
+      await request(app.getHttpServer())
+        .post(`/equipment/contracts/${contract.id}/usage-logs`)
+        .set(auth(ctx.accessToken))
+        .send({ fiscalPeriodId: period.id })
+        .expect(201)
+    ).body;
+    const firstEntry = log.entries[0];
+    expect(Number(firstEntry.overtimeHours)).toBe(0);
+    expect(firstEntry.attachment).toBeNull();
+
+    // Overtime is editable while the log is still a draft, independent of dayStatus/hoursUsed.
+    await request(app.getHttpServer())
+      .post(`/equipment/usage-logs/${log.id}/entries`)
+      .set(auth(ctx.accessToken))
+      .send({ assignmentId: assignment.id, date: firstEntry.date.slice(0, 10), dayStatus: "ON_RENT", overtimeHours: "3" })
+      .expect(201);
+    const afterOt = (
+      await request(app.getHttpServer()).get(`/equipment/usage-logs/${log.id}`).set(auth(ctx.accessToken)).expect(200)
+    ).body;
+    const updatedEntry = afterOt.entries.find((e: any) => e.id === firstEntry.id);
+    expect(Number(updatedEntry.overtimeHours)).toBe(3);
+
+    // Attach a file to that day's entry, then fetch it back byte-for-byte.
+    const fileBytes = Buffer.from("gate pass photo bytes");
+    await request(app.getHttpServer())
+      .post(`/equipment/usage-logs/entries/${firstEntry.id}/attachment`)
+      .set(auth(ctx.accessToken))
+      .attach("file", fileBytes, { filename: "gate-pass.png", contentType: "image/png" })
+      .expect(201);
+    const download = await request(app.getHttpServer())
+      .get(`/equipment/usage-logs/entries/${firstEntry.id}/attachment`)
+      .set(auth(ctx.accessToken))
+      .expect(200);
+    expect(download.body.equals(fileBytes)).toBe(true);
+
+    const afterAttach = (
+      await request(app.getHttpServer()).get(`/equipment/usage-logs/${log.id}`).set(auth(ctx.accessToken)).expect(200)
+    ).body;
+    const attachedEntry = afterAttach.entries.find((e: any) => e.id === firstEntry.id);
+    expect(attachedEntry.attachment.filename).toBe("gate-pass.png");
+  });
+
   it("depreciation run posts 4,000 to the contract CC and enforces run ordering", async () => {
     const run = (
       await request(app.getHttpServer())

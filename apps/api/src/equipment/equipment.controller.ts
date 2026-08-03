@@ -1,5 +1,22 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
-import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Res,
+  StreamableFile,
+  UploadedFile,
+  UseInterceptors,
+} from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { ApiBearerAuth, ApiConsumes, ApiTags } from "@nestjs/swagger";
+import { memoryStorage } from "multer";
+import { Response } from "express";
 import { EquipmentStatus, ManpowerContractStatus } from "@prisma/client";
 import { PERMISSIONS } from "@erp/shared-constants";
 import { Permissions } from "../common/decorators/permissions.decorator";
@@ -168,6 +185,34 @@ export class EquipmentController {
   @Permissions(PERMISSIONS.EQUIPMENT_MANAGE)
   async upsertEntry(@CurrentCompanyId() companyId: string, @Param("id") id: string, @Body() dto: UpsertUsageEntryDto) {
     return this.usageLogsService.upsertEntry(companyId, id, dto);
+  }
+
+  @Post("usage-logs/entries/:entryId/attachment")
+  @Permissions(PERMISSIONS.EQUIPMENT_MANAGE)
+  @ApiConsumes("multipart/form-data")
+  @UseInterceptors(FileInterceptor("file", { storage: memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }))
+  async uploadUsageLogEntryAttachment(
+    @CurrentCompanyId() companyId: string,
+    @Param("entryId") entryId: string,
+    @CurrentUser() user: JwtPayload,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException("No file uploaded");
+    }
+    return this.usageLogsService.uploadEntryAttachment(companyId, entryId, user.sub, file);
+  }
+
+  @Get("usage-logs/entries/:entryId/attachment")
+  @Permissions(PERMISSIONS.EQUIPMENT_VIEW)
+  async getUsageLogEntryAttachment(
+    @CurrentCompanyId() companyId: string,
+    @Param("entryId") entryId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const attachment = await this.usageLogsService.getEntryAttachment(companyId, entryId);
+    res.set({ "Content-Type": attachment.mimeType, "Content-Disposition": `inline; filename="${attachment.filename}"` });
+    return new StreamableFile(attachment.data);
   }
 
   @Post("usage-logs/:id/approve")

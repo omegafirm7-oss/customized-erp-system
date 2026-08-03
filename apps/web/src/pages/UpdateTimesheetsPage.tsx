@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { Fragment, useCallback, useEffect, useState, type CSSProperties } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { AttachButton } from "../components/AttachButton";
+import { AttachmentViewer } from "../components/AttachmentViewer";
+import { formatPeriodLabel } from "../utils/period";
 
 interface FiscalPeriod {
   id: string;
@@ -10,15 +13,19 @@ interface FiscalPeriod {
 }
 
 interface TimesheetEntry {
+  id: string;
   date: string;
   dayType: string;
   hoursWorked: string;
+  overtimeHours: string;
+  attachmentFilename: string | null;
 }
 
 interface TimesheetEmployee {
   employeeId: string;
   code: string;
   nameEn: string;
+  designation: string | null;
   basicSalary: string;
   entries: TimesheetEntry[];
 }
@@ -32,6 +39,14 @@ interface PeriodSummary {
   totalPending: string;
   grandTotal: string;
 }
+
+type Tab = "days" | "overtime" | "attachments";
+
+const TABS: Array<{ id: Tab; label: string }> = [
+  { id: "days", label: "Working days" },
+  { id: "overtime", label: "Overtime" },
+  { id: "attachments", label: "Attachments" },
+];
 
 const DAY_TYPES = [
   { value: "WORKED", label: "W" },
@@ -73,8 +88,14 @@ const STICKY_DATE_COL_STYLE: CSSProperties = {
 // against the same real scrollport. The second header row stacks right
 // below the first, using its measured height as the offset. zIndex 2 wins
 // over the sticky Date column (1) at their shared top-left corner cells.
-const GRID_SCROLL_STYLE: CSSProperties = { overflow: "auto", maxHeight: "calc(100vh - 320px)" };
-const HEADER_ROW_HEIGHT = 33; // px — matches th padding (8px 10px) + 11px uppercase label
+const GRID_SCROLL_STYLE: CSSProperties = { overflow: "auto", maxHeight: "calc(100vh - 360px)" };
+// The Attachments tab deliberately drops the height bound. AttachButton's
+// menu is absolutely positioned, and a bounded `overflow: auto` box clips it
+// — an unbounded box grows to fit its content instead, so the menu stays
+// visible. The trade is that the header no longer sticks on that tab.
+const ATTACHMENTS_SCROLL_STYLE: CSSProperties = { overflowX: "auto" };
+// px — two lines (code + name) at 8px/10px padding
+const HEADER_ROW_HEIGHT = 48;
 const STICKY_HEADER_ROW1_STYLE: CSSProperties = { position: "sticky", top: 0, background: "#fff", zIndex: 2 };
 const STICKY_HEADER_ROW2_STYLE: CSSProperties = {
   position: "sticky",
@@ -85,17 +106,33 @@ const STICKY_HEADER_ROW2_STYLE: CSSProperties = {
 const STICKY_HEADER_CORNER1_STYLE: CSSProperties = { ...STICKY_DATE_COL_STYLE, ...STICKY_HEADER_ROW1_STYLE };
 const STICKY_HEADER_CORNER2_STYLE: CSSProperties = { ...STICKY_DATE_COL_STYLE, ...STICKY_HEADER_ROW2_STYLE };
 
+const EMPLOYEE_NAME_STYLE: CSSProperties = {
+  display: "block",
+  fontWeight: 400,
+  fontSize: 11,
+  color: "#667085",
+  textTransform: "none",
+  letterSpacing: 0,
+  maxWidth: 140,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
 export function UpdateTimesheetsPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [periods, setPeriods] = useState<FiscalPeriod[]>([]);
   const [periodId, setPeriodId] = useState("");
+  const [tab, setTab] = useState<Tab>("days");
   const [timesheet, setTimesheet] = useState<TimesheetResponse | null>(null);
   const [summary, setSummary] = useState<PeriodSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirtyKeys, setDirtyKeys] = useState<Set<string>>(new Set());
+  const [uploadingFor, setUploadingFor] = useState<string | null>(null);
+  const [viewer, setViewer] = useState<{ entryId: string; filename: string } | null>(null);
 
   useEffect(() => {
     apiClient.get<FiscalPeriod[]>("/companies/current/fiscal-periods").then((res) => {
@@ -162,7 +199,11 @@ export function UpdateTimesheetsPage() {
   }
 
   async function resetHours() {
-    if (!window.confirm("Reset every hour in this period back to 0? Day types (W/R/A/U/L) are kept — only the hours are cleared.")) {
+    if (
+      !window.confirm(
+        "Reset every hour in this period back to 0? Day types (W/R/A/U/L) are kept — only worked hours and overtime hours are cleared.",
+      )
+    ) {
       return;
     }
     setBusy(true);
@@ -196,9 +237,15 @@ export function UpdateTimesheetsPage() {
   // Saves one cell to the server; clears its dirty flag on success so the
   // "Save changes" button and Back-to-Overview flush only retry what's
   // actually still unsaved.
-  async function saveEntry(employeeId: string, date: string, dayType: string, hoursWorked: string): Promise<boolean> {
+  async function saveEntry(
+    employeeId: string,
+    date: string,
+    dayType: string,
+    hoursWorked: string,
+    overtimeHours: string,
+  ): Promise<boolean> {
     try {
-      await apiClient.post("/hr/employee-timesheet/entry", { employeeId, date, dayType, hoursWorked });
+      await apiClient.post("/hr/employee-timesheet/entry", { employeeId, date, dayType, hoursWorked, overtimeHours });
       setDirtyKeys((prev) => {
         const next = new Set(prev);
         next.delete(entryKey(employeeId, date));
@@ -213,18 +260,27 @@ export function UpdateTimesheetsPage() {
 
   // Optimistic: the grid updates immediately from local state; the save
   // happens right after in the background — no full-page reload/flash.
-  async function updateEntry(employeeId: string, date: string, patch: { dayType?: string; hoursWorked?: string }) {
+  async function updateEntry(
+    employeeId: string,
+    date: string,
+    patch: { dayType?: string; hoursWorked?: string; overtimeHours?: string },
+  ) {
     const employee = timesheet?.employees.find((e) => e.employeeId === employeeId);
     const entry = employee?.entries.find((e) => e.date.slice(0, 10) === date);
     const dayType = patch.dayType ?? entry?.dayType ?? "WORKED";
-    // Switching to WORKED assumes the standard 10-hour day (still fully
-    // editable afterwards); switching to anything else always zeroes
-    // hours — neither is ever carried over from the previous dayType,
-    // unless this same call explicitly set new hours (the Hrs input).
-    const hoursWorked = patch.hoursWorked ?? (dayType === "WORKED" ? "10" : "0");
-    patchLocal(employeeId, date, { dayType, hoursWorked });
+    // A day-type click resets hours (W = standard 10-hour day, everything
+    // else 0). An edit on any OTHER tab must leave hours alone — this used
+    // to recompute them unconditionally, which would have silently reset a
+    // day to 10h just for typing an overtime figure.
+    const hoursWorked =
+      patch.hoursWorked ?? (patch.dayType !== undefined ? (dayType === "WORKED" ? "10" : "0") : (entry?.hoursWorked ?? "0"));
+    // Overtime survives a day-type click on a worked day, but a day that is
+    // no longer worked can't carry overtime.
+    const overtimeHours =
+      patch.overtimeHours ?? (patch.dayType !== undefined && dayType !== "WORKED" ? "0" : (entry?.overtimeHours ?? "0"));
+    patchLocal(employeeId, date, { dayType, hoursWorked, overtimeHours });
     setError(null);
-    const ok = await saveEntry(employeeId, date, dayType, hoursWorked);
+    const ok = await saveEntry(employeeId, date, dayType, hoursWorked, overtimeHours);
     if (ok) {
       const summaryRes = await apiClient.get<PeriodSummary>(`/hr/reports/employees-dashboard?fiscalPeriodId=${periodId}`);
       setSummary(summaryRes.data);
@@ -243,7 +299,7 @@ export function UpdateTimesheetsPage() {
       const employee = timesheet.employees.find((e) => e.employeeId === employeeId);
       const entry = employee?.entries.find((en) => en.date.slice(0, 10) === date);
       if (entry) {
-        await saveEntry(employeeId, date, entry.dayType, entry.hoursWorked);
+        await saveEntry(employeeId, date, entry.dayType, entry.hoursWorked, entry.overtimeHours);
       }
     }
     const summaryRes = await apiClient.get<PeriodSummary>(`/hr/reports/employees-dashboard?fiscalPeriodId=${periodId}`);
@@ -259,8 +315,25 @@ export function UpdateTimesheetsPage() {
     navigate("/hr/employees/overview");
   }
 
-  // Optional deep-link filter to just one employee's two columns — makes
-  // the "Timesheets" button on Employee Detail actually useful for a large
+  async function uploadAttachment(entryId: string, file: File) {
+    setError(null);
+    setUploadingFor(entryId);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      await apiClient.post(`/hr/employee-timesheet/entries/${entryId}/attachment`, form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      await loadRaw(periodId);
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Upload failed");
+    } finally {
+      setUploadingFor(null);
+    }
+  }
+
+  // Optional deep-link filter to just one employee's columns — makes the
+  // "Timesheets" button on Employee Detail actually useful for a large
   // roster instead of always landing on the full multi-employee grid.
   const filterEmployeeId = searchParams.get("employee");
   const visibleEmployees = timesheet
@@ -273,9 +346,24 @@ export function UpdateTimesheetsPage() {
     ? [...new Set(visibleEmployees.flatMap((e) => e.entries.map((en) => en.date.slice(0, 10))))].sort()
     : [];
 
-  const hoursPosted = timesheet
-    ? visibleEmployees.reduce((sum, e) => sum + e.entries.reduce((s, en) => s + Number(en.hoursWorked), 0), 0)
-    : 0;
+  const hoursPosted = visibleEmployees.reduce(
+    (sum, e) => sum + e.entries.reduce((s, en) => s + Number(en.hoursWorked), 0),
+    0,
+  );
+  const overtimePosted = visibleEmployees.reduce(
+    (sum, e) => sum + e.entries.reduce((s, en) => s + Number(en.overtimeHours), 0),
+    0,
+  );
+  const attachmentCount = visibleEmployees.reduce(
+    (sum, e) => sum + e.entries.filter((en) => en.attachmentFilename).length,
+    0,
+  );
+
+  function entryFor(employee: TimesheetEmployee, date: string): TimesheetEntry | undefined {
+    return employee.entries.find((en) => en.date.slice(0, 10) === date);
+  }
+
+  const columnsPerEmployee = tab === "days" ? 2 : 1;
 
   return (
     <div>
@@ -288,7 +376,7 @@ export function UpdateTimesheetsPage() {
           <select value={periodId} onChange={(e) => setPeriodId(e.target.value)}>
             {periods.map((p) => (
               <option key={p.id} value={p.id}>
-                Period {p.periodNumber} ({new Date(p.startDate).toLocaleDateString()} – {new Date(p.endDate).toLocaleDateString()})
+                {formatPeriodLabel(p)}
               </option>
             ))}
           </select>
@@ -309,6 +397,10 @@ export function UpdateTimesheetsPage() {
             <span className="kpi-value">{hoursPosted}</span>
           </div>
           <div className="kpi-tile" style={{ cursor: "default" }}>
+            <span className="kpi-label">Overtime hours (period)</span>
+            <span className="kpi-value">{overtimePosted}</span>
+          </div>
+          <div className="kpi-tile" style={{ cursor: "default" }}>
             <span className="kpi-label">Employees this period</span>
             <span className="kpi-value">{visibleEmployees.length}</span>
           </div>
@@ -324,6 +416,20 @@ export function UpdateTimesheetsPage() {
       )}
 
       <div className="card">
+        <div className="tab-row">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={tab === t.id ? "" : "secondary"}
+              onClick={() => setTab(t.id)}
+            >
+              {t.label}
+              {t.id === "attachments" && attachmentCount > 0 ? ` (${attachmentCount})` : ""}
+            </button>
+          ))}
+        </div>
+
         <div className="form-row" style={{ justifyContent: "flex-start" }}>
           <button className="secondary" onClick={manualRefill} disabled={busy}>
             {busy ? "Working…" : "Refill missing days"}
@@ -335,6 +441,20 @@ export function UpdateTimesheetsPage() {
             {dirtyKeys.size > 0 ? `Save changes (${dirtyKeys.size})` : "All changes saved"}
           </button>
         </div>
+
+        {tab === "overtime" && (
+          <p style={{ color: "#667085", fontSize: 13 }}>
+            Overtime hours are recorded here for reporting only — they do not change payroll or the accrued labor cost.
+            Overtime is still paid through the payroll run, where you enter it as you do today.
+          </p>
+        )}
+        {tab === "attachments" && (
+          <p style={{ color: "#667085", fontSize: 13 }}>
+            Attach evidence to a single day — a signed site sheet, a gate pass, a photo. One file per employee per day;
+            attach again to replace it.
+          </p>
+        )}
+
         {filterEmployeeId && (
           <p style={{ fontSize: 13 }}>
             Showing one employee only —{" "}
@@ -347,6 +467,7 @@ export function UpdateTimesheetsPage() {
             </button>
           </p>
         )}
+
         {loading ? (
           <p>Loading…</p>
         ) : !timesheet || visibleEmployees.length === 0 ? (
@@ -354,25 +475,34 @@ export function UpdateTimesheetsPage() {
         ) : dates.length === 0 ? (
           <p>No days in this period yet.</p>
         ) : (
-          <div style={GRID_SCROLL_STYLE}>
+          <div style={tab === "attachments" ? ATTACHMENTS_SCROLL_STYLE : GRID_SCROLL_STYLE}>
             <table>
               <thead>
                 <tr>
                   <th style={STICKY_HEADER_CORNER1_STYLE}>Date</th>
                   {visibleEmployees.map((e) => (
-                    <th key={e.employeeId} colSpan={2} style={STICKY_HEADER_ROW1_STYLE}>
+                    <th key={e.employeeId} colSpan={columnsPerEmployee} style={STICKY_HEADER_ROW1_STYLE}>
                       {e.code}
+                      <span style={EMPLOYEE_NAME_STYLE} title={e.designation ? `${e.nameEn} — ${e.designation}` : e.nameEn}>
+                        {e.nameEn}
+                      </span>
                     </th>
                   ))}
                 </tr>
                 <tr>
                   <th style={STICKY_HEADER_CORNER2_STYLE}></th>
-                  {visibleEmployees.map((e) => (
-                    <>
-                      <th key={`${e.employeeId}-d`} style={STICKY_HEADER_ROW2_STYLE}>Day</th>
-                      <th key={`${e.employeeId}-h`} style={STICKY_HEADER_ROW2_STYLE}>Hrs</th>
-                    </>
-                  ))}
+                  {visibleEmployees.map((e) =>
+                    tab === "days" ? (
+                      <Fragment key={e.employeeId}>
+                        <th style={STICKY_HEADER_ROW2_STYLE}>Day</th>
+                        <th style={STICKY_HEADER_ROW2_STYLE}>Hrs</th>
+                      </Fragment>
+                    ) : (
+                      <th key={e.employeeId} style={STICKY_HEADER_ROW2_STYLE}>
+                        {tab === "overtime" ? "OT hrs" : "File"}
+                      </th>
+                    ),
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -382,54 +512,104 @@ export function UpdateTimesheetsPage() {
                       {new Date(date).toLocaleDateString(undefined, { day: "numeric", month: "short", weekday: "short" })}
                     </td>
                     {visibleEmployees.map((e) => {
-                      const entry = e.entries.find((en) => en.date.slice(0, 10) === date);
+                      const entry = entryFor(e, date);
                       if (!entry) {
-                        return (
-                          <>
-                            <td key={`${e.employeeId}-d`}>—</td>
-                            <td key={`${e.employeeId}-h`}>—</td>
-                          </>
+                        return tab === "days" ? (
+                          <Fragment key={e.employeeId}>
+                            <td>—</td>
+                            <td>—</td>
+                          </Fragment>
+                        ) : (
+                          <td key={e.employeeId}>—</td>
                         );
                       }
                       const dirty = dirtyKeys.has(entryKey(e.employeeId, date));
-                      return (
-                        <>
-                          <td key={`${e.employeeId}-d`} style={dirty ? { background: "#fff8e1" } : undefined}>
-                            <div style={{ display: "flex", gap: 2 }}>
-                              {DAY_TYPES.map((dt) => (
-                                <button
-                                  key={dt.value}
-                                  type="button"
-                                  className={entry.dayType === dt.value ? "" : "secondary"}
-                                  style={{ padding: "2px 5px", minWidth: 22, fontSize: 12 }}
-                                  title={dt.value}
-                                  // Always fires, even re-clicking the already-active day
-                                  // type — unlike a native <select>, which silently drops
-                                  // onChange when the reselected option is unchanged. That
-                                  // was why clicking W on an already-W day never set 10h.
-                                  onClick={() => updateEntry(e.employeeId, date, { dayType: dt.value })}
-                                >
-                                  {dt.label}
-                                </button>
-                              ))}
-                            </div>
-                          </td>
-                          <td key={`${e.employeeId}-h`} style={dirty ? { background: "#fff8e1" } : undefined}>
+                      const dirtyStyle = dirty ? { background: "#fff8e1" } : undefined;
+
+                      if (tab === "days") {
+                        return (
+                          <Fragment key={e.employeeId}>
+                            <td style={dirtyStyle}>
+                              <div style={{ display: "flex", gap: 2 }}>
+                                {DAY_TYPES.map((dt) => (
+                                  <button
+                                    key={dt.value}
+                                    type="button"
+                                    className={entry.dayType === dt.value ? "" : "secondary"}
+                                    style={{ padding: "2px 5px", minWidth: 22, fontSize: 12 }}
+                                    title={dt.value}
+                                    // Always fires, even re-clicking the already-active day
+                                    // type — unlike a native <select>, which silently drops
+                                    // onChange when the reselected option is unchanged. That
+                                    // was why clicking W on an already-W day never set 10h.
+                                    onClick={() => updateEntry(e.employeeId, date, { dayType: dt.value })}
+                                  >
+                                    {dt.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </td>
+                            <td style={dirtyStyle}>
+                              <input
+                                type="number"
+                                min="0"
+                                max="24"
+                                step="0.5"
+                                style={{ width: 55 }}
+                                value={Number(entry.hoursWorked)}
+                                onChange={(ev) => patchLocal(e.employeeId, date, { hoursWorked: ev.target.value })}
+                                onBlur={(ev) => {
+                                  const v = ev.target.value || "0";
+                                  if (v !== entry.hoursWorked) updateEntry(e.employeeId, date, { hoursWorked: v });
+                                }}
+                              />
+                            </td>
+                          </Fragment>
+                        );
+                      }
+
+                      if (tab === "overtime") {
+                        const worked = entry.dayType === "WORKED";
+                        return (
+                          <td key={e.employeeId} style={dirtyStyle}>
                             <input
                               type="number"
                               min="0"
                               max="24"
                               step="0.5"
                               style={{ width: 55 }}
-                              value={Number(entry.hoursWorked)}
-                              onChange={(ev) => patchLocal(e.employeeId, date, { hoursWorked: ev.target.value })}
+                              // A non-worked day can't carry overtime — the server
+                              // zeroes it there, so don't offer an input that lies.
+                              disabled={!worked}
+                              title={worked ? undefined : `Day is ${entry.dayType.toLowerCase().replace("_", " ")}`}
+                              value={Number(entry.overtimeHours)}
+                              onChange={(ev) => patchLocal(e.employeeId, date, { overtimeHours: ev.target.value })}
                               onBlur={(ev) => {
                                 const v = ev.target.value || "0";
-                                if (v !== entry.hoursWorked) updateEntry(e.employeeId, date, { hoursWorked: v });
+                                if (v !== entry.overtimeHours) updateEntry(e.employeeId, date, { overtimeHours: v });
                               }}
                             />
                           </td>
-                        </>
+                        );
+                      }
+
+                      return (
+                        <td key={e.employeeId}>
+                          {entry.attachmentFilename ? (
+                            <button
+                              className="secondary"
+                              style={{ padding: "2px 8px", fontSize: 12 }}
+                              onClick={() => setViewer({ entryId: entry.id, filename: entry.attachmentFilename! })}
+                            >
+                              View
+                            </button>
+                          ) : (
+                            <AttachButton
+                              uploading={uploadingFor === entry.id}
+                              onFile={(file) => uploadAttachment(entry.id, file)}
+                            />
+                          )}
+                        </td>
                       );
                     })}
                   </tr>
@@ -439,6 +619,18 @@ export function UpdateTimesheetsPage() {
           </div>
         )}
       </div>
+
+      {viewer && (
+        <AttachmentViewer
+          filename={viewer.filename}
+          fetchBlob={() =>
+            apiClient
+              .get(`/hr/employee-timesheet/entries/${viewer.entryId}/attachment`, { responseType: "blob" })
+              .then((res) => res.data as Blob)
+          }
+          onClose={() => setViewer(null)}
+        />
+      )}
     </div>
   );
 }

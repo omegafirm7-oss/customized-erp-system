@@ -330,6 +330,14 @@ export class UpsertTimesheetEntryDto {
   @IsOptional()
   @IsNumberString()
   hoursWorked?: string;
+
+  @ApiProperty({
+    required: false,
+    description: "Overtime hours for the day. Recorded and reported only — never feeds payroll or accrued labor cost.",
+  })
+  @IsOptional()
+  @IsNumberString()
+  overtimeHours?: string;
 }
 
 export class CreateEmployeePaymentDto {

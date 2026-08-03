@@ -465,6 +465,7 @@ model Company {
   employeePaymentAttachments EmployeePaymentAttachment[]
   purchaseInvoiceLineAttachments PurchaseInvoiceLineAttachment[]
   employeeTimesheetEntryAttachments EmployeeTimesheetEntryAttachment[]
+  usageLogEntryAttachments  UsageLogEntryAttachment[]
   joinRequests              CompanyJoinRequest[]
 
   @@map("companies")
@@ -1995,6 +1996,10 @@ model EmployeeTimesheetEntry {
   date            DateTime
   dayType         TimesheetDayType @default(WORKED)
   hoursWorked     Decimal          @default(0) @db.Decimal(5, 2)
+  // Recorded and reported only — deliberately NOT fed into payroll or the
+  // accrued labor cost. Payroll's own overtimeHours stays a manual entry on
+  // the run, so adding overtime here can never move a posted number.
+  overtimeHours   Decimal          @default(0) @db.Decimal(5, 2)
   enteredByUserId String
   updatedByUserId String?
   createdAt       DateTime         @default(now())
@@ -2347,10 +2352,33 @@ model UsageLogEntry {
   dayStatus    UsageDayType        @default(ON_RENT)
   // Metered hours that day — drives HOURLY-basis billing
   hoursUsed    Decimal             @default(0) @db.Decimal(7, 2)
+  // Recorded and reported only — like EmployeeTimesheetEntry.overtimeHours,
+  // never feeds billing or the assignment's own hoursUsed-driven revenue.
+  overtimeHours Decimal            @default(0) @db.Decimal(7, 2)
+
+  attachment UsageLogEntryAttachment?
 
   @@unique([usageLogId, assignmentId, date])
   @@index([equipmentId, date])
   @@map("usage_log_entries")
+}
+
+// A single evidence file (site photo, gate pass, etc.) attached to one day's
+// usage-log entry — same storage pattern as EmployeeTimesheetEntryAttachment.
+model UsageLogEntryAttachment {
+  id               String         @id @default(uuid())
+  companyId        String
+  company          Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  usageLogEntryId  String         @unique
+  usageLogEntry    UsageLogEntry  @relation(fields: [usageLogEntryId], references: [id], onDelete: Cascade)
+  filename         String
+  mimeType         String
+  size             Int
+  data             Bytes
+  uploadedByUserId String
+  createdAt        DateTime       @default(now())
+
+  @@map("usage_log_entry_attachments")
 }
 
 // One POSTED depreciation run per fiscal period (partial unique in SQL

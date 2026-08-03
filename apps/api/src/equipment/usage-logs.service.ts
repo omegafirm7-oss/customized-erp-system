@@ -39,7 +39,10 @@ export class UsageLogsService {
         },
         fiscalPeriod: { select: { periodNumber: true, startDate: true, endDate: true } },
         salesInvoice: { select: { id: true, invoiceNumber: true, status: true } },
-        entries: { orderBy: [{ date: "asc" }] },
+        entries: {
+          orderBy: [{ date: "asc" }],
+          include: { attachment: { select: { filename: true } } },
+        },
       },
     });
     if (!usageLog) {
@@ -112,6 +115,7 @@ export class UsageLogsService {
       }
 
       const hoursUsed = dto.hoursUsed !== undefined ? new Prisma.Decimal(dto.hoursUsed) : undefined;
+      const overtimeHours = dto.overtimeHours !== undefined ? new Prisma.Decimal(dto.overtimeHours) : undefined;
       await tx.usageLogEntry.upsert({
         where: {
           usageLogId_assignmentId_date: { usageLogId, assignmentId: dto.assignmentId, date },
@@ -124,8 +128,9 @@ export class UsageLogsService {
           date,
           dayStatus: dto.dayStatus,
           hoursUsed: hoursUsed ?? new Prisma.Decimal(0),
+          overtimeHours: overtimeHours ?? new Prisma.Decimal(0),
         },
-        update: { dayStatus: dto.dayStatus, hoursUsed },
+        update: { dayStatus: dto.dayStatus, hoursUsed, overtimeHours },
       });
     });
     return { updated: true };
@@ -197,6 +202,56 @@ export class UsageLogsService {
       await tx.usageLog.delete({ where: { id: usageLog.id } });
     });
     return { deleted: true };
+  }
+
+  private static readonly ALLOWED_ATTACHMENT_MIME_TYPES = new Set([
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+    "application/pdf",
+  ]);
+
+  /** Attaches (or replaces) the evidence file for one day's usage-log entry. */
+  async uploadEntryAttachment(companyId: string, entryId: string, userId: string, file: Express.Multer.File) {
+    if (!UsageLogsService.ALLOWED_ATTACHMENT_MIME_TYPES.has(file.mimetype)) {
+      throw new BadRequestException("Attachment must be an image (JPEG/PNG/WEBP/GIF) or a PDF");
+    }
+    const entry = await this.prisma.usageLogEntry.findFirst({ where: { id: entryId, companyId } });
+    if (!entry) {
+      throw new NotFoundException("Usage log entry not found");
+    }
+
+    await this.prisma.usageLogEntryAttachment.upsert({
+      where: { usageLogEntryId: entryId },
+      create: {
+        companyId,
+        usageLogEntryId: entryId,
+        filename: file.originalname,
+        mimeType: file.mimetype,
+        size: file.size,
+        data: file.buffer,
+        uploadedByUserId: userId,
+      },
+      update: {
+        filename: file.originalname,
+        mimeType: file.mimetype,
+        size: file.size,
+        data: file.buffer,
+        uploadedByUserId: userId,
+      },
+    });
+    return { uploaded: true };
+  }
+
+  async getEntryAttachment(companyId: string, entryId: string) {
+    const attachment = await this.prisma.usageLogEntryAttachment.findFirst({
+      where: { usageLogEntryId: entryId, companyId },
+    });
+    if (!attachment) {
+      throw new NotFoundException("No attachment on this usage log entry");
+    }
+    return attachment;
   }
 
   // ── Internals ────────────────────────────────────────────────────────
