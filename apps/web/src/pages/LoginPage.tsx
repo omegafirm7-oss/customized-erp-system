@@ -5,7 +5,7 @@ import { AuthVisual } from "../components/AuthVisual";
 import { GoogleSignInButton } from "../components/GoogleSignInButton";
 import { AuthFeatureCircles } from "../components/AuthFeatureCircles";
 import { AuthTrustBadges } from "../components/AuthTrustBadges";
-import { AuthBenefits } from "../components/AuthBenefits";
+import { AuthPitch } from "../components/AuthPitch";
 import { AuthContact } from "../components/AuthContact";
 
 export function LoginPage() {
@@ -39,10 +39,8 @@ export function LoginPage() {
         <div className="auth-glass-header">
           <h1>Universa Centrix</h1>
           <p className="auth-mission">Grow faster. See everything. Stay compliant.</p>
-          <p className="auth-ifrs">IFRS-Compliant ERP System</p>
-          <p className="auth-sub">The complete business platform, built for Saudi Arabia.</p>
         </div>
-        <AuthBenefits />
+        <AuthPitch />
         <AuthFeatureCircles />
         <AuthTrustBadges />
       </div>

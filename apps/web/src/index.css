@@ -834,12 +834,16 @@ button.danger:hover:not(:disabled) {
     linear-gradient(0deg, rgba(3, 6, 12, 0.35) 0%, transparent 35%);
 }
 
+/* Docked to the top rather than centred: the left column is much taller
+   than the panel, so centring left it floating mid-screen. */
 .auth-right {
   position: relative;
   z-index: 2;
   width: 380px;
   max-width: 100%;
   flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 8px;
 }
 
 .auth-glass-panel {
@@ -887,45 +891,62 @@ button.danger:hover:not(:disabled) {
   text-shadow: 0 2px 14px rgba(0, 0, 0, 0.72);
 }
 
+/* The pitch — IFRS claim, strapline and benefits — sits on its own glass
+   panel, matching the sign-in panel opposite. The panel is what makes this
+   text legible over the photo, so unlike the wordmark above it, none of
+   these lines carry a text-shadow. */
+.auth-pitch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 11px;
+  padding: 16px 28px 18px;
+  border-radius: 18px;
+  background: rgba(10, 15, 25, 0.52);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.4);
+  text-align: center;
+}
+
 /* The IFRS claim is the single strongest differentiator for a finance
    buyer, so it gets its own emphasised line with flanking rules rather
-   than being buried in the sub-heading. */
-.auth-glass-header .auth-ifrs {
+   than being buried in the strapline. */
+.auth-ifrs {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 12px;
-  margin: 12px 0 0;
-  font-size: 16px;
+  margin: 0;
+  font-size: 17px;
   font-weight: 800;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: #a9d4ff;
-  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.8);
 }
 
-.auth-glass-header .auth-ifrs::before,
-.auth-glass-header .auth-ifrs::after {
+.auth-ifrs::before,
+.auth-ifrs::after {
   content: "";
   width: 40px;
   height: 2px;
   background: rgba(169, 212, 255, 0.55);
 }
 
-.auth-glass-header .auth-sub {
+.auth-sub {
   color: #d4dcec;
   font-size: 14px;
-  margin: 8px 0 0;
+  margin: -3px 0 0;
   line-height: 1.5;
-  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.68);
 }
 
 .auth-benefits {
   display: grid;
   grid-template-columns: repeat(2, auto);
   justify-content: center;
-  gap: 6px 30px;
-  margin: 0;
+  gap: 7px 30px;
+  margin: 2px 0 0;
   padding: 0;
   list-style: none;
 }
@@ -936,7 +957,7 @@ button.danger:hover:not(:disabled) {
   gap: 8px;
   font-size: 13.5px;
   color: #e8eef8;
-  text-shadow: 0 1px 9px rgba(0, 0, 0, 0.72);
+  text-align: left;
 }
 
 .auth-benefits svg {
@@ -1317,8 +1338,8 @@ button.danger:hover:not(:disabled) {
   .auth-glass-header .auth-mission {
     font-size: 18px;
   }
-  .auth-glass-header .auth-ifrs {
-    font-size: 14px;
+  .auth-ifrs {
+    font-size: 14.5px;
   }
   .auth-feature-circle svg {
     width: 23px;
@@ -1343,12 +1364,18 @@ button.danger:hover:not(:disabled) {
     align-items: center;
     text-align: center;
   }
+  /* stacked: undo the top-docking, or the panel skews to one side */
   .auth-right {
     width: 100%;
     max-width: 400px;
+    align-self: center;
+    margin-top: 0;
   }
   .auth-benefits {
     grid-template-columns: auto;
+  }
+  .auth-pitch {
+    padding: 14px 18px 16px;
   }
 }
 
@@ -1356,8 +1383,8 @@ button.danger:hover:not(:disabled) {
   .auth-glass-header h1 {
     font-size: 36px;
   }
-  .auth-glass-header .auth-ifrs::before,
-  .auth-glass-header .auth-ifrs::after {
+  .auth-ifrs::before,
+  .auth-ifrs::after {
     width: 20px;
   }
 }
