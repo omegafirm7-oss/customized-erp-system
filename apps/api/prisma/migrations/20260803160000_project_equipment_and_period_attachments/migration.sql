@@ -86,7 +86,7 @@ CREATE TABLE "project_equipment_period_attachments" (
     CONSTRAINT "project_equipment_period_attachments_pkey" PRIMARY KEY ("id")
 );
 
-CREATE UNIQUE INDEX "project_equipment_period_attachments_projectId_fiscalPeriodId_key" ON "project_equipment_period_attachments"("projectId", "fiscalPeriodId");
+CREATE UNIQUE INDEX "project_equipment_period_attachments_projectId_fiscalPeriod_key" ON "project_equipment_period_attachments"("projectId", "fiscalPeriodId");
 
 ALTER TABLE "project_equipment_period_attachments" ADD CONSTRAINT "project_equipment_period_attachments_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "project_equipment_period_attachments" ADD CONSTRAINT "project_equipment_period_attachments_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
