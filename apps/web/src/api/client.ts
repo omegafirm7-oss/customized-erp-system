@@ -7,9 +7,19 @@ export const apiClient = axios.create({
 
 let accessToken: string | null = null;
 let refreshPromise: Promise<string> | null = null;
+// Set around an intentional logout so a request that was already in flight
+// (or the read of the now-revoked refresh cookie it triggers) doesn't race
+// the interceptor's own hard-redirect below — AuthContext's logout() already
+// clears state and the router's own `if (!user) <Navigate to="/login">`
+// handles the redirect client-side, with no full-page reload/flash.
+let loggingOut = false;
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
+}
+
+export function setLoggingOut(value: boolean) {
+  loggingOut = value;
 }
 
 /**
@@ -58,7 +68,9 @@ apiClient.interceptors.response.use(
         return apiClient.request(original);
       } catch {
         setAccessToken(null);
-        window.location.href = "/login";
+        if (!loggingOut && window.location.pathname !== "/login") {
+          window.location.href = "/login";
+        }
       }
     }
     return Promise.reject(error);

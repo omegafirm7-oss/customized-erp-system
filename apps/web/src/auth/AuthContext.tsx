@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { apiClient, refreshAccessToken, setAccessToken } from "../api/client";
+import { apiClient, refreshAccessToken, setAccessToken, setLoggingOut } from "../api/client";
 import { decodeAccessToken, DecodedAccessToken } from "./jwt";
 
 interface AuthContextValue {
@@ -42,9 +42,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(async () => {
-    await apiClient.post("/auth/logout");
-    setAccessToken(null);
-    setUser(null);
+    setLoggingOut(true);
+    try {
+      await apiClient.post("/auth/logout");
+    } finally {
+      setAccessToken(null);
+      setUser(null);
+      setLoggingOut(false);
+    }
   }, []);
 
   const switchCompany = useCallback(
