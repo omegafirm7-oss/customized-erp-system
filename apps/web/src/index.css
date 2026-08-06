@@ -828,6 +828,12 @@ button.danger:hover:not(:disabled) {
 .auth-visual-photo {
   position: fixed;
   inset: 0;
+  /* Dark fallback so the page's own light-grey body background never
+     flashes through while the (large, ~700KB) photo is still downloading
+     or decoding — most visible right after a hard refresh, before the
+     image is warm in cache. Close to the photo's own dominant night-sky
+     tone so the eventual cross-fade to the real image is unnoticeable. */
+  background-color: #0b1220;
   background-size: cover;
   background-position: center;
   z-index: 0;
