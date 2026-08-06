@@ -40,14 +40,21 @@ export function ProjectsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [projectsRes, partnersRes] = await Promise.all([
-        apiClient.get<Project[]>("/projects"),
-        apiClient.get<Partner[]>("/partners"),
-      ]);
+      // Independent requests, not Promise.all: a viewer without partner-manage
+      // rights gets a 403 on /partners (only needed for the "New project"
+      // customer dropdown) — that must not blank the projects list itself,
+      // which a view-only role like an investor should still see in full.
+      const projectsRes = await apiClient.get<Project[]>("/projects");
       setProjects(projectsRes.data);
-      setPartners(partnersRes.data.filter((p) => ["CUSTOMER", "BOTH"].includes(p.partnerType)));
     } finally {
       setLoading(false);
+    }
+    try {
+      const partnersRes = await apiClient.get<Partner[]>("/partners");
+      setPartners(partnersRes.data.filter((p) => ["CUSTOMER", "BOTH"].includes(p.partnerType)));
+    } catch {
+      // No partner-manage rights — the "New project" customer dropdown just
+      // stays empty; project creation itself is still rejected server-side.
     }
   }, []);
 
