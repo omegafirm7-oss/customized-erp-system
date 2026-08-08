@@ -476,6 +476,10 @@ model Company {
   projectEquipmentAssignments ProjectEquipmentAssignment[]
   projectEquipmentPeriodAttachments ProjectEquipmentPeriodAttachment[]
   joinRequests              CompanyJoinRequest[]
+  leads                     Lead[]
+  opportunities             Opportunity[]
+  contacts                  Contact[]
+  crmActivities             CrmActivity[]
 
   @@map("companies")
 }
@@ -875,6 +879,9 @@ model BusinessPartner {
   projects                 Project[]
   manpowerContracts        ManpowerContract[]
   equipmentRentalContracts EquipmentRentalContract[]
+  contacts                 Contact[]
+  opportunities            Opportunity[]
+  crmActivities            CrmActivity[]
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -2643,4 +2650,147 @@ model DepreciationRunLine {
 
   @@unique([runId, equipmentId])
   @@map("depreciation_run_lines")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// CRM: Leads → Opportunities, Contacts, Activities. Net-new domain — no GL
+// posting anywhere in this module (nothing here is an accounting
+// transaction). Gated behind the "crm" module entitlement, same mechanism
+// as Purchase/Sales & Marketing (see ModuleEntitlementGuard).
+// ─────────────────────────────────────────────────────────────────────────
+
+enum LeadSource {
+  WEBSITE
+  REFERRAL
+  COLD_CALL
+  EVENT
+  OTHER
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  DISQUALIFIED
+  CONVERTED
+}
+
+model Lead {
+  id                    String     @id @default(uuid())
+  companyId             String
+  company               Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name                  String
+  companyName           String?
+  email                 String?
+  phone                 String?
+  source                LeadSource @default(OTHER)
+  status                LeadStatus @default(NEW)
+  ownerUserId           String?
+  notes                 String?
+  // Set once QUALIFIED and converted into an Opportunity — after that, the
+  // lead itself becomes read-only history (service-enforced).
+  convertedOpportunityId String?    @unique
+  convertedOpportunity   Opportunity? @relation("LeadConversion", fields: [convertedOpportunityId], references: [id])
+  createdByUserId       String
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+
+  opportunities Opportunity[] @relation("OpportunitySourceLead")
+  activities    CrmActivity[]
+
+  @@index([companyId, status])
+  @@map("leads")
+}
+
+enum OpportunityStage {
+  NEW
+  QUALIFICATION
+  PROPOSAL
+  NEGOTIATION
+  WON
+  LOST
+}
+
+model Opportunity {
+  id                String           @id @default(uuid())
+  companyId         String
+  company           Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name              String
+  businessPartnerId String?
+  businessPartner   BusinessPartner? @relation(fields: [businessPartnerId], references: [id])
+  // Optional — an opportunity can be raised directly, without a prior lead.
+  leadId            String?
+  leadSource        Lead?            @relation("OpportunitySourceLead", fields: [leadId], references: [id])
+  stage             OpportunityStage @default(NEW)
+  estimatedValue    Decimal          @default(0) @db.Decimal(18, 4)
+  probability       Int              @default(0)
+  expectedCloseDate DateTime?
+  ownerUserId       String?
+  wonAt             DateTime?
+  lostAt            DateTime?
+  lostReason        String?
+  createdByUserId   String
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  convertedFromLead Lead?         @relation("LeadConversion")
+  activities        CrmActivity[]
+
+  @@index([companyId, stage])
+  @@map("opportunities")
+}
+
+model Contact {
+  id                String           @id @default(uuid())
+  companyId         String
+  company           Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  businessPartnerId String?
+  businessPartner   BusinessPartner? @relation(fields: [businessPartnerId], references: [id])
+  firstName         String
+  lastName          String?
+  jobTitle          String?
+  email             String?
+  phone             String?
+  isPrimary         Boolean          @default(false)
+  notes             String?
+  createdByUserId   String
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@index([companyId, businessPartnerId])
+  @@map("contacts")
+}
+
+enum CrmActivityType {
+  CALL
+  MEETING
+  EMAIL
+  NOTE
+  TASK
+}
+
+model CrmActivity {
+  id                String          @id @default(uuid())
+  companyId         String
+  company           Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  type              CrmActivityType
+  subject           String
+  notes             String?
+  dueDate           DateTime?
+  completedAt       DateTime?
+  ownerUserId       String?
+  // Exactly one of the three is set (DB CHECK in crm-constraints migration).
+  leadId            String?
+  lead              Lead?           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  opportunityId     String?
+  opportunity       Opportunity?    @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  businessPartnerId String?
+  businessPartner   BusinessPartner? @relation(fields: [businessPartnerId], references: [id], onDelete: Cascade)
+  createdByUserId   String
+  createdAt         DateTime        @default(now())
+
+  @@index([companyId, leadId])
+  @@index([companyId, opportunityId])
+  @@index([companyId, businessPartnerId])
+  @@map("crm_activities")
 }

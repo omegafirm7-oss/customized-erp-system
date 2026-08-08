@@ -116,6 +116,15 @@ const SALES_SECTION: NavSection = {
   ],
 };
 
+// Same entitlement-gating pattern as PURCHASE_SECTION, keyed on "crm".
+const CRM_SECTION: NavSection = {
+  label: "CRM",
+  items: [
+    { to: "/crm/leads", label: "Leads" },
+    { to: "/crm/opportunities", label: "Opportunities" },
+  ],
+};
+
 function loadExpandedSections(): Set<string> {
   const stored = localStorage.getItem("sidebarExpandedSections");
   if (stored) {
@@ -149,6 +158,7 @@ export function Layout() {
   const gatedSections: NavSection[] = [
     ...(isEntitled("purchase") ? [PURCHASE_SECTION] : []),
     ...(isEntitled("sales") ? [SALES_SECTION] : []),
+    ...(isEntitled("crm") ? [CRM_SECTION] : []),
   ];
   const sectionsWithModules =
     gatedSections.length > 0

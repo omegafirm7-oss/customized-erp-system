@@ -25,6 +25,8 @@ import { PurchaseQuotationsPage } from "./pages/PurchaseQuotationsPage";
 import { PurchaseOrdersPage } from "./pages/PurchaseOrdersPage";
 import { SalesQuotationsPage } from "./pages/SalesQuotationsPage";
 import { SalesOrdersPage } from "./pages/SalesOrdersPage";
+import { LeadsPage } from "./pages/crm/LeadsPage";
+import { OpportunitiesPage } from "./pages/crm/OpportunitiesPage";
 import { PaymentsPage } from "./pages/PaymentsPage";
 import { NewPaymentPage } from "./pages/NewPaymentPage";
 import { ArAgingPage, ApAgingPage } from "./pages/AgingPage";
@@ -95,6 +97,8 @@ const companyRoutes: Array<{ path: string; element: JSX.Element }> = [
   { path: "/ap/orders", element: <PurchaseOrdersPage /> },
   { path: "/ar/quotations", element: <SalesQuotationsPage /> },
   { path: "/ar/orders", element: <SalesOrdersPage /> },
+  { path: "/crm/leads", element: <LeadsPage /> },
+  { path: "/crm/opportunities", element: <OpportunitiesPage /> },
   { path: "/payments", element: <PaymentsPage /> },
   { path: "/payments/new", element: <NewPaymentPage /> },
   { path: "/trial-balance", element: <TrialBalancePage /> },

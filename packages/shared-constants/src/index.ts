@@ -385,6 +385,12 @@ export const PERMISSIONS = {
   EQUIPMENT_VIEW: "equipment.view",
   EQUIPMENT_BILLING_GENERATE: "equipment.billing.generate",
   EQUIPMENT_DEPRECIATION_RUN: "equipment.depreciation.run",
+  CRM_LEAD_MANAGE: "crm.lead.manage",
+  CRM_LEAD_VIEW: "crm.lead.view",
+  CRM_OPPORTUNITY_MANAGE: "crm.opportunity.manage",
+  CRM_OPPORTUNITY_VIEW: "crm.opportunity.view",
+  CRM_CONTACT_MANAGE: "crm.contact.manage",
+  CRM_ACTIVITY_MANAGE: "crm.activity.manage",
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
