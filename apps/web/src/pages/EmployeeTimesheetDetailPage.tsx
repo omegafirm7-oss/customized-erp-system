@@ -3,6 +3,9 @@ import { useNavigate, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { AttachButton } from "../components/AttachButton";
 import { AttachmentViewer } from "../components/AttachmentViewer";
+import { useAuth } from "../auth/AuthContext";
+import { useCompanies } from "../hooks/useCompanies";
+import { downloadEmployeeAttendancePdf } from "../utils/attendancePdf";
 
 interface FiscalPeriod {
   id: string;
@@ -47,6 +50,8 @@ function money(v: string | number): string {
 export function EmployeeTimesheetDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { companies } = useCompanies();
   const [periods, setPeriods] = useState<FiscalPeriod[]>([]);
   const [periodId, setPeriodId] = useState("");
   const [scope, setScope] = useState<"overall" | "period">("overall");
@@ -55,6 +60,7 @@ export function EmployeeTimesheetDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [uploadingFor, setUploadingFor] = useState<string | null>(null);
   const [viewer, setViewer] = useState<{ entryId: string; filename: string } | null>(null);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   useEffect(() => {
     apiClient.get<FiscalPeriod[]>("/companies/current/fiscal-periods").then((res) => {
@@ -105,6 +111,35 @@ export function EmployeeTimesheetDetailPage() {
     }
   }
 
+  async function downloadPdfForPeriod() {
+    if (!id || !detail || scope !== "period") return;
+    const period = periods.find((p) => p.id === periodId);
+    if (!period) return;
+    setDownloadingPdf(true);
+    setError(null);
+    try {
+      const employeeRes = await apiClient.get<{ designation?: string; iqamaOrNationalId?: string }>(`/hr/employees/${id}`);
+      const companyName = companies.find((c) => c.companyId === user?.activeCompanyId)?.companyName ?? "";
+      const periodLabel = new Date(period.startDate).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+      downloadEmployeeAttendancePdf({
+        companyName,
+        employeeName: detail.nameEn,
+        employeeCode: detail.code,
+        designation: employeeRes.data.designation,
+        iqamaOrNationalId: employeeRes.data.iqamaOrNationalId,
+        periodLabel,
+        startDate: period.startDate,
+        endDate: period.endDate,
+        entries: detail.entries,
+        totalHours: detail.totalHours,
+      });
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to generate PDF");
+    } finally {
+      setDownloadingPdf(false);
+    }
+  }
+
   function viewAttachment(entryId: string, filename: string) {
     setViewer({ entryId, filename });
   }
@@ -121,6 +156,13 @@ export function EmployeeTimesheetDetailPage() {
             {detail ? `${detail.code} — ${detail.nameEn} — Timesheets` : "Timesheets"}
           </h2>
           <span>
+            {scope === "period" && detail && (
+              <>
+                <button className="secondary" disabled={downloadingPdf} onClick={downloadPdfForPeriod}>
+                  {downloadingPdf ? "Preparing…" : "Download Attendance (PDF)"}
+                </button>{" "}
+              </>
+            )}
             <button
               className="secondary"
               onClick={() =>
