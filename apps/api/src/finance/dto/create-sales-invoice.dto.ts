@@ -52,6 +52,11 @@ export class CreateSalesInvoiceDto {
   @IsString()
   memo?: string;
 
+  @ApiProperty({ required: false, description: "Set when generated from a Sales Order" })
+  @IsOptional()
+  @IsUUID()
+  salesOrderId?: string;
+
   @ApiProperty({ type: [InvoiceLineDto] })
   @IsArray()
   @ArrayMinSize(1)

@@ -107,6 +107,15 @@ const PURCHASE_SECTION: NavSection = {
   ],
 };
 
+// Same entitlement-gating pattern as PURCHASE_SECTION, keyed on "sales".
+const SALES_SECTION: NavSection = {
+  label: "Sales & Marketing",
+  items: [
+    { to: "/ar/quotations", label: "Sales Quotations" },
+    { to: "/ar/orders", label: "Sales Orders" },
+  ],
+};
+
 function loadExpandedSections(): Set<string> {
   const stored = localStorage.getItem("sidebarExpandedSections");
   if (stored) {
@@ -137,9 +146,14 @@ export function Layout() {
   const isEntitled = (moduleKey: string) => !!user?.isPlatformAdmin || !!user?.enabledModules?.includes(moduleKey);
 
   const workingCapitalIndex = NAV_SECTIONS.findIndex((s) => s.label === "Working Capital");
-  const sectionsWithModules = isEntitled("purchase")
-    ? [...NAV_SECTIONS.slice(0, workingCapitalIndex + 1), PURCHASE_SECTION, ...NAV_SECTIONS.slice(workingCapitalIndex + 1)]
-    : NAV_SECTIONS;
+  const gatedSections: NavSection[] = [
+    ...(isEntitled("purchase") ? [PURCHASE_SECTION] : []),
+    ...(isEntitled("sales") ? [SALES_SECTION] : []),
+  ];
+  const sectionsWithModules =
+    gatedSections.length > 0
+      ? [...NAV_SECTIONS.slice(0, workingCapitalIndex + 1), ...gatedSections, ...NAV_SECTIONS.slice(workingCapitalIndex + 1)]
+      : NAV_SECTIONS;
 
   const sections: NavSection[] = user?.isPlatformAdmin
     ? [{ label: "Platform", items: [{ to: "/platform", label: "Client Dashboard" }] }, ...sectionsWithModules]

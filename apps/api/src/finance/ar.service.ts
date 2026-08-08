@@ -73,6 +73,7 @@ export class ArService {
           documentKind,
           businessPartnerId: partner.id,
           originalInvoiceId: documentKind === SalesDocumentKind.CREDIT_NOTE ? dto.originalInvoiceId : null,
+          sourceSalesOrderId: dto.salesOrderId,
           issueDateTime: new Date(dto.issueDateTime),
           postingDate: new Date(dto.postingDate),
           dueDate: new Date(dto.dueDate),

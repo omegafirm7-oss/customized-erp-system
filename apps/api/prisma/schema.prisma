@@ -132,6 +132,8 @@ enum DocumentType {
   PURCHASE_INVOICE
   PURCHASE_QUOTATION
   PURCHASE_ORDER
+  SALES_QUOTATION
+  SALES_ORDER
   GOODS_RECEIPT
   GOODS_ISSUE
   INCOMING_PAYMENT
@@ -447,6 +449,8 @@ model Company {
   purchaseInvoices          PurchaseInvoice[]
   purchaseQuotations        PurchaseQuotation[]
   purchaseOrders            PurchaseOrder[]
+  salesQuotations           SalesQuotation[]
+  salesOrders               SalesOrder[]
   payments                  Payment[]
   zatcaDevices              ZatcaDevice[]
   projects                  Project[]
@@ -739,6 +743,7 @@ model CostCenter {
   manpowerContract        ManpowerContract?
   purchaseInvoiceLines    PurchaseInvoiceLine[]
   purchaseOrderLines      PurchaseOrderLine[]
+  salesOrderLines         SalesOrderLine[]
   equipmentRentalContract EquipmentRentalContract?
   depreciationRunLines    DepreciationRunLine[]
 
@@ -864,6 +869,8 @@ model BusinessPartner {
   purchaseInvoices         PurchaseInvoice[]
   purchaseQuotations       PurchaseQuotation[]
   purchaseOrders           PurchaseOrder[]
+  salesQuotations          SalesQuotation[]
+  salesOrders              SalesOrder[]
   payments                 Payment[]
   projects                 Project[]
   manpowerContracts        ManpowerContract[]
@@ -953,6 +960,8 @@ model Item {
   purchaseInvoiceLines   PurchaseInvoiceLine[]
   purchaseQuotationLines PurchaseQuotationLine[]
   purchaseOrderLines     PurchaseOrderLine[]
+  salesQuotationLines    SalesQuotationLine[]
+  salesOrderLines        SalesOrderLine[]
   stockLevels            ItemWarehouseStock[]
   stockMovements         StockMovement[]
   stockTransferLines     StockTransferLine[]
@@ -979,6 +988,7 @@ model Warehouse {
   salesInvoiceLines    SalesInvoiceLine[]
   purchaseInvoiceLines PurchaseInvoiceLine[]
   purchaseOrderLines   PurchaseOrderLine[]
+  salesOrderLines      SalesOrderLine[]
   transfersFrom        StockTransfer[]       @relation("TransferFrom")
   transfersTo          StockTransfer[]       @relation("TransferTo")
   adjustments          StockAdjustment[]
@@ -1048,6 +1058,11 @@ model SalesInvoice {
   originalInvoiceId        String?
   originalInvoice          SalesInvoice?     @relation("CreditNoteOriginal", fields: [originalInvoiceId], references: [id])
   creditNotes              SalesInvoice[]    @relation("CreditNoteOriginal")
+  // Set when this invoice was generated from a Sales Order (see
+  // SalesOrder.generateInvoice); null for a directly-created invoice (the
+  // pre-existing, non-order sales path — unchanged).
+  sourceSalesOrderId       String?
+  sourceSalesOrder         SalesOrder?       @relation(fields: [sourceSalesOrderId], references: [id])
   status                   InvoiceStatus     @default(DRAFT)
   issueDateTime            DateTime
   postingDate              DateTime
@@ -1094,6 +1109,7 @@ model SalesInvoice {
   @@index([companyId, status])
   @@index([companyId, businessPartnerId])
   @@index([companyId, dueDate])
+  @@index([sourceSalesOrderId])
   @@map("sales_invoices")
 }
 
@@ -1370,6 +1386,121 @@ model PurchaseOrderLine {
 
   @@index([purchaseOrderId])
   @@map("purchase_order_lines")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Sales & Marketing cycle: Quotation → Order → Invoice (SalesInvoice, above).
+// Mirrors the Purchase cycle exactly (same rationale: neither Quotation nor
+// Order posts to the GL — a quotation is a customer-facing quoted price, an
+// order is a commitment but not yet a transaction; only the resulting
+// SalesInvoice posts).
+// ─────────────────────────────────────────────────────────────────────────
+
+enum SalesQuotationStatus {
+  DRAFT
+  SENT
+  CONVERTED
+  CANCELLED
+}
+
+model SalesQuotation {
+  id                String               @id @default(uuid())
+  companyId         String
+  company           Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  // Null while Draft — allocated at SENT, mirroring PurchaseQuotation.
+  quotationNumber   String?
+  businessPartnerId String
+  businessPartner   BusinessPartner      @relation(fields: [businessPartnerId], references: [id])
+  quotationDate     DateTime
+  validUntil        DateTime?
+  status            SalesQuotationStatus @default(DRAFT)
+  memo              String?
+  createdByUserId   String
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  lines       SalesQuotationLine[]
+  salesOrders SalesOrder[]
+
+  @@unique([companyId, quotationNumber])
+  @@index([companyId, status])
+  @@map("sales_quotations")
+}
+
+model SalesQuotationLine {
+  id               String         @id @default(uuid())
+  salesQuotationId String
+  salesQuotation   SalesQuotation @relation(fields: [salesQuotationId], references: [id], onDelete: Cascade)
+  lineNumber       Int
+  itemId           String?
+  item             Item?          @relation(fields: [itemId], references: [id])
+  description      String
+  quantity         Decimal        @db.Decimal(18, 6)
+  unitPrice        Decimal        @db.Decimal(18, 4)
+  vatCategory      VatCategory?
+
+  @@index([salesQuotationId])
+  @@map("sales_quotation_lines")
+}
+
+enum SalesOrderStatus {
+  DRAFT
+  CONFIRMED
+  PARTIALLY_INVOICED
+  INVOICED
+  CANCELLED
+}
+
+model SalesOrder {
+  id                String            @id @default(uuid())
+  companyId         String
+  company           Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  orderNumber       String?
+  businessPartnerId String
+  businessPartner   BusinessPartner   @relation(fields: [businessPartnerId], references: [id])
+  // Optional — a sales order can be raised directly, without a prior quotation.
+  sourceQuotationId String?
+  sourceQuotation   SalesQuotation?   @relation(fields: [sourceQuotationId], references: [id])
+  orderDate         DateTime
+  expectedDate      DateTime?
+  status            SalesOrderStatus  @default(DRAFT)
+  memo              String?
+  createdByUserId   String
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  lines         SalesOrderLine[]
+  salesInvoices SalesInvoice[]
+
+  @@unique([companyId, orderNumber])
+  @@index([companyId, status])
+  @@index([sourceQuotationId])
+  @@map("sales_orders")
+}
+
+model SalesOrderLine {
+  id               String      @id @default(uuid())
+  salesOrderId     String
+  salesOrder       SalesOrder  @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  lineNumber       Int
+  itemId           String?
+  item             Item?       @relation(fields: [itemId], references: [id])
+  description      String
+  quantity         Decimal     @db.Decimal(18, 6)
+  // How much of `quantity` has already been carried onto a generated
+  // SalesInvoice — drives PARTIALLY_INVOICED vs INVOICED and how much
+  // remains to prefill on the next invoice.
+  invoicedQuantity Decimal     @default(0) @db.Decimal(18, 6)
+  unitPrice        Decimal     @db.Decimal(18, 4)
+  vatCategory      VatCategory?
+  // Carried onto the generated SalesInvoiceLine at invoice time.
+  warehouseId      String?
+  warehouse        Warehouse?  @relation(fields: [warehouseId], references: [id])
+  costCenterId     String?
+  costCenter       CostCenter? @relation(fields: [costCenterId], references: [id])
+
+  @@index([salesOrderId])
+  @@map("sales_order_lines")
 }
 
 model Payment {

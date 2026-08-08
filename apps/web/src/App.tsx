@@ -23,6 +23,8 @@ import { SalesInvoicesPage, NewSalesInvoicePage } from "./pages/SalesInvoicesPag
 import { PurchaseInvoicesPage, NewPurchaseInvoicePage } from "./pages/PurchaseInvoicesPage";
 import { PurchaseQuotationsPage } from "./pages/PurchaseQuotationsPage";
 import { PurchaseOrdersPage } from "./pages/PurchaseOrdersPage";
+import { SalesQuotationsPage } from "./pages/SalesQuotationsPage";
+import { SalesOrdersPage } from "./pages/SalesOrdersPage";
 import { PaymentsPage } from "./pages/PaymentsPage";
 import { NewPaymentPage } from "./pages/NewPaymentPage";
 import { ArAgingPage, ApAgingPage } from "./pages/AgingPage";
@@ -91,6 +93,8 @@ const companyRoutes: Array<{ path: string; element: JSX.Element }> = [
   { path: "/ap/invoices/:id/edit", element: <EditPurchaseInvoicePage /> },
   { path: "/ap/quotations", element: <PurchaseQuotationsPage /> },
   { path: "/ap/orders", element: <PurchaseOrdersPage /> },
+  { path: "/ar/quotations", element: <SalesQuotationsPage /> },
+  { path: "/ar/orders", element: <SalesOrdersPage /> },
   { path: "/payments", element: <PaymentsPage /> },
   { path: "/payments/new", element: <NewPaymentPage /> },
   { path: "/trial-balance", element: <TrialBalancePage /> },

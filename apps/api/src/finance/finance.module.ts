@@ -16,6 +16,10 @@ import { PurchaseQuotationsService } from "./purchase-quotations.service";
 import { PurchaseQuotationsController } from "./purchase-quotations.controller";
 import { PurchaseOrdersService } from "./purchase-orders.service";
 import { PurchaseOrdersController } from "./purchase-orders.controller";
+import { SalesQuotationsService } from "./sales-quotations.service";
+import { SalesQuotationsController } from "./sales-quotations.controller";
+import { SalesOrdersService } from "./sales-orders.service";
+import { SalesOrdersController } from "./sales-orders.controller";
 
 @Module({
   imports: [NumberingModule, GlModule, AuditModule, ZatcaModule, InventoryModule],
@@ -25,6 +29,8 @@ import { PurchaseOrdersController } from "./purchase-orders.controller";
     PaymentsController,
     PurchaseQuotationsController,
     PurchaseOrdersController,
+    SalesQuotationsController,
+    SalesOrdersController,
   ],
   providers: [
     AccountResolutionService,
@@ -34,7 +40,17 @@ import { PurchaseOrdersController } from "./purchase-orders.controller";
     PaymentsService,
     PurchaseQuotationsService,
     PurchaseOrdersService,
+    SalesQuotationsService,
+    SalesOrdersService,
   ],
-  exports: [ArService, ApService, PaymentsService, PurchaseQuotationsService, PurchaseOrdersService],
+  exports: [
+    ArService,
+    ApService,
+    PaymentsService,
+    PurchaseQuotationsService,
+    PurchaseOrdersService,
+    SalesQuotationsService,
+    SalesOrdersService,
+  ],
 })
 export class FinanceModule {}
