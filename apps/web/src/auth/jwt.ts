@@ -5,6 +5,7 @@ export interface DecodedAccessToken {
   roleId: string | null;
   permissions: string[];
   isPlatformAdmin: boolean;
+  enabledModules: string[];
   exp: number;
 }
 

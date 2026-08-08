@@ -1,6 +1,6 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { createTestApp, createItem, createPartner, setupUserWithCompany } from "./utils/test-app";
+import { createTestApp, createItem, createPartner, grantModules, setupUserWithCompany } from "./utils/test-app";
 
 describe("Procurement cycle — Quotation → Order → Invoice (e2e)", () => {
   let app: INestApplication;
@@ -19,10 +19,15 @@ describe("Procurement cycle — Quotation → Order → Invoice (e2e)", () => {
 
   async function setupContext() {
     const ctx = await setupUserWithCompany(app);
-    const vendor = await createPartner(app, ctx.accessToken, "VENDOR");
+    // New companies start with no premium modules entitled (see
+    // module-entitlement.e2e-spec.ts) — this suite exercises the Purchase
+    // module's actual behavior, so grant it explicitly, as a platform admin
+    // would via the Platform Dashboard.
+    const accessToken = await grantModules(app, ctx, ["purchase"]);
+    const vendor = await createPartner(app, accessToken, "VENDOR");
     const expenseAccount = ctx.accountByCode("5240");
-    const item = await createItem(app, ctx.accessToken, { defaultPurchaseAccountId: expenseAccount.id });
-    return { ...ctx, vendor, item };
+    const item = await createItem(app, accessToken, { defaultPurchaseAccountId: expenseAccount.id });
+    return { ...ctx, accessToken, vendor, item };
   }
 
   it("creates a quotation, converts it to a purchase order, and generates a purchase invoice from it", async () => {
@@ -181,11 +186,12 @@ describe("Procurement cycle — Quotation → Order → Invoice (e2e)", () => {
       .expect(201);
 
     const b = await setupUserWithCompany(app);
+    const bAccessToken = await grantModules(app, b, ["purchase"]);
     const bQuotations = (
-      await request(app.getHttpServer()).get("/ap/quotations").set(auth(b.accessToken)).expect(200)
+      await request(app.getHttpServer()).get("/ap/quotations").set(auth(bAccessToken)).expect(200)
     ).body;
     expect(bQuotations).toHaveLength(0);
-    const bOrders = (await request(app.getHttpServer()).get("/ap/orders").set(auth(b.accessToken)).expect(200)).body;
+    const bOrders = (await request(app.getHttpServer()).get("/ap/orders").set(auth(bAccessToken)).expect(200)).body;
     expect(bOrders).toHaveLength(0);
   });
 });

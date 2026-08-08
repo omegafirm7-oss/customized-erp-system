@@ -76,6 +76,27 @@ export async function setupUserWithCompany(app: INestApplication) {
   return { email, password, accessToken, companyId, cashAccount, equityAccount, accountByCode, accounts: accountsRes.body };
 }
 
+/**
+ * Grants premium module entitlements directly (bypassing the platform-admin
+ * HTTP route, since these are ordinary test companies) and re-logs-in to get
+ * a fresh access token carrying the updated Company.enabledModules — JWTs
+ * only pick up entitlement changes at issuance time (login/refresh), never
+ * mid-token.
+ */
+export async function grantModules(
+  app: INestApplication,
+  ctx: { email: string; password: string; companyId: string },
+  modules: string[],
+): Promise<string> {
+  const prisma = getPrisma(app);
+  await prisma.company.update({ where: { id: ctx.companyId }, data: { enabledModules: modules } });
+  const relogin = await request(app.getHttpServer())
+    .post("/auth/login")
+    .send({ email: ctx.email, password: ctx.password })
+    .expect(201);
+  return relogin.body.accessToken;
+}
+
 export async function createPartner(
   app: INestApplication,
   accessToken: string,

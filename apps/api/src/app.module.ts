@@ -5,6 +5,7 @@ import configuration from "./core/config/configuration";
 import { PrismaModule } from "./common/prisma/prisma.module";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "./common/guards/permissions.guard";
+import { ModuleEntitlementGuard } from "./common/guards/module-entitlement.guard";
 import { CompanyContextInterceptor } from "./common/interceptors/company-context.interceptor";
 import { AuditModule } from "./audit/audit.module";
 import { AuditInterceptor } from "./audit/audit.interceptor";
@@ -60,6 +61,7 @@ import { PlatformModule } from "./platform/platform.module";
     // PermissionsGuard then reads.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
+    { provide: APP_GUARD, useClass: ModuleEntitlementGuard },
     { provide: APP_INTERCEPTOR, useClass: CompanyContextInterceptor },
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
   ],

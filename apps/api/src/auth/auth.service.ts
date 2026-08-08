@@ -160,12 +160,20 @@ export class AuthService {
 
     let roleId: string | null = null;
     let permissions: string[] = [];
+    let enabledModules: string[] = [];
     if (activeCompanyId) {
-      const membership = await this.prisma.companyUser.findUnique({
-        where: { userId_companyId: { userId, companyId: activeCompanyId } },
-      });
+      const [membership, company] = await Promise.all([
+        this.prisma.companyUser.findUnique({
+          where: { userId_companyId: { userId, companyId: activeCompanyId } },
+        }),
+        this.prisma.company.findUnique({
+          where: { id: activeCompanyId },
+          select: { enabledModules: true },
+        }),
+      ]);
       roleId = membership?.roleId ?? null;
       permissions = await this.iamService.getPermissionsForCompanyUser(userId, activeCompanyId);
+      enabledModules = company?.enabledModules ?? [];
     }
 
     const payload: JwtPayload = {
@@ -175,6 +183,7 @@ export class AuthService {
       roleId,
       permissions,
       isPlatformAdmin: user.isPlatformAdmin,
+      enabledModules,
     };
 
     const jwtConfig = this.configService.get("jwt", { infer: true });

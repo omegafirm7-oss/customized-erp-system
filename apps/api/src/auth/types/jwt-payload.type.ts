@@ -5,4 +5,5 @@ export interface JwtPayload {
   roleId: string | null;
   permissions: string[];
   isPlatformAdmin: boolean;
+  enabledModules: string[];
 }

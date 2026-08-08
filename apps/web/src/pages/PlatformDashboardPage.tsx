@@ -1,6 +1,18 @@
 import { useEffect, useState } from "react";
 import { apiClient } from "../api/client";
 
+// Mirrors MODULE_KEYS in packages/shared-constants (kept as a plain literal
+// here, not imported — @erp/shared-constants ships CJS output and this repo
+// has no prior runtime import of it from the web app to build on; every
+// other cross-boundary type here, e.g. DecodedAccessToken vs JwtPayload, is
+// likewise hand-mirrored rather than imported).
+const MODULE_LABELS = {
+  purchase: "Purchase",
+  crm: "CRM",
+  sales: "Sales & Marketing",
+} as const;
+const ALL_MODULES = Object.keys(MODULE_LABELS) as (keyof typeof MODULE_LABELS)[];
+
 interface PlatformSummary {
   totalClients: number;
   activeClients: number;
@@ -21,6 +33,7 @@ interface PlatformClient {
   userCount: number;
   activeUserCount: number;
   storageBytes: number;
+  enabledModules: string[];
 }
 
 function formatBytes(bytes: number): string {
@@ -33,6 +46,7 @@ export function PlatformDashboardPage() {
   const [summary, setSummary] = useState<PlatformSummary | null>(null);
   const [clients, setClients] = useState<PlatformClient[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -45,6 +59,21 @@ export function PlatformDashboardPage() {
       })
       .catch((err) => setError(err?.response?.data?.message ?? "Failed to load platform dashboard"));
   }, []);
+
+  async function toggleModule(client: PlatformClient, moduleKey: string) {
+    const nextModules = client.enabledModules.includes(moduleKey)
+      ? client.enabledModules.filter((m) => m !== moduleKey)
+      : [...client.enabledModules, moduleKey];
+    setSavingId(client.id);
+    try {
+      await apiClient.patch(`/platform/clients/${client.id}/modules`, { enabledModules: nextModules });
+      setClients((prev) => prev?.map((c) => (c.id === client.id ? { ...c, enabledModules: nextModules } : c)) ?? prev);
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to update client modules");
+    } finally {
+      setSavingId(null);
+    }
+  }
 
   if (error) return <div className="error-banner">{error}</div>;
   if (!summary || !clients) return <p style={{ padding: 24 }}>Loading…</p>;
@@ -98,6 +127,7 @@ export function PlatformDashboardPage() {
                 <th>Status</th>
                 <th>Users</th>
                 <th>Storage</th>
+                <th>Modules</th>
                 <th>Created</th>
               </tr>
             </thead>
@@ -115,6 +145,21 @@ export function PlatformDashboardPage() {
                     {c.activeUserCount} / {c.userCount} active
                   </td>
                   <td>{formatBytes(c.storageBytes)}</td>
+                  <td>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                      {ALL_MODULES.map((moduleKey) => (
+                        <label key={moduleKey} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                          <input
+                            type="checkbox"
+                            checked={c.enabledModules.includes(moduleKey)}
+                            disabled={savingId === c.id}
+                            onChange={() => toggleModule(c, moduleKey)}
+                          />
+                          {MODULE_LABELS[moduleKey]}
+                        </label>
+                      ))}
+                    </div>
+                  </td>
                   <td>{new Date(c.createdAt).toLocaleDateString()}</td>
                 </tr>
               ))}

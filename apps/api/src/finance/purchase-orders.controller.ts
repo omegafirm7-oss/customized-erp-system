@@ -1,18 +1,21 @@
 import { Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { PurchaseOrderStatus } from "@prisma/client";
-import { PERMISSIONS } from "@erp/shared-constants";
+import { MODULE_KEYS, PERMISSIONS } from "@erp/shared-constants";
 import { Permissions } from "../common/decorators/permissions.decorator";
+import { RequiresModule } from "../common/decorators/requires-module.decorator";
 import { CurrentCompanyId } from "../common/decorators/current-company-id.decorator";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { JwtPayload } from "../auth/types/jwt-payload.type";
 import { PurchaseOrdersService } from "./purchase-orders.service";
 import { CreatePurchaseOrderDto, GeneratePurchaseInvoiceDto } from "./dto/create-purchase-order.dto";
 
-// JwtAuthGuard + PermissionsGuard are registered globally in AppModule.
+// JwtAuthGuard + PermissionsGuard + ModuleEntitlementGuard are registered
+// globally in AppModule.
 @ApiTags("purchase-orders")
 @ApiBearerAuth()
 @Controller("ap/orders")
+@RequiresModule(MODULE_KEYS.PURCHASE)
 export class PurchaseOrdersController {
   constructor(private readonly ordersService: PurchaseOrdersService) {}
 

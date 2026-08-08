@@ -1,7 +1,9 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { MODULE_KEYS } from "@erp/shared-constants";
 import { PrismaService } from "../common/prisma/prisma.service";
 
 const ORACLE_FREE_TIER_LIMIT_BYTES = 200 * 1024 * 1024 * 1024;
+const VALID_MODULE_KEYS: string[] = Object.values(MODULE_KEYS);
 
 @Injectable()
 export class PlatformService {
@@ -39,7 +41,15 @@ export class PlatformService {
   async listClients() {
     const [companies, userCounts, storageByCompany] = await Promise.all([
       this.prisma.company.findMany({
-        select: { id: true, code: true, legalName: true, tradeName: true, isActive: true, createdAt: true },
+        select: {
+          id: true,
+          code: true,
+          legalName: true,
+          tradeName: true,
+          isActive: true,
+          createdAt: true,
+          enabledModules: true,
+        },
         orderBy: { createdAt: "asc" },
       }),
       this.prisma.companyUser.groupBy({ by: ["companyId", "status"], _count: { _all: true } }),
@@ -64,7 +74,24 @@ export class PlatformService {
       userCount: usersByCompany.get(company.id)?.total ?? 0,
       activeUserCount: usersByCompany.get(company.id)?.active ?? 0,
       storageBytes: storageByCompany.get(company.id) ?? 0,
+      enabledModules: company.enabledModules,
     }));
+  }
+
+  async updateClientModules(companyId: string, enabledModules: string[]) {
+    const invalid = enabledModules.filter((key) => !VALID_MODULE_KEYS.includes(key));
+    if (invalid.length > 0) {
+      throw new BadRequestException(`Unknown module key(s): ${invalid.join(", ")}`);
+    }
+    const company = await this.prisma.company.findUnique({ where: { id: companyId } });
+    if (!company) {
+      throw new NotFoundException("Company not found");
+    }
+    return this.prisma.company.update({
+      where: { id: companyId },
+      data: { enabledModules: [...new Set(enabledModules)] },
+      select: { id: true, enabledModules: true },
+    });
   }
 
   async getSummary() {

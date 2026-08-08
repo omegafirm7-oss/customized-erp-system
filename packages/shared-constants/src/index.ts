@@ -384,3 +384,15 @@ export const PERMISSIONS = {
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
+
+// Premium modules a client company may or may not be entitled to. Distinct
+// from PERMISSIONS.*'s module prefix (which is just a UI grouping label for
+// the role editor) — this is a tenant-level entitlement toggled per company
+// by the platform admin, checked by ModuleEntitlementGuard.
+export const MODULE_KEYS = {
+  PURCHASE: "purchase",
+  CRM: "crm",
+  SALES: "sales",
+} as const;
+
+export type ModuleKey = (typeof MODULE_KEYS)[keyof typeof MODULE_KEYS];

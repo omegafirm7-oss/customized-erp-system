@@ -25,8 +25,6 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Working Capital",
     items: [
       { to: "/ar/invoices", label: "Sales Invoices" },
-      { to: "/ap/quotations", label: "Purchase Quotations" },
-      { to: "/ap/orders", label: "Purchase Orders" },
       { to: "/ap/invoices", label: "Purchase Invoices" },
       { to: "/payments", label: "Payments" },
       { to: "/reports/ar-aging", label: "AR Aging" },
@@ -98,6 +96,17 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
+// Gated behind Company.enabledModules — only shown when the active
+// company's platform admin has entitled it to "purchase" (or the viewer is
+// the platform admin themself, who always sees every module).
+const PURCHASE_SECTION: NavSection = {
+  label: "Purchase",
+  items: [
+    { to: "/ap/quotations", label: "Purchase Quotations" },
+    { to: "/ap/orders", label: "Purchase Orders" },
+  ],
+};
+
 function loadExpandedSections(): Set<string> {
   const stored = localStorage.getItem("sidebarExpandedSections");
   if (stored) {
@@ -125,9 +134,16 @@ export function Layout() {
   // owner's account, kept as its own top-level section (not nested under
   // Settings) since it isn't scoped to whichever company happens to be
   // selected right now.
-  const sections: NavSection[] = user?.isPlatformAdmin
-    ? [{ label: "Platform", items: [{ to: "/platform", label: "Client Dashboard" }] }, ...NAV_SECTIONS]
+  const isEntitled = (moduleKey: string) => !!user?.isPlatformAdmin || !!user?.enabledModules?.includes(moduleKey);
+
+  const workingCapitalIndex = NAV_SECTIONS.findIndex((s) => s.label === "Working Capital");
+  const sectionsWithModules = isEntitled("purchase")
+    ? [...NAV_SECTIONS.slice(0, workingCapitalIndex + 1), PURCHASE_SECTION, ...NAV_SECTIONS.slice(workingCapitalIndex + 1)]
     : NAV_SECTIONS;
+
+  const sections: NavSection[] = user?.isPlatformAdmin
+    ? [{ label: "Platform", items: [{ to: "/platform", label: "Client Dashboard" }] }, ...sectionsWithModules]
+    : sectionsWithModules;
 
   function toggleSidebar() {
     setCollapsed((v) => {
