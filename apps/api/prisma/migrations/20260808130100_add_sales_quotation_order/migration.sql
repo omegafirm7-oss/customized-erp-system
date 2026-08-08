@@ -4,17 +4,6 @@ CREATE TYPE "SalesQuotationStatus" AS ENUM ('DRAFT', 'SENT', 'CONVERTED', 'CANCE
 -- CreateEnum
 CREATE TYPE "SalesOrderStatus" AS ENUM ('DRAFT', 'CONFIRMED', 'PARTIALLY_INVOICED', 'INVOICED', 'CANCELLED');
 
--- AlterEnum
--- This migration adds more than one value to an enum.
--- With PostgreSQL versions 11 and earlier, this is not possible
--- in a single migration. This can be worked around by creating
--- multiple migrations, each migration adding only one value to
--- the enum.
-
-
-ALTER TYPE "DocumentType" ADD VALUE 'SALES_QUOTATION';
-ALTER TYPE "DocumentType" ADD VALUE 'SALES_ORDER';
-
 -- AlterTable
 ALTER TABLE "sales_invoices" ADD COLUMN     "sourceSalesOrderId" TEXT;
 
@@ -144,11 +133,10 @@ ALTER TABLE "sales_order_lines" ADD CONSTRAINT "sales_order_lines_warehouseId_fk
 -- AddForeignKey
 ALTER TABLE "sales_order_lines" ADD CONSTRAINT "sales_order_lines_costCenterId_fkey" FOREIGN KEY ("costCenterId") REFERENCES "cost_centers"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
-
 -- Backfill numbering series for the two new document types on every
 -- existing company, mirroring the pattern used when Purchase's PQ-/PO-
 -- series were first introduced. New companies get these from
--- CompaniesService.createCompany's seriesDefs list going forward.
+-- CompaniesService.createCompany's provisioning loop going forward.
 INSERT INTO "numbering_series" ("id", "companyId", "documentType", "fiscalYearId", "prefix", "nextNumber", "numberLength")
 SELECT gen_random_uuid(), c."id", 'SALES_QUOTATION', NULL, 'SQ-', 1, 6
 FROM "companies" c
