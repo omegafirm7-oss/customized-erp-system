@@ -119,7 +119,12 @@ export function EmployeeTimesheetDetailPage() {
     if (!id || !detail || scope !== "period") return null;
     const period = periods.find((p) => p.id === periodId);
     if (!period) return null;
-    const employeeRes = await apiClient.get<{ designation?: string; iqamaOrNationalId?: string; phone?: string | null }>(`/hr/employees/${id}`);
+    const employeeRes = await apiClient.get<{
+      designation?: string;
+      iqamaOrNationalId?: string;
+      phone?: string | null;
+      costCenter?: { project?: { name: string } | null } | null;
+    }>(`/hr/employees/${id}`);
     const companyName = companies.find((c) => c.companyId === user?.activeCompanyId)?.companyName ?? "";
     const periodLabel = new Date(period.startDate).toLocaleDateString(undefined, { month: "long", year: "numeric" });
     return {
@@ -130,6 +135,7 @@ export function EmployeeTimesheetDetailPage() {
         employeeCode: detail.code,
         designation: employeeRes.data.designation,
         iqamaOrNationalId: employeeRes.data.iqamaOrNationalId,
+        projectName: employeeRes.data.costCenter?.project?.name,
         periodLabel,
         startDate: period.startDate,
         endDate: period.endDate,
@@ -141,6 +147,7 @@ export function EmployeeTimesheetDetailPage() {
               accentColor: templateSettings.accentColor,
               footerText: templateSettings.footerText,
               headerTagline: templateSettings.headerTagline,
+              headerMissionLine: templateSettings.headerMissionLine,
               title: templateSettings.timesheetTitle,
               showIqama: templateSettings.timesheetShowIqama,
               showDesignation: templateSettings.timesheetShowDesignation,

@@ -10,6 +10,11 @@ export class UpdateTemplateSettingsDto {
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
+  headerMissionLine?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
   accentColor?: string;
 
   @ApiProperty({ required: false })

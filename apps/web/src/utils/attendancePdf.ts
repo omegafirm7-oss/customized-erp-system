@@ -19,6 +19,7 @@ export interface DocumentBranding {
   accentColor?: string;
   footerText?: string | null;
   headerTagline?: string | null;
+  headerMissionLine?: string | null;
 }
 
 function hexToRgb(hex: string): [number, number, number] {
@@ -39,6 +40,7 @@ export interface AttendancePdfParams {
   employeeCode: string;
   designation?: string;
   iqamaOrNationalId?: string;
+  projectName?: string;
   periodLabel: string;
   startDate: string;
   endDate: string;
@@ -61,7 +63,7 @@ export interface AttendancePdfParams {
  * blob for other destinations (e.g. WhatsApp share) without generating twice.
  */
 export function buildEmployeeAttendancePdf(params: AttendancePdfParams): jsPDF {
-  const { companyName, employeeName, designation, iqamaOrNationalId, periodLabel, startDate, endDate, entries, totalHours, branding } = params;
+  const { companyName, employeeName, designation, iqamaOrNationalId, projectName, periodLabel, startDate, endDate, entries, totalHours, branding } = params;
   const title = branding?.title ?? "Monthly Timesheet";
   const showIqama = branding?.showIqama ?? true;
   const showDesignation = branding?.showDesignation ?? true;
@@ -92,40 +94,44 @@ export function buildEmployeeAttendancePdf(params: AttendancePdfParams): jsPDF {
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginX = 14;
 
-  // Full-bleed dark header bar with the company name (and logo, if any) —
-  // "the company header should be dark and above". The document title sits
-  // centered on its own line below the bar, not squeezed in next to the tagline.
-  const barHeight = 26;
-  doc.setFillColor(...accentRgb);
-  doc.rect(0, 0, pageWidth, barHeight, "F");
-
+  // White header: logo + three stacked lines in the same font (company name,
+  // industry tagline, mission line), then the document title centered below.
   let textX = marginX;
   if (branding?.logoDataUrl) {
     try {
       const format = logoFormatFromDataUrl(branding.logoDataUrl);
-      doc.addImage(branding.logoDataUrl, format, marginX, 5, 16, 16, undefined, "FAST");
+      doc.addImage(branding.logoDataUrl, format, marginX, 4, 16, 16, undefined, "FAST");
       textX = marginX + 20;
     } catch {
       // fall through without the logo if the data URL can't be decoded (unsupported format)
     }
   }
 
-  doc.setFontSize(16);
+  doc.setFontSize(15);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(255, 255, 255);
-  doc.text(companyName.toUpperCase(), textX, 12);
+  doc.setTextColor(...accentRgb);
+  doc.text(companyName.toUpperCase(), textX, 11);
 
+  let headerLineY = 17;
   if (branding?.headerTagline) {
     doc.setFontSize(9);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(255, 190, 190);
-    doc.text(branding.headerTagline.toUpperCase(), textX, 19);
+    doc.setTextColor(200, 40, 40);
+    doc.text(branding.headerTagline.toUpperCase(), textX, headerLineY);
+    headerLineY += 5.5;
   }
+  if (branding?.headerMissionLine) {
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(200, 40, 40);
+    doc.text(branding.headerMissionLine, textX, headerLineY);
+    headerLineY += 5.5;
+  }
+  doc.setTextColor(0, 0, 0);
 
-  let y = barHeight + 10;
+  let y = Math.max(26, headerLineY + 4);
   doc.setFontSize(13);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(0, 0, 0);
   doc.text(title, pageWidth / 2, y, { align: "center" });
   y += 6;
   doc.setDrawColor(...accentRgb);
@@ -134,10 +140,12 @@ export function buildEmployeeAttendancePdf(params: AttendancePdfParams): jsPDF {
   y += 8;
 
   // Fixed 5-row x 2-column layout mirroring the client's printed form —
-  // Project/Location/Zone/Supervisor have no data source in this app and
-  // print blank (matching a physical form's fill-by-hand fields).
+  // Location/Zone/Supervisor have no data source in this app and print
+  // blank (matching a physical form's fill-by-hand fields). Project comes
+  // from the employee's assigned cost center, when that cost center is a
+  // project's dedicated one (Employee.costCenterId -> CostCenter.project).
   const infoRows: string[][] = [
-    ["Project", "", "Employee Name", employeeName],
+    ["Project", projectName ?? "", "Employee Name", employeeName],
     ["Location", "", "Designation", showDesignation ? (designation ?? "") : ""],
     ["Zone", "", "Trade", showDesignation ? (designation ?? "") : ""],
     ["Month / Year", periodLabel, "Iqama No.", showIqama ? (iqamaOrNationalId ?? "") : ""],

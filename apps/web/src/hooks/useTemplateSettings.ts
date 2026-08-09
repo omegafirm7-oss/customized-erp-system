@@ -7,6 +7,7 @@ export interface TemplateSettings {
   hasLogo: boolean;
   logoMimeType: string | null;
   headerTagline: string | null;
+  headerMissionLine: string | null;
   accentColor: string;
   footerText: string | null;
   showAddressInHeader: boolean;

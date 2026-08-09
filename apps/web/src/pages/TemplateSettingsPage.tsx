@@ -10,6 +10,7 @@ type FormState = Omit<
 function toForm(s: TemplateSettings): FormState {
   return {
     headerTagline: s.headerTagline,
+    headerMissionLine: s.headerMissionLine,
     accentColor: s.accentColor,
     footerText: s.footerText,
     showAddressInHeader: s.showAddressInHeader,
@@ -130,6 +131,16 @@ export function TemplateSettingsPage() {
               style={{ width: "100%" }}
               value={current.headerTagline ?? ""}
               onChange={(e) => set("headerTagline", e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="form-row">
+          <div style={{ flex: 1 }}>
+            <label>Mission line (third header line, e.g. "Dune To Infrastructure") </label>
+            <input
+              style={{ width: "100%" }}
+              value={current.headerMissionLine ?? ""}
+              onChange={(e) => set("headerMissionLine", e.target.value)}
             />
           </div>
         </div>

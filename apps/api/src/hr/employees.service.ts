@@ -100,7 +100,7 @@ export class EmployeesService {
     const employee = await this.prisma.employee.findFirst({
       where: { id: employeeId, companyId },
       include: {
-        costCenter: { select: { id: true, code: true, name: true } },
+        costCenter: { select: { id: true, code: true, name: true, project: { select: { id: true, code: true, name: true } } } },
         loans: { orderBy: { createdAt: "desc" } },
         finalSettlement: { include: { payments: { orderBy: { paymentDate: "desc" } } } },
       },

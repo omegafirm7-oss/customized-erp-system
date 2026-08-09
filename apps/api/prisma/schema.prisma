@@ -1990,6 +1990,8 @@ model TemplateSettings {
   // Small red/branded line under the company name in document headers, e.g.
   // "CONSTRUCTION & CONTRACTING SERVICES" — company's industry tagline.
   headerTagline            String?
+  // Third header line under the tagline, e.g. a mission statement ("Dune To Infrastructure").
+  headerMissionLine        String?
   accentColor              String   @default("#101828")
   footerText               String?
   showAddressInHeader      Boolean  @default(true)
