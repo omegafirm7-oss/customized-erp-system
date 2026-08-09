@@ -14,6 +14,24 @@ interface AttendanceEntry {
   hoursWorked: string | number;
 }
 
+export interface DocumentBranding {
+  logoDataUrl?: string | null;
+  accentColor?: string;
+  footerText?: string | null;
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!m) return [16, 24, 40];
+  return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
+}
+
+export function logoFormatFromDataUrl(dataUrl: string): "PNG" | "JPEG" | "WEBP" {
+  if (dataUrl.startsWith("data:image/jpeg")) return "JPEG";
+  if (dataUrl.startsWith("data:image/webp")) return "WEBP";
+  return "PNG";
+}
+
 /**
  * Renders one employee's day-by-day attendance for a single period into a
  * letterhead-styled PDF matching the client's official monthly timesheet
@@ -32,8 +50,17 @@ export function downloadEmployeeAttendancePdf(params: {
   endDate: string;
   entries: AttendanceEntry[];
   totalHours: string | number;
+  branding?: DocumentBranding & {
+    title?: string;
+    showIqama?: boolean;
+    showDesignation?: boolean;
+  };
 }) {
-  const { companyName, employeeName, employeeCode, designation, iqamaOrNationalId, periodLabel, startDate, endDate, entries, totalHours } = params;
+  const { companyName, employeeName, employeeCode, designation, iqamaOrNationalId, periodLabel, startDate, endDate, entries, totalHours, branding } = params;
+  const title = branding?.title ?? "Monthly Timesheet";
+  const showIqama = branding?.showIqama ?? true;
+  const showDesignation = branding?.showDesignation ?? true;
+  const accentRgb = hexToRgb(branding?.accentColor ?? "#101828");
 
   const entryByDate = new Map<string, AttendanceEntry>();
   for (const e of entries) {
@@ -60,24 +87,38 @@ export function downloadEmployeeAttendancePdf(params: {
   const pageWidth = doc.internal.pageSize.getWidth();
   let y = 16;
 
+  if (branding?.logoDataUrl) {
+    try {
+      const format = logoFormatFromDataUrl(branding.logoDataUrl);
+      doc.addImage(branding.logoDataUrl, format, pageWidth / 2 - 15, y, 30, 16, undefined, "FAST");
+      y += 20;
+    } catch {
+      // fall through without the logo if the data URL can't be decoded (unsupported format)
+    }
+  }
+
   doc.setFontSize(14);
   doc.setFont("helvetica", "bold");
   doc.text(companyName, pageWidth / 2, y, { align: "center" });
   y += 7;
   doc.setFontSize(11);
   doc.setFont("helvetica", "normal");
-  doc.text("Monthly Timesheet", pageWidth / 2, y, { align: "center" });
+  doc.text(title, pageWidth / 2, y, { align: "center" });
   y += 8;
+
+  const infoRows: string[][] = [
+    ["Employee Name", employeeName, "Employee Code", employeeCode],
+  ];
+  if (showDesignation) {
+    infoRows.push(["Designation", designation ?? "", "Trade", designation ?? ""]);
+  }
+  infoRows.push([showIqama ? "Iqama No." : "Month / Year", showIqama ? (iqamaOrNationalId ?? "") : periodLabel, showIqama ? "Month / Year" : "", showIqama ? periodLabel : ""]);
 
   autoTable(doc, {
     startY: y,
     theme: "grid",
     styles: { fontSize: 9, cellPadding: 2 },
-    body: [
-      ["Employee Name", employeeName, "Employee Code", employeeCode],
-      ["Designation", designation ?? "", "Trade", designation ?? ""],
-      ["Iqama No.", iqamaOrNationalId ?? "", "Month / Year", periodLabel],
-    ],
+    body: infoRows,
     columnStyles: {
       0: { fontStyle: "bold", cellWidth: 35 },
       1: { cellWidth: 55 },
@@ -94,7 +135,7 @@ export function downloadEmployeeAttendancePdf(params: {
     body: rows,
     foot: [["", "", "Total Monthly Hours:", String(Number(totalHours))]],
     styles: { fontSize: 9, cellPadding: 2, halign: "center" },
-    headStyles: { fillColor: [16, 24, 40] },
+    headStyles: { fillColor: accentRgb },
     footStyles: { fillColor: [235, 235, 235], textColor: 0, fontStyle: "bold" },
     columnStyles: {
       0: { cellWidth: 14 },
@@ -104,6 +145,13 @@ export function downloadEmployeeAttendancePdf(params: {
     },
     margin: { left: 14, right: 14 },
   });
+
+  if (branding?.footerText) {
+    const footerY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text(branding.footerText, 14, footerY);
+  }
 
   doc.save(`${employeeCode}-${periodLabel.replace(/\s+/g, "-")}-attendance.pdf`);
 }

@@ -391,6 +391,7 @@ export const PERMISSIONS = {
   CRM_OPPORTUNITY_VIEW: "crm.opportunity.view",
   CRM_CONTACT_MANAGE: "crm.contact.manage",
   CRM_ACTIVITY_MANAGE: "crm.activity.manage",
+  SETTINGS_TEMPLATES_MANAGE: "settings.templates.manage",
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

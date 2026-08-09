@@ -130,7 +130,7 @@ export class SalesQuotationsService {
   private async getOwned(companyId: string, id: string) {
     const quotation = await this.prisma.salesQuotation.findFirst({
       where: { id, companyId },
-      include: { lines: true, businessPartner: true },
+      include: { lines: { include: { item: true } }, businessPartner: true },
     });
     if (!quotation) {
       throw new NotFoundException("Sales quotation not found");

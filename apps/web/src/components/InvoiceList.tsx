@@ -4,6 +4,7 @@ import QRCode from "qrcode";
 import { apiClient } from "../api/client";
 import { AttachButton } from "./AttachButton";
 import { AttachmentViewer } from "./AttachmentViewer";
+import { useDocumentPdfDownload } from "../hooks/useDocumentPdfDownload";
 
 interface InvoiceRow {
   id: string;
@@ -69,6 +70,8 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
   const [dateSort, setDateSort] = useState<"asc" | "desc">("desc");
   const [uploadingFor, setUploadingFor] = useState<string | null>(null);
   const [viewer, setViewer] = useState<{ lineId: string; filename: string } | null>(null);
+  const { download } = useDocumentPdfDownload(side === "ar" ? "sales" : "purchase");
+  const [pdfBusyId, setPdfBusyId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -148,6 +151,33 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
       setError(err?.response?.data?.message ?? "Failed to delete draft");
     } finally {
       setBusyId(null);
+    }
+  }
+
+  async function downloadPdf(id: string) {
+    setPdfBusyId(id);
+    setError(null);
+    try {
+      const res = await apiClient.get<{
+        invoiceNumber: string | null;
+        vendorInvoiceNumber?: string;
+        postingDate: string;
+        businessPartner: { name: string; code: string; taxRegistrationNumber?: string | null };
+        lines: Array<{ description: string; quantity: string; unitPrice: string; vatCategory: string; item?: { code: string } | null }>;
+      }>(`/${side}/invoices/${id}`);
+      const inv = res.data;
+      download({
+        docTypeLabel: side === "ar" ? "Sales Invoice" : "Purchase Invoice",
+        documentNumber: inv.invoiceNumber ?? inv.vendorInvoiceNumber ?? "DRAFT",
+        documentDate: inv.postingDate,
+        partnerLabel: side === "ar" ? "Bill To" : "Vendor",
+        partner: inv.businessPartner,
+        lines: inv.lines.map((l) => ({ itemCode: l.item?.code, description: l.description, quantity: l.quantity, unitPrice: l.unitPrice, vatCategory: l.vatCategory })),
+      });
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to generate PDF");
+    } finally {
+      setPdfBusyId(null);
     }
   }
 
@@ -500,7 +530,10 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
                     <button className="secondary" disabled={busyId === inv.id} onClick={() => action(inv.id, "cancel")}>
                       Cancel
                     </button>
-                  )}
+                  )}{" "}
+                  <button className="secondary" disabled={pdfBusyId === inv.id} onClick={() => downloadPdf(inv.id)}>
+                    {pdfBusyId === inv.id ? "Preparing…" : "PDF"}
+                  </button>
                 </td>
               </tr>
             ))}

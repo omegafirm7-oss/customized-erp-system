@@ -612,7 +612,7 @@ export class ArService {
     const invoice = await this.prisma.salesInvoice.findFirst({
       where: { id: invoiceId, companyId },
       include: {
-        lines: true,
+        lines: { include: { item: true } },
         businessPartner: true,
         zatcaSubmission: {
           select: { id: true, status: true, icv: true, uuid: true, invoiceKind: true, qrCode: true, warnings: true, errors: true },

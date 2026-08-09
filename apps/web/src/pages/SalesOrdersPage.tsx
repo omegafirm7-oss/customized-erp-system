@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { apiClient } from "../api/client";
+import { useDocumentPdfDownload } from "../hooks/useDocumentPdfDownload";
 
 interface Partner {
   id: string;
@@ -83,6 +84,8 @@ export function SalesOrdersPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [invoiceFormId, setInvoiceFormId] = useState<string | null>(null);
   const [dateSort, setDateSort] = useState<"asc" | "desc">("desc");
+  const { download } = useDocumentPdfDownload("sales");
+  const [pdfBusyId, setPdfBusyId] = useState<string | null>(null);
   const [invoiceForm, setInvoiceForm] = useState({
     issueDateTime: new Date().toISOString().slice(0, 10),
     postingDate: new Date().toISOString().slice(0, 10),
@@ -172,6 +175,32 @@ export function SalesOrdersPage() {
     }
   }
 
+  async function downloadPdf(id: string) {
+    setPdfBusyId(id);
+    setError(null);
+    try {
+      const res = await apiClient.get<{
+        orderNumber: string;
+        orderDate: string;
+        businessPartner: { name: string; code: string; taxRegistrationNumber?: string | null };
+        lines: Array<{ description: string; quantity: string; unitPrice: string; vatCategory: string; item?: { code: string } | null }>;
+      }>(`/ar/orders/${id}`);
+      const o = res.data;
+      download({
+        docTypeLabel: "Sales Order",
+        documentNumber: o.orderNumber,
+        documentDate: o.orderDate,
+        partnerLabel: "Bill To",
+        partner: o.businessPartner,
+        lines: o.lines.map((l) => ({ itemCode: l.item?.code, description: l.description, quantity: l.quantity, unitPrice: l.unitPrice, vatCategory: l.vatCategory })),
+      });
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to generate PDF");
+    } finally {
+      setPdfBusyId(null);
+    }
+  }
+
   async function submitGenerateInvoice(e: FormEvent, orderId: string) {
     e.preventDefault();
     setBusyId(orderId);
@@ -244,14 +273,19 @@ export function SalesOrdersPage() {
                           </button>{" "}
                           <button className="secondary" disabled={busyId === o.id} onClick={() => cancelOrder(o.id)}>
                             Cancel
-                          </button>
+                          </button>{" "}
                         </>
                       )}
                       {o.status === "DRAFT" && (
-                        <button className="secondary" disabled={busyId === o.id} onClick={() => cancelOrder(o.id)}>
-                          Cancel
-                        </button>
+                        <>
+                          <button className="secondary" disabled={busyId === o.id} onClick={() => cancelOrder(o.id)}>
+                            Cancel
+                          </button>{" "}
+                        </>
                       )}
+                      <button className="secondary" disabled={pdfBusyId === o.id} onClick={() => downloadPdf(o.id)}>
+                        {pdfBusyId === o.id ? "Preparing…" : "PDF"}
+                      </button>
                     </td>
                   </tr>
                   {invoiceFormId === o.id && (

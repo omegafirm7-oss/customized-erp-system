@@ -455,6 +455,7 @@ model Company {
   zatcaDevices              ZatcaDevice[]
   projects                  Project[]
   hrSettings                HrSettings?
+  templateSettings          TemplateSettings?
   employees                 Employee[]
   employeeLoans             EmployeeLoan[]
   payrollRuns               PayrollRun[]
@@ -1978,6 +1979,32 @@ model HrSettings {
   updatedAt              DateTime  @updatedAt
 
   @@map("hr_settings")
+}
+
+model TemplateSettings {
+  id                       String   @id @default(uuid())
+  companyId                String   @unique
+  company                  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  logo                     Bytes?
+  logoMimeType             String?
+  accentColor              String   @default("#101828")
+  footerText               String?
+  showAddressInHeader      Boolean  @default(true)
+  showTaxNumberInHeader    Boolean  @default(true)
+  timesheetTitle           String   @default("Monthly Timesheet")
+  timesheetShowIqama       Boolean  @default(true)
+  timesheetShowDesignation Boolean  @default(true)
+  salesShowItemCode        Boolean  @default(true)
+  salesShowVatBreakdown    Boolean  @default(true)
+  salesTermsText           String?
+  purchaseShowItemCode     Boolean  @default(true)
+  purchaseShowVatBreakdown Boolean  @default(true)
+  purchaseTermsText        String?
+  updatedByUserId          String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  @@map("template_settings")
 }
 
 model Employee {

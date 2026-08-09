@@ -32,6 +32,7 @@ import { NewPaymentPage } from "./pages/NewPaymentPage";
 import { ArAgingPage, ApAgingPage } from "./pages/AgingPage";
 import { VatReturnPage } from "./pages/VatReturnPage";
 import { ZatcaSettingsPage } from "./pages/ZatcaSettingsPage";
+import { TemplateSettingsPage } from "./pages/TemplateSettingsPage";
 import { StockSummaryPage } from "./pages/StockSummaryPage";
 import { StockMovementsPage } from "./pages/StockMovementsPage";
 import { StockTransferPage } from "./pages/StockTransferPage";
@@ -110,6 +111,7 @@ const companyRoutes: Array<{ path: string; element: JSX.Element }> = [
   { path: "/reports/ap-aging", element: <ApAgingPage /> },
   { path: "/reports/vat-return", element: <VatReturnPage /> },
   { path: "/settings/zatca", element: <ZatcaSettingsPage /> },
+  { path: "/settings/templates", element: <TemplateSettingsPage /> },
   { path: "/inventory/stock", element: <StockSummaryPage /> },
   { path: "/inventory/movements", element: <StockMovementsPage /> },
   { path: "/inventory/transfers", element: <StockTransferPage /> },

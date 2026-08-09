@@ -737,7 +737,7 @@ export class ApService {
   private async getOwnedInvoice(companyId: string, invoiceId: string) {
     const invoice = await this.prisma.purchaseInvoice.findFirst({
       where: { id: invoiceId, companyId },
-      include: { lines: true, businessPartner: true },
+      include: { lines: { include: { item: true } }, businessPartner: true },
     });
     if (!invoice) {
       throw new NotFoundException("Purchase invoice not found");

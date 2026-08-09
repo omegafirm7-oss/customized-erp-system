@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { apiClient } from "../api/client";
+import { useDocumentPdfDownload } from "../hooks/useDocumentPdfDownload";
 
 interface Partner {
   id: string;
@@ -53,6 +54,8 @@ export function PurchaseQuotationsPage() {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [dateSort, setDateSort] = useState<"asc" | "desc">("desc");
+  const { download } = useDocumentPdfDownload("purchase");
+  const [pdfBusyId, setPdfBusyId] = useState<string | null>(null);
 
   const [partnerId, setPartnerId] = useState("");
   const [quotationDate, setQuotationDate] = useState(new Date().toISOString().slice(0, 10));
@@ -127,6 +130,32 @@ export function PurchaseQuotationsPage() {
     }
   }
 
+  async function downloadPdf(id: string) {
+    setPdfBusyId(id);
+    setError(null);
+    try {
+      const res = await apiClient.get<{
+        quotationNumber: string;
+        quotationDate: string;
+        businessPartner: { name: string; code: string; taxRegistrationNumber?: string | null };
+        lines: Array<{ description: string; quantity: string; unitPrice: string; vatCategory: string; item?: { code: string } | null }>;
+      }>(`/ap/quotations/${id}`);
+      const q = res.data;
+      download({
+        docTypeLabel: "Purchase Quotation",
+        documentNumber: q.quotationNumber,
+        documentDate: q.quotationDate,
+        partnerLabel: "Vendor",
+        partner: q.businessPartner,
+        lines: q.lines.map((l) => ({ itemCode: l.item?.code, description: l.description, quantity: l.quantity, unitPrice: l.unitPrice, vatCategory: l.vatCategory })),
+      });
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to generate PDF");
+    } finally {
+      setPdfBusyId(null);
+    }
+  }
+
   async function cancelQuotation(id: string) {
     setBusyId(id);
     setError(null);
@@ -187,9 +216,12 @@ export function PurchaseQuotationsPage() {
                         </button>{" "}
                         <button className="secondary" disabled={busyId === q.id} onClick={() => cancelQuotation(q.id)}>
                           Cancel
-                        </button>
+                        </button>{" "}
                       </>
                     )}
+                    <button className="secondary" disabled={pdfBusyId === q.id} onClick={() => downloadPdf(q.id)}>
+                      {pdfBusyId === q.id ? "Preparing…" : "PDF"}
+                    </button>
                   </td>
                 </tr>
               ))}

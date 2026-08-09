@@ -241,7 +241,7 @@ export class SalesOrdersService {
   private async getOwned(companyId: string, id: string) {
     const order = await this.prisma.salesOrder.findFirst({
       where: { id, companyId },
-      include: { lines: true, businessPartner: true },
+      include: { lines: { include: { item: true } }, businessPartner: true },
     });
     if (!order) {
       throw new NotFoundException("Sales order not found");

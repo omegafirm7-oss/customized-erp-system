@@ -27,6 +27,7 @@ import { ManpowerModule } from "./manpower/manpower.module";
 import { EquipmentModule } from "./equipment/equipment.module";
 import { PlatformModule } from "./platform/platform.module";
 import { CrmModule } from "./crm/crm.module";
+import { SettingsModule } from "./settings/settings.module";
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { CrmModule } from "./crm/crm.module";
     EquipmentModule,
     PlatformModule,
     CrmModule,
+    SettingsModule,
   ],
   providers: [
     // Global by default — every route requires a valid JWT unless explicitly

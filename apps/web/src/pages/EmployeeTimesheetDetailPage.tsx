@@ -5,6 +5,7 @@ import { AttachButton } from "../components/AttachButton";
 import { AttachmentViewer } from "../components/AttachmentViewer";
 import { useAuth } from "../auth/AuthContext";
 import { useCompanies } from "../hooks/useCompanies";
+import { useTemplateSettings } from "../hooks/useTemplateSettings";
 import { downloadEmployeeAttendancePdf } from "../utils/attendancePdf";
 
 interface FiscalPeriod {
@@ -52,6 +53,7 @@ export function EmployeeTimesheetDetailPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { companies } = useCompanies();
+  const { settings: templateSettings, logoDataUrl } = useTemplateSettings();
   const [periods, setPeriods] = useState<FiscalPeriod[]>([]);
   const [periodId, setPeriodId] = useState("");
   const [scope, setScope] = useState<"overall" | "period">("overall");
@@ -132,6 +134,16 @@ export function EmployeeTimesheetDetailPage() {
         endDate: period.endDate,
         entries: detail.entries,
         totalHours: detail.totalHours,
+        branding: templateSettings
+          ? {
+              logoDataUrl,
+              accentColor: templateSettings.accentColor,
+              footerText: templateSettings.footerText,
+              title: templateSettings.timesheetTitle,
+              showIqama: templateSettings.timesheetShowIqama,
+              showDesignation: templateSettings.timesheetShowDesignation,
+            }
+          : undefined,
       });
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "Failed to generate PDF");
