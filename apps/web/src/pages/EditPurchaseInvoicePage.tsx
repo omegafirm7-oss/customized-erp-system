@@ -192,10 +192,6 @@ export function EditPurchaseInvoicePage() {
             <label>Posting </label>
             <input type="date" value={postingDate} onChange={(e) => setPostingDate(e.target.value)} required />
           </div>
-          <div>
-            <label>Due </label>
-            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required />
-          </div>
         </div>
         <div className="form-row">
           <input placeholder="Memo (optional)" value={memo} onChange={(e) => setMemo(e.target.value)} style={{ flex: 1 }} />

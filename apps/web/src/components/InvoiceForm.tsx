@@ -108,6 +108,14 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
   const today = new Date().toISOString().slice(0, 10);
   const [postingDate, setPostingDate] = useState(today);
   const [dueDate, setDueDate] = useState(new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().slice(0, 10));
+
+  // Purchase invoices no longer show a Due Date field — the backend still
+  // requires one (it drives AP aging), so keep it in sync with the posting
+  // date behind the scenes instead of asking the user to pick it.
+  useEffect(() => {
+    if (side !== "ap") return;
+    setDueDate(new Date(new Date(postingDate).getTime() + 30 * 24 * 3600 * 1000).toISOString().slice(0, 10));
+  }, [side, postingDate]);
   const [memo, setMemo] = useState("");
   const [lines, setLines] = useState<LineForm[]>([emptyLine(side)]);
   const [error, setError] = useState<string | null>(null);
@@ -263,10 +271,12 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
             <label>Posting </label>
             <input type="date" value={postingDate} onChange={(e) => setPostingDate(e.target.value)} required />
           </div>
-          <div>
-            <label>Due </label>
-            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required />
-          </div>
+          {side === "ar" && (
+            <div>
+              <label>Due </label>
+              <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required />
+            </div>
+          )}
         </div>
         <div className="form-row">
           <input placeholder="Memo (optional)" value={memo} onChange={(e) => setMemo(e.target.value)} style={{ flex: 1 }} />
