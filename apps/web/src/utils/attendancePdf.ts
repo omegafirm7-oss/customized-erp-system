@@ -56,7 +56,9 @@ export interface AttendancePdfParams {
 /**
  * Builds one employee's day-by-day attendance for a single period into a
  * letterhead-styled PDF matching the client's official monthly timesheet
- * template (S/N, Date, Hours, Remarks; Fridays blank; total at the bottom).
+ * template (S/N, Date, Hours, Remarks — Friday always 0 hrs/"Friday off",
+ * 0 hrs "Absent", 5 hrs "Half working day", 10 hrs "Full working day";
+ * total at the bottom).
  * One row per calendar day in [startDate, endDate], not just days that have
  * a recorded entry — matches the printed sheet's fixed 1..31 row layout.
  * Returns the jsPDF instance so callers can `.save()` it or pull a `.output()`
@@ -83,9 +85,19 @@ export function buildEmployeeAttendancePdf(params: AttendancePdfParams): jsPDF {
     const isFriday = cursor.getUTCDay() === 5;
     const entry = entryByDate.get(key);
     const dateLabel = cursor.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
-    const hours = isFriday ? "" : entry ? String(Number(entry.hoursWorked)) : "";
-    const remarks = isFriday ? "" : entry ? (DAY_TYPE_REMARKS[entry.dayType] ?? "") : "";
-    rows.push([String(sn), dateLabel, hours, remarks]);
+    const hoursNum = isFriday ? 0 : entry ? Number(entry.hoursWorked) : 0;
+    const remarks = isFriday
+      ? "Friday off"
+      : hoursNum === 0
+        ? "Absent"
+        : hoursNum === 5
+          ? "Half working day"
+          : hoursNum === 10
+            ? "Full working day"
+            : entry
+              ? (DAY_TYPE_REMARKS[entry.dayType] ?? "")
+              : "";
+    rows.push([String(sn), dateLabel, String(hoursNum), remarks]);
     sn += 1;
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
