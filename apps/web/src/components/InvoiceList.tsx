@@ -462,7 +462,7 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
               <th style={{ cursor: "pointer" }} onClick={() => setDateSort((d) => (d === "asc" ? "desc" : "asc"))}>
                 Posting Date {dateSort === "asc" ? "▲" : "▼"}
               </th>
-              <th>Due Date</th>
+              {side === "ar" && <th>Due Date</th>}
               <th>Gross</th>
               <th>Open</th>
               <th>Status</th>
@@ -482,7 +482,7 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
                 {side === "ap" && <td>{accountSummary(inv)}</td>}
                 {side === "ap" && <td>{costCenterSummary(inv)}</td>}
                 <td>{new Date(inv.postingDate).toLocaleDateString()}</td>
-                <td>{new Date(inv.dueDate).toLocaleDateString()}</td>
+                {side === "ar" && <td>{new Date(inv.dueDate).toLocaleDateString()}</td>}
                 <td>{Number(inv.grossTotal).toFixed(2)}</td>
                 <td>{Number(inv.openAmount).toFixed(2)}</td>
                 <td>
