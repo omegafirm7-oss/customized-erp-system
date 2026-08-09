@@ -6,6 +6,7 @@ export interface TemplateSettings {
   companyId: string;
   hasLogo: boolean;
   logoMimeType: string | null;
+  headerTagline: string | null;
   accentColor: string;
   footerText: string | null;
   showAddressInHeader: boolean;

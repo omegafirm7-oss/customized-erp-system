@@ -9,6 +9,7 @@ type FormState = Omit<
 
 function toForm(s: TemplateSettings): FormState {
   return {
+    headerTagline: s.headerTagline,
     accentColor: s.accentColor,
     footerText: s.footerText,
     showAddressInHeader: s.showAddressInHeader,
@@ -122,6 +123,16 @@ export function TemplateSettingsPage() {
         </div>
       </div>
       <form onSubmit={save}>
+        <div className="form-row">
+          <div style={{ flex: 1 }}>
+            <label>Header tagline (shown under company name, e.g. "CONSTRUCTION &amp; CONTRACTING SERVICES") </label>
+            <input
+              style={{ width: "100%" }}
+              value={current.headerTagline ?? ""}
+              onChange={(e) => set("headerTagline", e.target.value)}
+            />
+          </div>
+        </div>
         <div className="form-row">
           <div>
             <label>Accent color </label>

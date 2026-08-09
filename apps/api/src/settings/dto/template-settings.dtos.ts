@@ -5,6 +5,11 @@ export class UpdateTemplateSettingsDto {
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
+  headerTagline?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
   accentColor?: string;
 
   @ApiProperty({ required: false })

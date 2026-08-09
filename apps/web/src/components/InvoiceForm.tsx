@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { AttachButton } from "./AttachButton";
+import { SearchableSelect } from "./SearchableSelect";
 
 interface Partner {
   id: string;
@@ -241,16 +242,15 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
       {error && <div className="error-banner">{Array.isArray(error) ? (error as string[]).join("; ") : error}</div>}
       <form onSubmit={handleSubmit}>
         <div className="form-row">
-          <select value={partnerId} onChange={(e) => setPartnerId(e.target.value)} required style={{ flex: 1 }}>
-            <option value="" disabled>
-              Select {side === "ar" ? "customer" : "vendor"}…
-            </option>
-            {partners.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.code} — {p.name}
-              </option>
-            ))}
-          </select>
+          <div style={{ flex: 1 }}>
+            <SearchableSelect
+              options={partners}
+              value={partnerId}
+              onChange={setPartnerId}
+              placeholder={`Search ${side === "ar" ? "customer" : "vendor"} by code or name…`}
+              required
+            />
+          </div>
           {side === "ap" && (
             <input
               placeholder="Vendor invoice number"
@@ -309,20 +309,13 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
                   </td>
                   {side === "ap" && (
                     <td>
-                      <select
+                      <SearchableSelect
+                        options={accounts}
                         value={line.accountId}
-                        onChange={(e) => updateLine(index, { accountId: e.target.value })}
+                        onChange={(accountId) => updateLine(index, { accountId })}
+                        placeholder={line.itemId ? "(default from item)" : "Search account…"}
                         required={!line.itemId}
-                      >
-                        <option value="">
-                          {line.itemId ? "(default from item)" : "Select account…"}
-                        </option>
-                        {accounts.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.code} — {a.name}
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </td>
                   )}
                   <td>

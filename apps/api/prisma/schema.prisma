@@ -1987,6 +1987,9 @@ model TemplateSettings {
   company                  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   logo                     Bytes?
   logoMimeType             String?
+  // Small red/branded line under the company name in document headers, e.g.
+  // "CONSTRUCTION & CONTRACTING SERVICES" — company's industry tagline.
+  headerTagline            String?
   accentColor              String   @default("#101828")
   footerText               String?
   showAddressInHeader      Boolean  @default(true)
@@ -2022,6 +2025,8 @@ model Employee {
   gender              String?
   dateOfBirth         DateTime?
   iqamaOrNationalId   String?
+  // WhatsApp/SMS contact number for sending documents (e.g. attendance sheets) directly to the worker.
+  phone               String?
   iqamaExpiry         DateTime?
   passportNumber      String?
   passportExpiry      DateTime?

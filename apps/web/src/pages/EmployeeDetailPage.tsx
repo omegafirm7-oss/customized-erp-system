@@ -59,6 +59,7 @@ interface EmployeeDetail {
   gender: string | null;
   dateOfBirth: string | null;
   iqamaOrNationalId: string | null;
+  phone: string | null;
   iqamaExpiry: string | null;
   passportNumber: string | null;
   passportExpiry: string | null;
@@ -153,6 +154,7 @@ const emptyDetailsForm = {
   gender: "",
   dateOfBirth: "",
   iqamaOrNationalId: "",
+  phone: "",
   iqamaExpiry: "",
   passportNumber: "",
   passportExpiry: "",
@@ -228,6 +230,7 @@ export function EmployeeDetailPage() {
       gender: e.gender ?? "",
       dateOfBirth: toDateInput(e.dateOfBirth),
       iqamaOrNationalId: e.iqamaOrNationalId ?? "",
+      phone: e.phone ?? "",
       iqamaExpiry: toDateInput(e.iqamaExpiry),
       passportNumber: e.passportNumber ?? "",
       passportExpiry: toDateInput(e.passportExpiry),
@@ -271,6 +274,7 @@ export function EmployeeDetailPage() {
         gender: detailsForm.gender || undefined,
         dateOfBirth: detailsForm.dateOfBirth || undefined,
         iqamaOrNationalId: detailsForm.iqamaOrNationalId || undefined,
+        phone: detailsForm.phone || undefined,
         iqamaExpiry: detailsForm.iqamaExpiry || undefined,
         passportNumber: detailsForm.passportNumber || undefined,
         passportExpiry: detailsForm.passportExpiry || undefined,
@@ -591,6 +595,7 @@ export function EmployeeDetailPage() {
           <h4>Documents</h4>
           <div className="form-row">
             <input placeholder="Iqama / National ID" value={detailsForm.iqamaOrNationalId} onChange={set("iqamaOrNationalId")} disabled={!active} />
+            <input placeholder="Phone (WhatsApp)" value={detailsForm.phone} onChange={set("phone")} disabled={!active} />
             <div>
               <label>Iqama expiry </label>
               <input type="date" value={detailsForm.iqamaExpiry} onChange={set("iqamaExpiry")} disabled={!active} />

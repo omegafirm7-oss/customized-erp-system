@@ -6,7 +6,8 @@ import { AttachmentViewer } from "../components/AttachmentViewer";
 import { useAuth } from "../auth/AuthContext";
 import { useCompanies } from "../hooks/useCompanies";
 import { useTemplateSettings } from "../hooks/useTemplateSettings";
-import { downloadEmployeeAttendancePdf } from "../utils/attendancePdf";
+import { attendancePdfFilename, AttendancePdfParams, buildEmployeeAttendancePdf } from "../utils/attendancePdf";
+import { shareFileViaWhatsApp } from "../utils/shareViaWhatsApp";
 
 interface FiscalPeriod {
   id: string;
@@ -63,6 +64,7 @@ export function EmployeeTimesheetDetailPage() {
   const [uploadingFor, setUploadingFor] = useState<string | null>(null);
   const [viewer, setViewer] = useState<{ entryId: string; filename: string } | null>(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [sharingPdf, setSharingPdf] = useState(false);
 
   useEffect(() => {
     apiClient.get<FiscalPeriod[]>("/companies/current/fiscal-periods").then((res) => {
@@ -113,17 +115,16 @@ export function EmployeeTimesheetDetailPage() {
     }
   }
 
-  async function downloadPdfForPeriod() {
-    if (!id || !detail || scope !== "period") return;
+  async function buildPdfParams(): Promise<{ params: AttendancePdfParams; phone: string | null } | null> {
+    if (!id || !detail || scope !== "period") return null;
     const period = periods.find((p) => p.id === periodId);
-    if (!period) return;
-    setDownloadingPdf(true);
-    setError(null);
-    try {
-      const employeeRes = await apiClient.get<{ designation?: string; iqamaOrNationalId?: string }>(`/hr/employees/${id}`);
-      const companyName = companies.find((c) => c.companyId === user?.activeCompanyId)?.companyName ?? "";
-      const periodLabel = new Date(period.startDate).toLocaleDateString(undefined, { month: "long", year: "numeric" });
-      downloadEmployeeAttendancePdf({
+    if (!period) return null;
+    const employeeRes = await apiClient.get<{ designation?: string; iqamaOrNationalId?: string; phone?: string | null }>(`/hr/employees/${id}`);
+    const companyName = companies.find((c) => c.companyId === user?.activeCompanyId)?.companyName ?? "";
+    const periodLabel = new Date(period.startDate).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    return {
+      phone: employeeRes.data.phone ?? null,
+      params: {
         companyName,
         employeeName: detail.nameEn,
         employeeCode: detail.code,
@@ -139,16 +140,56 @@ export function EmployeeTimesheetDetailPage() {
               logoDataUrl,
               accentColor: templateSettings.accentColor,
               footerText: templateSettings.footerText,
+              headerTagline: templateSettings.headerTagline,
               title: templateSettings.timesheetTitle,
               showIqama: templateSettings.timesheetShowIqama,
               showDesignation: templateSettings.timesheetShowDesignation,
             }
           : undefined,
-      });
+      },
+    };
+  }
+
+  async function downloadPdfForPeriod() {
+    setDownloadingPdf(true);
+    setError(null);
+    try {
+      const built = await buildPdfParams();
+      if (!built) return;
+      const doc = buildEmployeeAttendancePdf(built.params);
+      doc.save(attendancePdfFilename(built.params.employeeCode, built.params.periodLabel));
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "Failed to generate PDF");
     } finally {
       setDownloadingPdf(false);
+    }
+  }
+
+  async function sendPdfViaWhatsApp() {
+    setSharingPdf(true);
+    setError(null);
+    try {
+      const built = await buildPdfParams();
+      if (!built) return;
+      const doc = buildEmployeeAttendancePdf(built.params);
+      const filename = attendancePdfFilename(built.params.employeeCode, built.params.periodLabel);
+      const blob = doc.output("blob") as Blob;
+      const file = new File([blob], filename, { type: "application/pdf" });
+      const result = await shareFileViaWhatsApp(file, {
+        phone: built.phone,
+        text: `Attendance sheet — ${built.params.employeeName} — ${built.params.periodLabel}`,
+      });
+      if (result === "fallback") {
+        setError(
+          built.phone
+            ? "Your browser can't attach files to WhatsApp directly — the PDF downloaded, and a WhatsApp chat opened for you to attach it manually."
+            : "This employee has no phone number saved — the PDF downloaded, and a blank WhatsApp chat opened for you to pick a recipient and attach it manually.",
+        );
+      }
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to prepare PDF for WhatsApp");
+    } finally {
+      setSharingPdf(false);
     }
   }
 
@@ -172,6 +213,9 @@ export function EmployeeTimesheetDetailPage() {
               <>
                 <button className="secondary" disabled={downloadingPdf} onClick={downloadPdfForPeriod}>
                   {downloadingPdf ? "Preparing…" : "Download Attendance (PDF)"}
+                </button>{" "}
+                <button className="secondary" disabled={sharingPdf} onClick={sendPdfViaWhatsApp} title="Send this employee's attendance sheet via WhatsApp">
+                  {sharingPdf ? "Preparing…" : "Send via WhatsApp"}
                 </button>{" "}
               </>
             )}

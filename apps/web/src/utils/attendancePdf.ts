@@ -18,6 +18,7 @@ export interface DocumentBranding {
   logoDataUrl?: string | null;
   accentColor?: string;
   footerText?: string | null;
+  headerTagline?: string | null;
 }
 
 function hexToRgb(hex: string): [number, number, number] {
@@ -32,14 +33,7 @@ export function logoFormatFromDataUrl(dataUrl: string): "PNG" | "JPEG" | "WEBP" 
   return "PNG";
 }
 
-/**
- * Renders one employee's day-by-day attendance for a single period into a
- * letterhead-styled PDF matching the client's official monthly timesheet
- * template (S/N, Date, Hours, Remarks; Fridays blank; total at the bottom).
- * One row per calendar day in [startDate, endDate], not just days that have
- * a recorded entry — matches the printed sheet's fixed 1..31 row layout.
- */
-export function downloadEmployeeAttendancePdf(params: {
+export interface AttendancePdfParams {
   companyName: string;
   employeeName: string;
   employeeCode: string;
@@ -55,8 +49,19 @@ export function downloadEmployeeAttendancePdf(params: {
     showIqama?: boolean;
     showDesignation?: boolean;
   };
-}) {
-  const { companyName, employeeName, employeeCode, designation, iqamaOrNationalId, periodLabel, startDate, endDate, entries, totalHours, branding } = params;
+}
+
+/**
+ * Builds one employee's day-by-day attendance for a single period into a
+ * letterhead-styled PDF matching the client's official monthly timesheet
+ * template (S/N, Date, Hours, Remarks; Fridays blank; total at the bottom).
+ * One row per calendar day in [startDate, endDate], not just days that have
+ * a recorded entry — matches the printed sheet's fixed 1..31 row layout.
+ * Returns the jsPDF instance so callers can `.save()` it or pull a `.output()`
+ * blob for other destinations (e.g. WhatsApp share) without generating twice.
+ */
+export function buildEmployeeAttendancePdf(params: AttendancePdfParams): jsPDF {
+  const { companyName, employeeName, designation, iqamaOrNationalId, periodLabel, startDate, endDate, entries, totalHours, branding } = params;
   const title = branding?.title ?? "Monthly Timesheet";
   const showIqama = branding?.showIqama ?? true;
   const showDesignation = branding?.showDesignation ?? true;
@@ -85,47 +90,72 @@ export function downloadEmployeeAttendancePdf(params: {
 
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
-  let y = 16;
+  const marginX = 14;
 
+  // Full-bleed dark header bar with the company name (and logo, if any) —
+  // "the company header should be dark and above". The document title sits
+  // centered on its own line below the bar, not squeezed in next to the tagline.
+  const barHeight = 26;
+  doc.setFillColor(...accentRgb);
+  doc.rect(0, 0, pageWidth, barHeight, "F");
+
+  let textX = marginX;
   if (branding?.logoDataUrl) {
     try {
       const format = logoFormatFromDataUrl(branding.logoDataUrl);
-      doc.addImage(branding.logoDataUrl, format, pageWidth / 2 - 15, y, 30, 16, undefined, "FAST");
-      y += 20;
+      doc.addImage(branding.logoDataUrl, format, marginX, 5, 16, 16, undefined, "FAST");
+      textX = marginX + 20;
     } catch {
       // fall through without the logo if the data URL can't be decoded (unsupported format)
     }
   }
 
-  doc.setFontSize(14);
+  doc.setFontSize(16);
   doc.setFont("helvetica", "bold");
-  doc.text(companyName, pageWidth / 2, y, { align: "center" });
-  y += 7;
-  doc.setFontSize(11);
-  doc.setFont("helvetica", "normal");
+  doc.setTextColor(255, 255, 255);
+  doc.text(companyName.toUpperCase(), textX, 12);
+
+  if (branding?.headerTagline) {
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(255, 190, 190);
+    doc.text(branding.headerTagline.toUpperCase(), textX, 19);
+  }
+
+  let y = barHeight + 10;
+  doc.setFontSize(13);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(0, 0, 0);
   doc.text(title, pageWidth / 2, y, { align: "center" });
+  y += 6;
+  doc.setDrawColor(...accentRgb);
+  doc.setLineWidth(0.8);
+  doc.line(marginX, y, pageWidth - marginX, y);
   y += 8;
 
+  // Fixed 5-row x 2-column layout mirroring the client's printed form —
+  // Project/Location/Zone/Supervisor have no data source in this app and
+  // print blank (matching a physical form's fill-by-hand fields).
   const infoRows: string[][] = [
-    ["Employee Name", employeeName, "Employee Code", employeeCode],
+    ["Project", "", "Employee Name", employeeName],
+    ["Location", "", "Designation", showDesignation ? (designation ?? "") : ""],
+    ["Zone", "", "Trade", showDesignation ? (designation ?? "") : ""],
+    ["Month / Year", periodLabel, "Iqama No.", showIqama ? (iqamaOrNationalId ?? "") : ""],
+    ["Supervisor", "", "Signature", ""],
   ];
-  if (showDesignation) {
-    infoRows.push(["Designation", designation ?? "", "Trade", designation ?? ""]);
-  }
-  infoRows.push([showIqama ? "Iqama No." : "Month / Year", showIqama ? (iqamaOrNationalId ?? "") : periodLabel, showIqama ? "Month / Year" : "", showIqama ? periodLabel : ""]);
 
   autoTable(doc, {
     startY: y,
     theme: "grid",
-    styles: { fontSize: 9, cellPadding: 2 },
+    styles: { fontSize: 9, cellPadding: 3, fontStyle: "bold" },
     body: infoRows,
     columnStyles: {
-      0: { fontStyle: "bold", cellWidth: 35 },
+      0: { cellWidth: 35, fillColor: [240, 240, 244] },
       1: { cellWidth: 55 },
-      2: { fontStyle: "bold", cellWidth: 35 },
+      2: { cellWidth: 35, fillColor: [240, 240, 244] },
       3: { cellWidth: 55 },
     },
-    margin: { left: 14, right: 14 },
+    margin: { left: marginX, right: marginX },
   });
   y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
 
@@ -134,8 +164,11 @@ export function downloadEmployeeAttendancePdf(params: {
     head: [["S/N", "Date", "Hours", "Remarks"]],
     body: rows,
     foot: [["", "", "Total Monthly Hours:", String(Number(totalHours))]],
-    styles: { fontSize: 9, cellPadding: 2, halign: "center" },
-    headStyles: { fillColor: accentRgb },
+    // Without this, autoTable repeats the foot row at the bottom of every
+    // page a multi-page body spans — the total should print once, at the end.
+    showFoot: "lastPage",
+    styles: { fontSize: 9, cellPadding: 2, halign: "center", fontStyle: "bold", lineWidth: 0.3 },
+    headStyles: { fillColor: accentRgb, fontStyle: "bold" },
     footStyles: { fillColor: [235, 235, 235], textColor: 0, fontStyle: "bold" },
     columnStyles: {
       0: { cellWidth: 14 },
@@ -143,7 +176,7 @@ export function downloadEmployeeAttendancePdf(params: {
       2: { cellWidth: 25 },
       3: { halign: "left" },
     },
-    margin: { left: 14, right: 14 },
+    margin: { left: marginX, right: marginX },
   });
 
   if (branding?.footerText) {
@@ -153,5 +186,15 @@ export function downloadEmployeeAttendancePdf(params: {
     doc.text(branding.footerText, 14, footerY);
   }
 
-  doc.save(`${employeeCode}-${periodLabel.replace(/\s+/g, "-")}-attendance.pdf`);
+  return doc;
+}
+
+export function attendancePdfFilename(employeeCode: string, periodLabel: string): string {
+  return `${employeeCode}-${periodLabel.replace(/\s+/g, "-")}-attendance.pdf`;
+}
+
+/** Convenience wrapper — builds the PDF and triggers a browser download immediately. */
+export function downloadEmployeeAttendancePdf(params: AttendancePdfParams) {
+  const doc = buildEmployeeAttendancePdf(params);
+  doc.save(attendancePdfFilename(params.employeeCode, params.periodLabel));
 }

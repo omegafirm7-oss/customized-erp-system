@@ -124,6 +124,11 @@ export class CreateEmployeeDto {
   @IsString()
   iqamaOrNationalId?: string;
 
+  @ApiProperty({ required: false, description: "WhatsApp/SMS contact number for sending documents directly to the worker" })
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
   @ApiProperty({ required: false })
   @IsOptional()
   @IsDateString()
