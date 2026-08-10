@@ -148,11 +148,15 @@ export function AttachmentViewer({ filename, mimeType, fetchBlob, onClose }: Att
           style={{
             overflow: isImage ? "hidden" : "auto",
             flex: 1,
-            width: "85vw",
-            height: "75vh",
+            // PDFs are portrait — a wide/short box leaves the browser's native
+            // viewer letterboxing gray bars on either side of the page and
+            // renders it small. A tall/narrow box lets the page fill the
+            // available height instead, so it reads bigger at the same zoom.
+            width: isImage ? "85vw" : "55vw",
+            height: isImage ? "75vh" : "85vh",
             display: "flex",
             alignItems: isImage ? "center" : "flex-start",
-            justifyContent: isImage ? "center" : "flex-start",
+            justifyContent: isImage ? "center" : "center",
           }}
         >
           {error && <p style={{ color: "#b42318" }}>{error}</p>}
