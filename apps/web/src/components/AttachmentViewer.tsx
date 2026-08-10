@@ -12,11 +12,13 @@ interface AttachmentViewerProps {
 }
 
 /**
- * Shared evidence viewer for every Attach/View surface in the app. Images
- * get cursor-anchored wheel/click zoom (matches the original receipt
- * viewer's feel — the point under the cursor stays put while zooming, like
- * Google Maps/Figma); PDFs render inline in an iframe sized to fill the same
- * modal, relying on the browser's own built-in PDF viewer for zoom/paging.
+ * Shared evidence viewer for every Attach/View surface in the app. Both
+ * file types share the same +/−/Reset zoom controls: images get
+ * cursor-anchored wheel/click zoom (the point under the cursor stays put
+ * while zooming, like Google Maps/Figma); PDFs zoom by growing the iframe's
+ * own box so the browser's PDF renderer re-rasterizes at the larger size
+ * (stays sharp, unlike a CSS transform: scale() which would just blow up
+ * the already-rendered pixels) and pan via the container's scrollbars.
  */
 export function AttachmentViewer({ filename, mimeType, fetchBlob, onClose }: AttachmentViewerProps) {
   const [url, setUrl] = useState<string | null>(null);
@@ -66,15 +68,21 @@ export function AttachmentViewer({ filename, mimeType, fetchBlob, onClose }: Att
       setOffset({ x: 0, y: 0 });
       return;
     }
-    const imgEl = imgRef.current;
-    if (imgEl) {
-      const rect = imgEl.getBoundingClientRect();
-      const cx = (clientX ?? rect.left + rect.width / 2) - rect.left;
-      const cy = (clientY ?? rect.top + rect.height / 2) - rect.top;
-      setOffset((prev) => ({
-        x: prev.x + cx * (1 - newZoom / prevZoom),
-        y: prev.y + cy * (1 - newZoom / prevZoom),
-      }));
+    // PDFs zoom by growing the iframe's own box (forces the browser's PDF
+    // renderer to re-layout and re-rasterize at the larger size, so it stays
+    // sharp) and rely on the container's scrollbars to pan — the
+    // cursor-anchored offset trick below is image-only.
+    if (isImage) {
+      const imgEl = imgRef.current;
+      if (imgEl) {
+        const rect = imgEl.getBoundingClientRect();
+        const cx = (clientX ?? rect.left + rect.width / 2) - rect.left;
+        const cy = (clientY ?? rect.top + rect.height / 2) - rect.top;
+        setOffset((prev) => ({
+          x: prev.x + cx * (1 - newZoom / prevZoom),
+          y: prev.y + cy * (1 - newZoom / prevZoom),
+        }));
+      }
     }
     setZoom(newZoom);
   }
@@ -110,7 +118,7 @@ export function AttachmentViewer({ filename, mimeType, fetchBlob, onClose }: Att
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 24 }}>
           <strong style={{ color: "#101828" }}>{filename}</strong>
           <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {isImage && url && (
+            {url && (
               <>
                 <button type="button" className="secondary" onClick={() => zoomAt(1 / 1.25)} title="Zoom out">
                   −
@@ -137,7 +145,15 @@ export function AttachmentViewer({ filename, mimeType, fetchBlob, onClose }: Att
         <div
           ref={containerRef}
           onWheel={handleWheel}
-          style={{ overflow: "hidden", flex: 1, width: "85vw", height: "75vh", display: "flex", alignItems: "center", justifyContent: "center" }}
+          style={{
+            overflow: isImage ? "hidden" : "auto",
+            flex: 1,
+            width: "85vw",
+            height: "75vh",
+            display: "flex",
+            alignItems: isImage ? "center" : "flex-start",
+            justifyContent: isImage ? "center" : "flex-start",
+          }}
         >
           {error && <p style={{ color: "#b42318" }}>{error}</p>}
           {!error && !url && <p style={{ color: "#667085" }}>Loading…</p>}
@@ -158,7 +174,11 @@ export function AttachmentViewer({ filename, mimeType, fetchBlob, onClose }: Att
             />
           )}
           {url && !isImage && (
-            <iframe src={url} title={filename} style={{ width: "100%", height: "100%", border: "none" }} />
+            <iframe
+              src={url}
+              title={filename}
+              style={{ width: `${100 * zoom}%`, height: `${100 * zoom}%`, minWidth: "100%", minHeight: "100%", border: "none" }}
+            />
           )}
         </div>
       </div>
