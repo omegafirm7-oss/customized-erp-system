@@ -112,7 +112,16 @@ export function AttachmentViewer({ filename, mimeType, fetchBlob, onClose }: Att
       onClick={onClose}
     >
       <div
-        style={{ background: "#fff", borderRadius: 8, padding: 16, maxWidth: "90vw", maxHeight: "90vh", display: "flex", flexDirection: "column", gap: 12 }}
+        style={{
+          background: "#fff",
+          borderRadius: 8,
+          padding: 16,
+          width: isImage ? "90vw" : "96vw",
+          height: isImage ? "90vh" : "96vh",
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 24 }}>
@@ -148,8 +157,8 @@ export function AttachmentViewer({ filename, mimeType, fetchBlob, onClose }: Att
           style={{
             overflow: isImage ? "hidden" : "auto",
             flex: 1,
-            width: "85vw",
-            height: isImage ? "75vh" : "85vh",
+            width: "100%",
+            minHeight: 0,
             display: "flex",
             alignItems: isImage ? "center" : "flex-start",
             justifyContent: isImage ? "center" : "flex-start",
@@ -175,12 +184,11 @@ export function AttachmentViewer({ filename, mimeType, fetchBlob, onClose }: Att
           )}
           {url && !isImage && (
             <iframe
-              // "#view=FitH" tells the browser's native PDF viewer to fit the
-              // page to the panel's width, instead of its default "fit whole
-              // page" mode which leaves large gray bars on either side of a
-              // portrait page — that letterboxing, not blur, was why it read
-              // small even with a bigger box.
-              src={`${url}#view=FitH`}
+              // "#view=Fit" keeps the whole page visible (no side-scrolling
+              // to read the bottom of a page) — sizing now comes from the
+              // modal itself filling nearly the whole viewport, not from
+              // cropping the page to the panel's width.
+              src={`${url}#view=Fit`}
               title={filename}
               style={{ width: `${100 * zoom}%`, height: `${100 * zoom}%`, minWidth: "100%", minHeight: "100%", border: "none" }}
             />
