@@ -93,7 +93,6 @@ const NAV_SECTIONS: NavSection[] = [
       { to: "/settings/zatca", label: "ZATCA Settings" },
       { to: "/settings/templates", label: "Template Settings" },
       { to: "/admin/users", label: "Users" },
-      { to: "/settings/activity-log", label: "Activity Log" },
     ],
   },
 ];
@@ -167,9 +166,18 @@ export function Layout() {
       ? [...NAV_SECTIONS.slice(0, workingCapitalIndex + 1), ...gatedSections, ...NAV_SECTIONS.slice(workingCapitalIndex + 1)]
       : NAV_SECTIONS;
 
-  const sections: NavSection[] = user?.isPlatformAdmin
-    ? [{ label: "Platform", items: [{ to: "/platform", label: "Client Dashboard" }] }, ...sectionsWithModules]
+  // Activity Log is restricted to the platform-admin identity (see
+  // AuditController's PlatformAdminGuard) — hidden from the nav entirely for
+  // everyone else rather than shown as a link that would just 403.
+  const sectionsWithActivityLog = user?.isPlatformAdmin
+    ? sectionsWithModules.map((s) =>
+        s.label === "Settings" ? { ...s, items: [...s.items, { to: "/settings/activity-log", label: "Activity Log" }] } : s,
+      )
     : sectionsWithModules;
+
+  const sections: NavSection[] = user?.isPlatformAdmin
+    ? [{ label: "Platform", items: [{ to: "/platform", label: "Client Dashboard" }] }, ...sectionsWithActivityLog]
+    : sectionsWithActivityLog;
 
   function toggleSidebar() {
     setCollapsed((v) => {

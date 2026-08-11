@@ -1,19 +1,22 @@
-import { BadRequestException, Controller, Get, Query } from "@nestjs/common";
+import { BadRequestException, Controller, Get, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { AuditAction } from "@prisma/client";
-import { PERMISSIONS } from "@erp/shared-constants";
-import { Permissions } from "../common/decorators/permissions.decorator";
+import { PlatformAdminGuard } from "../common/guards/platform-admin.guard";
 import { CurrentCompanyId } from "../common/decorators/current-company-id.decorator";
 import { AuditService } from "./audit.service";
 
+// Restricted to the platform-admin identity (omegafirm7@gmail.com), not the
+// per-company permission system — even a company's own Administrator role
+// can't see this. Deliberate per explicit product decision: activity logs
+// are a SaaS-provider-only visibility tool, not a customer-facing feature.
 @ApiTags("audit")
 @ApiBearerAuth()
 @Controller("audit")
+@UseGuards(PlatformAdminGuard)
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 
   @Get("activity-log")
-  @Permissions(PERMISSIONS.SETTINGS_ACTIVITY_LOG_VIEW)
   async listActivityLog(
     @CurrentCompanyId() companyId: string,
     @Query("userId") userId?: string,
