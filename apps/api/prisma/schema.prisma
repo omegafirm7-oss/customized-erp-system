@@ -349,6 +349,8 @@ enum AuditAction {
   POST
   REVERSE
   CLOSE
+  LOGIN
+  LOGOUT
 }
 
 // ─────────────────────────────────────────────────────────────────────────

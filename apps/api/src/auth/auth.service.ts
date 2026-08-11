@@ -1,12 +1,14 @@
 import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
+import { AuditAction } from "@prisma/client";
 import { randomBytes, randomUUID, createHash } from "crypto";
 import ms from "ms";
 import { PrismaService } from "../common/prisma/prisma.service";
 import { MailService } from "../common/mail/mail.service";
 import { IamService } from "../iam/iam.service";
 import { UsersService } from "../iam/users.service";
+import { AuditService } from "../audit/audit.service";
 import { JwtPayload } from "./types/jwt-payload.type";
 import { AppConfig } from "../core/config/configuration";
 
@@ -31,6 +33,7 @@ export class AuthService {
     private readonly iamService: IamService,
     private readonly usersService: UsersService,
     private readonly mailService: MailService,
+    private readonly auditService: AuditService,
   ) {}
 
   async register(email: string, password: string, fullName: string) {
@@ -75,7 +78,18 @@ export class AuthService {
       throw new UnauthorizedException("Your access has been suspended — contact your company administrator");
     }
     const defaultMembership = activeMemberships.find((m) => m.isDefault) ?? activeMemberships[0] ?? null;
-    return this.issueTokens(userId, defaultMembership?.companyId ?? null, meta);
+    const companyId = defaultMembership?.companyId ?? null;
+    const tokens = await this.issueTokens(userId, companyId, meta);
+    void this.auditService.log({
+      companyId,
+      entityName: "User",
+      entityId: userId,
+      action: AuditAction.LOGIN,
+      changedByUserId: userId,
+      ipAddress: meta.ipAddress ?? null,
+      userAgent: meta.userAgent ?? null,
+    });
+    return tokens;
   }
 
   async switchCompany(userId: string, companyId: string, meta: RequestMeta = {}): Promise<IssuedTokens> {
@@ -139,13 +153,25 @@ export class AuthService {
     return tokens;
   }
 
-  async revoke(rawToken: string): Promise<void> {
+  async revoke(rawToken: string, meta: RequestMeta = {}): Promise<void> {
     const [id] = rawToken.split(".");
     if (!id) return;
+    const existing = await this.prisma.refreshToken.findUnique({ where: { id } });
     await this.prisma.refreshToken.updateMany({
       where: { id, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    if (existing && !existing.revokedAt) {
+      void this.auditService.log({
+        companyId: existing.activeCompanyId,
+        entityName: "User",
+        entityId: existing.userId,
+        action: AuditAction.LOGOUT,
+        changedByUserId: existing.userId,
+        ipAddress: meta.ipAddress ?? null,
+        userAgent: meta.userAgent ?? null,
+      });
+    }
   }
 
   private async issueTokens(

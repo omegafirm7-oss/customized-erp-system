@@ -95,7 +95,7 @@ export class AuthController {
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const rawToken = req.cookies?.[REFRESH_COOKIE_NAME];
     if (rawToken) {
-      await this.authService.revoke(rawToken);
+      await this.authService.revoke(rawToken, this.requestMeta(req));
     }
     res.clearCookie(REFRESH_COOKIE_NAME);
     return { success: true };

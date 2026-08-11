@@ -93,6 +93,7 @@ const NAV_SECTIONS: NavSection[] = [
       { to: "/settings/zatca", label: "ZATCA Settings" },
       { to: "/settings/templates", label: "Template Settings" },
       { to: "/admin/users", label: "Users" },
+      { to: "/settings/activity-log", label: "Activity Log" },
     ],
   },
 ];

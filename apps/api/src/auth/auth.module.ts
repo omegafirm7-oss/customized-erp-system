@@ -8,6 +8,7 @@ import { JwtStrategy } from "./strategies/jwt.strategy";
 import { GoogleStrategy } from "./strategies/google.strategy";
 import { IamModule } from "../iam/iam.module";
 import { MailModule } from "../common/mail/mail.module";
+import { AuditModule } from "../audit/audit.module";
 import { AppConfig } from "../core/config/configuration";
 
 @Module({
@@ -15,6 +16,7 @@ import { AppConfig } from "../core/config/configuration";
     PassportModule,
     IamModule,
     MailModule,
+    AuditModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
