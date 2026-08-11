@@ -531,9 +531,11 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
                       Cancel
                     </button>
                   )}{" "}
-                  <button className="secondary" disabled={pdfBusyId === inv.id} onClick={() => downloadPdf(inv.id)}>
-                    {pdfBusyId === inv.id ? "Preparing…" : "PDF"}
-                  </button>
+                  {side === "ar" && (
+                    <button className="secondary" disabled={pdfBusyId === inv.id} onClick={() => downloadPdf(inv.id)}>
+                      {pdfBusyId === inv.id ? "Preparing…" : "PDF"}
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
