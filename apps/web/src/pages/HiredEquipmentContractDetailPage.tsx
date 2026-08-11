@@ -208,9 +208,9 @@ export function HiredEquipmentContractDetailPage() {
                 style={{ width: 140 }}
               />
               <select value={assignmentForm.rateBasis} onChange={(e) => setAssignmentForm({ ...assignmentForm, rateBasis: e.target.value })}>
-                <option value="HOURLY">Hourly</option>
-                <option value="DAILY">Daily</option>
-                <option value="MONTHLY">Monthly</option>
+                <option value="HOURLY">Hourly (per hour used)</option>
+                <option value="DAILY">Daily (per day worked)</option>
+                <option value="MONTHLY">Monthly (fixed rate)</option>
               </select>
               <input type="number" min="0" step="0.01" placeholder="Bill rate" value={assignmentForm.billRate} onChange={(e) => setAssignmentForm({ ...assignmentForm, billRate: e.target.value })} required style={{ width: 100 }} />
               <input type="number" min="0" step="0.01" placeholder="OT rate/hr" value={assignmentForm.otBillRate} onChange={(e) => setAssignmentForm({ ...assignmentForm, otBillRate: e.target.value })} style={{ width: 100 }} />

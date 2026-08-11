@@ -141,8 +141,11 @@ export function HiredEquipmentTimesheetPage() {
       </div>
       {error && <div className="error-banner">{error}</div>}
       <p style={{ color: "#667085", fontSize: 13 }}>
-        W = worked (billable) · I = idle on site · B = breakdown · O = off (holiday). Hours drive HOURLY-basis billing;
-        DAILY/MONTHLY basis only cares whether the day is WORKED.
+        W = worked (billable) · I = idle on site · B = breakdown · O = off (holiday). <strong>Hourly</strong> equipment
+        bills the Hours you enter on worked days. <strong>Daily</strong> equipment bills a fixed amount per day marked
+        W, regardless of hours. <strong>Monthly</strong> equipment bills the full fixed rate for the period —
+        you don't need to fill in anything here at all; just create the timesheet, approve it, and generate the
+        invoice.
       </p>
       <div style={{ overflowX: "auto" }}>
         <table>
