@@ -395,7 +395,9 @@ export class ProjectsService {
     // only for entries not yet invoiced — once billing.service.ts turns a
     // timesheet into an AP draft, that cost already counts via invoiceRows
     // below, so double-counting it here would inflate the total.
-    const HIRED_EQUIPMENT_DAYS_PER_MONTH = new Prisma.Decimal(30);
+    // Saudi/GCC convention: a rental month is priced over 26 working days
+    // (Friday off), not 30 calendar days — mirrors billing.service.ts.
+    const HIRED_EQUIPMENT_DAYS_PER_MONTH = new Prisma.Decimal(26);
     const hiredEquipmentContracts = await this.prisma.hiredEquipmentContract.findMany({
       where: { companyId, projectId },
       select: {
@@ -427,6 +429,10 @@ export class ProjectsService {
             summary.workedDays += 1;
             summary.totalHours = summary.totalHours.add(entry.hours);
             summary.totalOtHours = summary.totalOtHours.add(entry.overtimeHours);
+          } else {
+            // Keeps MONTHLY basis's (recordedDays - absentDays) formula equal to
+            // workedDays, same reasoning as billing.service.ts.
+            summary.absentDays += 1;
           }
         }
         const billing = computeAssignmentBilling(

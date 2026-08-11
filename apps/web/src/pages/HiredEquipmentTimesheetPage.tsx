@@ -143,9 +143,8 @@ export function HiredEquipmentTimesheetPage() {
       <p style={{ color: "#667085", fontSize: 13 }}>
         W = worked (billable) · I = idle on site · B = breakdown · O = off (holiday). <strong>Hourly</strong> equipment
         bills the Hours you enter on worked days. <strong>Daily</strong> equipment bills a fixed amount per day marked
-        W, regardless of hours. <strong>Monthly</strong> equipment bills the full fixed rate for the period —
-        you don't need to fill in anything here at all; just create the timesheet, approve it, and generate the
-        invoice.
+        W. <strong>Monthly</strong> equipment bills (rate ÷ 26 working days) × the number of days marked W — so a full
+        working month at the monthly rate still requires every working day to be marked W.
       </p>
       <div style={{ overflowX: "auto" }}>
         <table>

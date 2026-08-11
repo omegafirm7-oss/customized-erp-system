@@ -8,11 +8,10 @@ import { InvoiceLineDto } from "../finance/dto/invoice-line.dto";
 import { computeAssignmentBilling, EntrySummary, RateBasisKind } from "../manpower/manpower-math";
 
 const ZERO = new Prisma.Decimal(0);
-// Equipment rentals have no company-wide "standard month length" the way
-// payroll does — 30 only matters for the rare MONTHLY-basis assignment, and
-// only changes the per-day unit price shown on the invoice line, not what's
-// actually billed (that's still billRate × billable days).
-const DAYS_PER_MONTH = new Prisma.Decimal(30);
+// Saudi/GCC convention: a rental month is priced over 26 working days
+// (Friday off), not 30 calendar days — matches how the vendor actually
+// invoices a monthly rate. Only affects MONTHLY-basis assignments.
+const DAYS_PER_MONTH = new Prisma.Decimal(26);
 
 @Injectable()
 export class BillingService {
@@ -75,6 +74,12 @@ export class BillingService {
         summary.workedDays += 1;
         summary.totalHours = summary.totalHours.add(entry.hours);
         summary.totalOtHours = summary.totalOtHours.add(entry.overtimeHours);
+      } else {
+        // Only WORKED days are billable on MONTHLY basis too — computeAssignmentBilling's
+        // MONTHLY formula bills (recordedDays - absentDays - unpaidDays), so every
+        // non-WORKED day (idle/breakdown/off) is counted here to keep that equal to
+        // workedDays, i.e. rate/26 × actual working days, not the full calendar span.
+        summary.absentDays += 1;
       }
       summaries.set(entry.assignmentId, summary);
     }
