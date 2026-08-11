@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { useCompanies } from "../hooks/useCompanies";
+import { IdleTimeoutGuard } from "./IdleTimeoutGuard";
 
 interface NavSection {
   label: string;
@@ -284,6 +285,7 @@ export function Layout() {
           <Outlet />
         </div>
       </div>
+      <IdleTimeoutGuard />
     </div>
   );
 }
