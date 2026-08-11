@@ -213,8 +213,9 @@ export function ProjectDetailPage() {
 
   function downloadIntelligenceCsv() {
     if (!intelligence || !project) return;
-    const cats = ["MATERIAL", "MACHINERY", "LABOR", "OTHER"] as const;
+    const cats = ["MATERIAL", "MACHINERY", "LABOR"] as const;
     const rows: Array<Array<string | number>> = [];
+    let total = 0;
     for (const cat of cats) {
       const bucket = intelligence.categories[cat];
       if (!bucket) continue;
@@ -222,25 +223,27 @@ export function ProjectDetailPage() {
         rows.push([cat, account.code, account.name, Number(account.amount).toFixed(2)]);
       }
       rows.push([cat, "", "Category total", Number(bucket.total).toFixed(2)]);
+      total += Number(bucket.total);
     }
-    rows.push(["", "", "Grand total (all costs)", Number(intelligence.grandTotal).toFixed(2)]);
+    rows.push(["", "", "Grand total (all costs)", total.toFixed(2)]);
     rows.push(["", "", "Contract value", Number(project.contractValue).toFixed(2)]);
     downloadCsv(`${project.code}-project-intelligence.csv`, ["Category", "Account code", "Account name", "Amount (SAR, gross of VAT)"], rows);
   }
 
   function downloadIntelligencePdf() {
     if (!intelligence || !project) return;
-    const cats = ["MATERIAL", "MACHINERY", "LABOR", "OTHER"] as const;
+    const cats = ["MATERIAL", "MACHINERY", "LABOR"] as const;
     const labels: Record<(typeof cats)[number], string> = {
       MATERIAL: "Material",
       MACHINERY: "Machinery",
       LABOR: "Labor",
-      OTHER: "Other",
     };
     const rows: Array<Array<string | number>> = [];
+    let total = 0;
     for (const cat of cats) {
       const bucket = intelligence.categories[cat];
-      if (!bucket || bucket.accounts.length === 0) continue;
+      if (!bucket) continue;
+      total += Number(bucket.total);
       for (const account of bucket.accounts) {
         rows.push([labels[cat], `${account.code} — ${account.name}`, formatMoney(account.amount)]);
       }
@@ -249,7 +252,7 @@ export function ProjectDetailPage() {
       {
         heading: "Summary (amounts gross of VAT — the real amount paid/payable to vendors)",
         kpis: [
-          { label: "Total cost", value: formatMoney(intelligence.grandTotal) },
+          { label: "Total cost", value: formatMoney(total) },
           { label: "Material cost", value: formatMoney(intelligence.categories.MATERIAL?.total) },
           { label: "Machinery cost", value: formatMoney(intelligence.categories.MACHINERY?.total) },
           { label: "Labor cost", value: formatMoney(intelligence.categories.LABOR?.total) },
@@ -396,7 +399,13 @@ export function ProjectDetailPage() {
           <div className="pi-kpi-strip">
             <div className="pi-kpi-card">
               <div className="pi-kpi-label">Total Cost</div>
-              <div className="pi-kpi-value">{formatMoney(intelligence.grandTotal)}</div>
+              <div className="pi-kpi-value">
+                {formatMoney(
+                  Number(intelligence.categories.MATERIAL?.total ?? 0) +
+                    Number(intelligence.categories.MACHINERY?.total ?? 0) +
+                    Number(intelligence.categories.LABOR?.total ?? 0),
+                )}
+              </div>
             </div>
             <div className="pi-kpi-card">
               <div className="pi-kpi-label">Material Cost</div>
@@ -426,14 +435,13 @@ export function ProjectDetailPage() {
           <div className="pi-chart-card">
             <h3>Cost by category</h3>
             {(() => {
-              const cats = ["MATERIAL", "MACHINERY", "LABOR", "OTHER"] as const;
+              const cats = ["MATERIAL", "MACHINERY", "LABOR"] as const;
               const values = cats.map((c) => Number(intelligence.categories[c]?.total ?? 0));
               const max = Math.max(1, ...values);
               const labels: Record<(typeof cats)[number], string> = {
                 MATERIAL: "Material",
                 MACHINERY: "Machinery",
                 LABOR: "Labor",
-                OTHER: "Other",
               };
               return cats.map((c, i) => (
                 <Link key={c} to={`/projects/${id}/costs/${c.toLowerCase()}`} className="pi-bar-row">
