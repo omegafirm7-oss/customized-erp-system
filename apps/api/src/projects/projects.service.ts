@@ -4,10 +4,20 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { ControlAccountType, EmployeePaymentCategory, PartnerType, PayrollRunStatus, Prisma, ProjectStatus } from "@prisma/client";
+import {
+  ControlAccountType,
+  EmployeePaymentCategory,
+  HiredEquipmentDayType,
+  PartnerType,
+  PayrollRunStatus,
+  Prisma,
+  ProjectStatus,
+  TimesheetStatus,
+} from "@prisma/client";
 import { PrismaService } from "../common/prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { AccountResolutionService } from "../finance/account-resolution.service";
+import { computeAssignmentBilling, EntrySummary, RateBasisKind } from "../manpower/manpower-math";
 import { CreateProjectDto, CreateWbsTaskDto, UpdateProjectDto, UpdateWbsTaskDto } from "./dto/project.dtos";
 
 /** Legal status transitions; CLOSED is terminal. */
@@ -376,10 +386,60 @@ export class ProjectsService {
       where: { companyId, projectId },
       select: { dayRate: true, entries: { where: { used: true }, select: { id: true } } },
     });
-    const pendingMachinery = equipmentAssignments.reduce(
+    let pendingMachinery = equipmentAssignments.reduce(
       (sum, a) => sum.add(a.dayRate.mul(a.entries.length)),
       new Prisma.Decimal(0),
     );
+
+    // Hired-in equipment (rented from a vendor) accrues the same way, but
+    // only for entries not yet invoiced — once billing.service.ts turns a
+    // timesheet into an AP draft, that cost already counts via invoiceRows
+    // below, so double-counting it here would inflate the total.
+    const HIRED_EQUIPMENT_DAYS_PER_MONTH = new Prisma.Decimal(30);
+    const hiredEquipmentContracts = await this.prisma.hiredEquipmentContract.findMany({
+      where: { companyId, projectId },
+      select: {
+        assignments: {
+          select: {
+            rateBasis: true,
+            billRate: true,
+            otBillRate: true,
+            timesheetEntries: {
+              where: { timesheet: { status: { not: TimesheetStatus.INVOICED } } },
+              select: { dayType: true, hours: true, overtimeHours: true },
+            },
+          },
+        },
+      },
+    });
+    for (const contract of hiredEquipmentContracts) {
+      for (const assignment of contract.assignments) {
+        const summary: EntrySummary = {
+          recordedDays: assignment.timesheetEntries.length,
+          workedDays: 0,
+          absentDays: 0,
+          unpaidDays: 0,
+          totalHours: new Prisma.Decimal(0),
+          totalOtHours: new Prisma.Decimal(0),
+        };
+        for (const entry of assignment.timesheetEntries) {
+          if (entry.dayType === HiredEquipmentDayType.WORKED) {
+            summary.workedDays += 1;
+            summary.totalHours = summary.totalHours.add(entry.hours);
+            summary.totalOtHours = summary.totalOtHours.add(entry.overtimeHours);
+          }
+        }
+        const billing = computeAssignmentBilling(
+          assignment.rateBasis as RateBasisKind,
+          assignment.billRate,
+          assignment.otBillRate,
+          summary,
+          HIRED_EQUIPMENT_DAYS_PER_MONTH,
+        );
+        if (billing.regular) pendingMachinery = pendingMachinery.add(billing.regular.amount);
+        if (billing.overtime) pendingMachinery = pendingMachinery.add(billing.overtime.amount);
+      }
+    }
 
     const categories: Record<
       "MATERIAL" | "MACHINERY" | "LABOR" | "OTHER",

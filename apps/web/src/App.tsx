@@ -62,6 +62,9 @@ import { GosiSummaryPage, EosbLeavePage } from "./pages/HrReportsPage";
 import { ManpowerContractsPage } from "./pages/ManpowerContractsPage";
 import { ManpowerContractDetailPage } from "./pages/ManpowerContractDetailPage";
 import { TimesheetPage } from "./pages/TimesheetPage";
+import { HiredEquipmentContractsPage } from "./pages/HiredEquipmentContractsPage";
+import { HiredEquipmentContractDetailPage } from "./pages/HiredEquipmentContractDetailPage";
+import { HiredEquipmentTimesheetPage } from "./pages/HiredEquipmentTimesheetPage";
 import { ManpowerProfitabilityPage } from "./pages/ManpowerProfitabilityPage";
 import { EquipmentPage } from "./pages/EquipmentPage";
 import { EquipmentContractsPage } from "./pages/EquipmentContractsPage";
@@ -143,6 +146,9 @@ const companyRoutes: Array<{ path: string; element: JSX.Element }> = [
   { path: "/manpower/contracts", element: <ManpowerContractsPage /> },
   { path: "/manpower/contracts/:id", element: <ManpowerContractDetailPage /> },
   { path: "/manpower/timesheets/:id", element: <TimesheetPage /> },
+  { path: "/hired-equipment/contracts", element: <HiredEquipmentContractsPage /> },
+  { path: "/hired-equipment/contracts/:id", element: <HiredEquipmentContractDetailPage /> },
+  { path: "/hired-equipment/timesheets/:id", element: <HiredEquipmentTimesheetPage /> },
   { path: "/manpower/reports/profitability", element: <ManpowerProfitabilityPage /> },
   { path: "/equipment/units", element: <EquipmentPage /> },
   { path: "/equipment/contracts", element: <EquipmentContractsPage /> },

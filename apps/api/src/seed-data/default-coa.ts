@@ -81,7 +81,7 @@ export const DEFAULT_COA_TEMPLATE: DefaultCoaEntry[] = [
   // resold), since they're incurred specifically to execute a revenue-
   // generating contract. See project_expense_coa_and_import memory.
   { code: "5101", name: "Direct Materials", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT", costCategory: "MATERIAL" },
-  { code: "5102", name: "Machinery & Equipment Rental (Project)", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT", costCategory: "MACHINERY" },
+  { code: "5102", name: "Machinery & Equipment Rental (Project)", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT", costCategory: "MACHINERY", controlAccountType: "HIRED_EQUIPMENT_EXPENSE" },
   { code: "5103", name: "Fuel & Lubricants (Project)", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT", costCategory: "MACHINERY" },
   { code: "5104", name: "Site Tools & Consumables", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT", costCategory: "MATERIAL" },
   { code: "5105", name: "Safety Gear & PPEs", subClassCode: "COST_OF_SALES", isPostable: true, normalBalance: "DEBIT", costCategory: "MATERIAL" },

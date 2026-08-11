@@ -75,6 +75,7 @@ const NAV_SECTIONS: NavSection[] = [
       { to: "/equipment/contracts", label: "Equipment Contracts" },
       { to: "/equipment/depreciation", label: "Depreciation" },
       { to: "/equipment/reports/profitability", label: "Equipment Profitability" },
+      { to: "/hired-equipment/contracts", label: "Hired Equipment" },
     ],
   },
   {

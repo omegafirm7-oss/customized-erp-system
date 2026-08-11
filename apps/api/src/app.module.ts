@@ -24,6 +24,7 @@ import { InventoryModule } from "./inventory/inventory.module";
 import { ProjectsModule } from "./projects/projects.module";
 import { HrModule } from "./hr/hr.module";
 import { ManpowerModule } from "./manpower/manpower.module";
+import { HiredEquipmentModule } from "./hired-equipment/hired-equipment.module";
 import { EquipmentModule } from "./equipment/equipment.module";
 import { PlatformModule } from "./platform/platform.module";
 import { CrmModule } from "./crm/crm.module";
@@ -49,6 +50,7 @@ import { SettingsModule } from "./settings/settings.module";
     ProjectsModule,
     HrModule,
     ManpowerModule,
+    HiredEquipmentModule,
     EquipmentModule,
     PlatformModule,
     CrmModule,

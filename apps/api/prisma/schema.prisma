@@ -79,6 +79,7 @@ enum ControlAccountType {
   DEPRECIATION_EXPENSE
   ALLOWANCE_EXPENSE
   FOOD_EXPENSE
+  HIRED_EQUIPMENT_EXPENSE
 }
 
 enum FiscalYearStatus {
@@ -478,6 +479,8 @@ model Company {
   usageLogEntryAttachments  UsageLogEntryAttachment[]
   projectEquipmentAssignments ProjectEquipmentAssignment[]
   projectEquipmentPeriodAttachments ProjectEquipmentPeriodAttachment[]
+  hiredEquipmentContracts  HiredEquipmentContract[]
+  hiredEquipmentTimesheets HiredEquipmentTimesheet[]
   joinRequests              CompanyJoinRequest[]
   leads                     Lead[]
   opportunities             Opportunity[]
@@ -622,6 +625,7 @@ model FiscalPeriod {
   depreciationRuns       DepreciationRun[]
   timesheetPeriodAttachment TimesheetPeriodAttachment?
   projectEquipmentPeriodAttachments ProjectEquipmentPeriodAttachment[]
+  hiredEquipmentTimesheets  HiredEquipmentTimesheet[]
 
   @@unique([fiscalYearId, periodNumber])
   @@index([companyId])
@@ -882,6 +886,7 @@ model BusinessPartner {
   projects                 Project[]
   manpowerContracts        ManpowerContract[]
   equipmentRentalContracts EquipmentRentalContract[]
+  hiredEquipmentContracts  HiredEquipmentContract[]
   contacts                 Contact[]
   opportunities            Opportunity[]
   crmActivities            CrmActivity[]
@@ -1209,6 +1214,7 @@ model PurchaseInvoice {
 
   lines              PurchaseInvoiceLine[]
   paymentAllocations PaymentAllocation[]
+  hiredEquipmentTimesheet HiredEquipmentTimesheet?
 
   @@unique([companyId, invoiceNumber])
   @@unique([companyId, businessPartnerId, vendorInvoiceNumber])
@@ -1815,6 +1821,7 @@ model Project {
   purchaseInvoiceLines   PurchaseInvoiceLine[]
   equipmentAssignments   ProjectEquipmentAssignment[]
   equipmentPeriodAttachments ProjectEquipmentPeriodAttachment[]
+  hiredEquipmentContracts HiredEquipmentContract[]
 
   @@unique([companyId, code])
   @@index([companyId, status])
@@ -2829,4 +2836,126 @@ model CrmActivity {
   @@index([companyId, opportunityId])
   @@index([companyId, businessPartnerId])
   @@map("crm_activities")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Hired-In Equipment — equipment rented FROM a vendor for a specific
+// project (cost side), mirroring the Manpower contract→timesheet pattern
+// but posting an AP draft invoice (cost) instead of an AR draft (revenue).
+// Distinct from EquipmentRentalContract, which is the company's own fleet
+// rented OUT to customers (revenue side), and from ProjectEquipmentAssignment,
+// which is company-owned equipment used internally (no vendor, no invoice).
+// ─────────────────────────────────────────────────────────────────────────
+
+enum HiredEquipmentContractStatus {
+  ACTIVE
+  CLOSED
+}
+
+// WORKED is the only billable day type — IDLE/BREAKDOWN/OFF are recorded for
+// a complete daily log but never bill (mirrors REST/ABSENT semantics on the
+// labor side, simplified since equipment has no leave concept).
+enum HiredEquipmentDayType {
+  WORKED
+  IDLE
+  BREAKDOWN
+  OFF
+}
+
+model HiredEquipmentContract {
+  id                String                       @id @default(uuid())
+  companyId         String
+  company           Company                      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  code              String
+  name              String
+  businessPartnerId String
+  businessPartner   BusinessPartner              @relation(fields: [businessPartnerId], references: [id])
+  projectId         String
+  project           Project                      @relation(fields: [projectId], references: [id])
+  status            HiredEquipmentContractStatus @default(ACTIVE)
+  startDate         DateTime
+  endDate           DateTime?
+  memo              String?
+  createdByUserId   String
+  updatedByUserId   String?
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
+
+  assignments HiredEquipmentAssignment[]
+  timesheets  HiredEquipmentTimesheet[]
+
+  @@unique([companyId, code])
+  @@index([companyId, status])
+  @@index([projectId])
+  @@map("hired_equipment_contracts")
+}
+
+// One rented unit under a contract (e.g. "20T Excavator — Plate ABC123") —
+// free-text description rather than a link into the owned-fleet Equipment
+// model, since this equipment isn't ours.
+model HiredEquipmentAssignment {
+  id              String                 @id @default(uuid())
+  contractId      String
+  contract        HiredEquipmentContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  companyId       String
+  equipmentName   String
+  equipmentType   String?
+  rateBasis       RateBasis
+  billRate        Decimal                @db.Decimal(18, 4)
+  // 0 = overtime is not billable on this assignment
+  otBillRate      Decimal                @default(0) @db.Decimal(18, 4)
+  startDate       DateTime
+  endDate         DateTime?
+  isActive        Boolean                @default(true)
+  createdByUserId String
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  timesheetEntries HiredEquipmentTimesheetEntry[]
+
+  @@index([contractId])
+  @@map("hired_equipment_assignments")
+}
+
+// One timesheet per contract per fiscal period. DRAFT entries are editable;
+// APPROVED locks them for billing; INVOICED links the generated AP draft.
+model HiredEquipmentTimesheet {
+  id                String                 @id @default(uuid())
+  companyId         String
+  company           Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contractId        String
+  contract          HiredEquipmentContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  fiscalPeriodId    String
+  fiscalPeriod      FiscalPeriod           @relation(fields: [fiscalPeriodId], references: [id])
+  status            TimesheetStatus        @default(DRAFT)
+  purchaseInvoiceId String?                @unique
+  purchaseInvoice   PurchaseInvoice?       @relation(fields: [purchaseInvoiceId], references: [id])
+  approvedByUserId  String?
+  approvedAt        DateTime?
+  createdByUserId   String
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  entries HiredEquipmentTimesheetEntry[]
+
+  @@unique([contractId, fiscalPeriodId])
+  @@index([companyId, status])
+  @@map("hired_equipment_timesheets")
+}
+
+model HiredEquipmentTimesheetEntry {
+  id            String                   @id @default(uuid())
+  timesheetId   String
+  timesheet     HiredEquipmentTimesheet  @relation(fields: [timesheetId], references: [id], onDelete: Cascade)
+  companyId     String
+  assignmentId  String
+  assignment    HiredEquipmentAssignment @relation(fields: [assignmentId], references: [id])
+  date          DateTime
+  dayType       HiredEquipmentDayType    @default(WORKED)
+  hours         Decimal                  @default(0) @db.Decimal(7, 2)
+  overtimeHours Decimal                  @default(0) @db.Decimal(7, 2)
+
+  @@unique([timesheetId, assignmentId, date])
+  @@index([companyId, date])
+  @@map("hired_equipment_timesheet_entries")
 }
