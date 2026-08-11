@@ -506,7 +506,7 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
                     ))}
                   </td>
                 )}
-                <td>
+                <td style={{ whiteSpace: "nowrap" }}>
                   {inv.status === "DRAFT" && (
                     <>
                       <button disabled={busyId === inv.id} onClick={() => action(inv.id, "post")}>
