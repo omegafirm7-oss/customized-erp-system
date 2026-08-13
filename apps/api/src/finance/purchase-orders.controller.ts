@@ -57,6 +57,12 @@ export class PurchaseOrdersController {
     return this.ordersService.cancel(companyId, id, user.sub);
   }
 
+  @Get(":id/three-way-match-warning")
+  @Permissions(PERMISSIONS.AP_ORDER_VIEW)
+  async threeWayMatchWarning(@CurrentCompanyId() companyId: string, @Param("id") id: string) {
+    return this.ordersService.getThreeWayMatchWarning(companyId, id);
+  }
+
   @Post(":id/generate-invoice")
   @Permissions(PERMISSIONS.AP_INVOICE_CREATE)
   async generateInvoice(

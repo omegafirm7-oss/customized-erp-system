@@ -146,6 +146,7 @@ enum DocumentType {
   FINAL_SETTLEMENT
   DEPRECIATION_RUN
   EMPLOYEE_PAYMENT
+  PURCHASE_REQUISITION
 }
 
 enum EquipmentStatus {
@@ -359,25 +360,25 @@ enum AuditAction {
 // ─────────────────────────────────────────────────────────────────────────
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  passwordHash String
-  fullName     String
-  isActive     Boolean  @default(true)
+  id              String   @id @default(uuid())
+  email           String   @unique
+  passwordHash    String
+  fullName        String
+  isActive        Boolean  @default(true)
   /// Cross-tenant SaaS-provider view (see PlatformModule) — not a company
   /// permission, this bypasses tenant scoping entirely.
-  isPlatformAdmin Boolean @default(false)
+  isPlatformAdmin Boolean  @default(false)
   /// Set when this account was created (or later linked) via "Sign in with
   /// Google" — passwordHash still exists for these rows (schema requires it)
   /// but holds a random, never-communicated value, not a real password.
-  googleId     String?  @unique
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  googleId        String?  @unique
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  companyMemberships   CompanyUser[]
-  refreshTokens        RefreshToken[]
-  joinRequests         CompanyJoinRequest[]
-  passwordResetTokens  PasswordResetToken[]
+  companyMemberships  CompanyUser[]
+  refreshTokens       RefreshToken[]
+  joinRequests        CompanyJoinRequest[]
+  passwordResetTokens PasswordResetToken[]
 
   @@map("users")
 }
@@ -436,56 +437,58 @@ model Company {
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
-  companyUsers              CompanyUser[]
-  roles                     Role[]
-  fiscalYears               FiscalYear[]
-  accounts                  Account[]
-  costCenters               CostCenter[]
-  journalEntries            JournalEntry[]
-  businessPartners          BusinessPartner[]
-  items                     Item[]
-  warehouses                Warehouse[]
-  numberingSeries           NumberingSeries[]
-  auditLogs                 AuditLog[]
-  exchangeRates             ExchangeRate[]
-  salesInvoices             SalesInvoice[]
-  purchaseInvoices          PurchaseInvoice[]
-  purchaseQuotations        PurchaseQuotation[]
-  purchaseOrders            PurchaseOrder[]
-  salesQuotations           SalesQuotation[]
-  salesOrders               SalesOrder[]
-  payments                  Payment[]
-  zatcaDevices              ZatcaDevice[]
-  projects                  Project[]
-  hrSettings                HrSettings?
-  templateSettings          TemplateSettings?
-  employees                 Employee[]
-  employeeLoans             EmployeeLoan[]
-  payrollRuns               PayrollRun[]
-  finalSettlements          FinalSettlement[]
-  manpowerContracts         ManpowerContract[]
-  timesheets                Timesheet[]
-  equipment                 Equipment[]
-  equipmentRentalContracts  EquipmentRentalContract[]
-  usageLogs                 UsageLog[]
-  depreciationRuns          DepreciationRun[]
-  settlementPayments        SettlementPayment[]
-  employeeTimesheetEntries  EmployeeTimesheetEntry[]
-  employeePayments          EmployeePayment[]
-  employeePaymentRecoveries EmployeePaymentRecovery[]
-  employeePaymentAttachments EmployeePaymentAttachment[]
-  purchaseInvoiceLineAttachments PurchaseInvoiceLineAttachment[]
-  timesheetPeriodAttachments TimesheetPeriodAttachment[]
-  usageLogEntryAttachments  UsageLogEntryAttachment[]
-  projectEquipmentAssignments ProjectEquipmentAssignment[]
+  companyUsers                      CompanyUser[]
+  roles                             Role[]
+  fiscalYears                       FiscalYear[]
+  accounts                          Account[]
+  costCenters                       CostCenter[]
+  journalEntries                    JournalEntry[]
+  businessPartners                  BusinessPartner[]
+  items                             Item[]
+  warehouses                        Warehouse[]
+  numberingSeries                   NumberingSeries[]
+  auditLogs                         AuditLog[]
+  exchangeRates                     ExchangeRate[]
+  salesInvoices                     SalesInvoice[]
+  purchaseInvoices                  PurchaseInvoice[]
+  purchaseQuotations                PurchaseQuotation[]
+  purchaseOrders                    PurchaseOrder[]
+  salesQuotations                   SalesQuotation[]
+  salesOrders                       SalesOrder[]
+  payments                          Payment[]
+  zatcaDevices                      ZatcaDevice[]
+  projects                          Project[]
+  hrSettings                        HrSettings?
+  templateSettings                  TemplateSettings?
+  employees                         Employee[]
+  employeeLoans                     EmployeeLoan[]
+  payrollRuns                       PayrollRun[]
+  finalSettlements                  FinalSettlement[]
+  manpowerContracts                 ManpowerContract[]
+  timesheets                        Timesheet[]
+  equipment                         Equipment[]
+  equipmentRentalContracts          EquipmentRentalContract[]
+  usageLogs                         UsageLog[]
+  depreciationRuns                  DepreciationRun[]
+  settlementPayments                SettlementPayment[]
+  employeeTimesheetEntries          EmployeeTimesheetEntry[]
+  employeePayments                  EmployeePayment[]
+  employeePaymentRecoveries         EmployeePaymentRecovery[]
+  employeePaymentAttachments        EmployeePaymentAttachment[]
+  purchaseInvoiceLineAttachments    PurchaseInvoiceLineAttachment[]
+  timesheetPeriodAttachments        TimesheetPeriodAttachment[]
+  usageLogEntryAttachments          UsageLogEntryAttachment[]
+  projectEquipmentAssignments       ProjectEquipmentAssignment[]
   projectEquipmentPeriodAttachments ProjectEquipmentPeriodAttachment[]
-  hiredEquipmentContracts  HiredEquipmentContract[]
-  hiredEquipmentTimesheets HiredEquipmentTimesheet[]
-  joinRequests              CompanyJoinRequest[]
-  leads                     Lead[]
-  opportunities             Opportunity[]
-  contacts                  Contact[]
-  crmActivities             CrmActivity[]
+  hiredEquipmentContracts           HiredEquipmentContract[]
+  hiredEquipmentTimesheets          HiredEquipmentTimesheet[]
+  purchaseRequisitions              PurchaseRequisition[]
+  goodsReceipts                     GoodsReceipt[]
+  joinRequests                      CompanyJoinRequest[]
+  leads                             Lead[]
+  opportunities                     Opportunity[]
+  contacts                          Contact[]
+  crmActivities                     CrmActivity[]
 
   @@map("companies")
 }
@@ -617,15 +620,15 @@ model FiscalPeriod {
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
 
-  journalEntries         JournalEntry[]
-  revenueRecognitionRuns RevenueRecognitionRun[]
-  payrollRuns            PayrollRun[]
-  timesheets             Timesheet[]
-  usageLogs              UsageLog[]
-  depreciationRuns       DepreciationRun[]
-  timesheetPeriodAttachment TimesheetPeriodAttachment?
+  journalEntries                    JournalEntry[]
+  revenueRecognitionRuns            RevenueRecognitionRun[]
+  payrollRuns                       PayrollRun[]
+  timesheets                        Timesheet[]
+  usageLogs                         UsageLog[]
+  depreciationRuns                  DepreciationRun[]
+  timesheetPeriodAttachment         TimesheetPeriodAttachment?
   projectEquipmentPeriodAttachments ProjectEquipmentPeriodAttachment[]
-  hiredEquipmentTimesheets  HiredEquipmentTimesheet[]
+  hiredEquipmentTimesheets          HiredEquipmentTimesheet[]
 
   @@unique([fiscalYearId, periodNumber])
   @@index([companyId])
@@ -694,20 +697,20 @@ model AccountSubClass {
 }
 
 model Account {
-  id                 String              @id @default(uuid())
+  id                 String               @id @default(uuid())
   companyId          String
-  company            Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company            Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
   code               String
   name               String
   nameAr             String?
   accountClassId     String
-  accountClass       AccountClass        @relation(fields: [accountClassId], references: [id])
+  accountClass       AccountClass         @relation(fields: [accountClassId], references: [id])
   accountSubClassId  String
-  accountSubClass    AccountSubClass     @relation(fields: [accountSubClassId], references: [id])
+  accountSubClass    AccountSubClass      @relation(fields: [accountSubClassId], references: [id])
   parentAccountId    String?
-  parentAccount      Account?            @relation("AccountHierarchy", fields: [parentAccountId], references: [id])
-  childAccounts      Account[]           @relation("AccountHierarchy")
-  isPostable         Boolean             @default(true)
+  parentAccount      Account?             @relation("AccountHierarchy", fields: [parentAccountId], references: [id])
+  childAccounts      Account[]            @relation("AccountHierarchy")
+  isPostable         Boolean              @default(true)
   normalBalance      NormalBalance
   currencyCode       String?
   controlAccountType ControlAccountType?
@@ -715,19 +718,19 @@ model Account {
   // via the same PATCH /coa/accounts/:id used for renaming — nullable and
   // user-correctable, not a fixed mapping.
   costCategory       ProjectCostCategory?
-  isActive           Boolean             @default(true)
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  isActive           Boolean              @default(true)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
 
-  journalEntryLines           JournalEntryLine[]
-  salesInvoiceLines           SalesInvoiceLine[]
-  purchaseInvoiceLines        PurchaseInvoiceLine[]
-  payments                    Payment[]
-  employeeLoanDisbursements   EmployeeLoan[]
-  settlementPayments          SettlementPayment[]
-  employeePayments            EmployeePayment[]                @relation("EmployeePaymentBankCash")
-  employeePaymentExpenseFor   EmployeePayment[]                @relation("EmployeePaymentExpenseAccount")
-  employeePaymentRecoveries   EmployeePaymentRecovery[]
+  journalEntryLines         JournalEntryLine[]
+  salesInvoiceLines         SalesInvoiceLine[]
+  purchaseInvoiceLines      PurchaseInvoiceLine[]
+  payments                  Payment[]
+  employeeLoanDisbursements EmployeeLoan[]
+  settlementPayments        SettlementPayment[]
+  employeePayments          EmployeePayment[]         @relation("EmployeePaymentBankCash")
+  employeePaymentExpenseFor EmployeePayment[]         @relation("EmployeePaymentExpenseAccount")
+  employeePaymentRecoveries EmployeePaymentRecovery[]
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -971,16 +974,17 @@ model Item {
   createdAt                 DateTime       @default(now())
   updatedAt                 DateTime       @updatedAt
 
-  salesInvoiceLines      SalesInvoiceLine[]
-  purchaseInvoiceLines   PurchaseInvoiceLine[]
-  purchaseQuotationLines PurchaseQuotationLine[]
-  purchaseOrderLines     PurchaseOrderLine[]
-  salesQuotationLines    SalesQuotationLine[]
-  salesOrderLines        SalesOrderLine[]
-  stockLevels            ItemWarehouseStock[]
-  stockMovements         StockMovement[]
-  stockTransferLines     StockTransferLine[]
-  stockAdjustmentLines   StockAdjustmentLine[]
+  salesInvoiceLines        SalesInvoiceLine[]
+  purchaseInvoiceLines     PurchaseInvoiceLine[]
+  purchaseQuotationLines   PurchaseQuotationLine[]
+  purchaseOrderLines       PurchaseOrderLine[]
+  purchaseRequisitionLines PurchaseRequisitionLine[]
+  salesQuotationLines      SalesQuotationLine[]
+  salesOrderLines          SalesOrderLine[]
+  stockLevels              ItemWarehouseStock[]
+  stockMovements           StockMovement[]
+  stockTransferLines       StockTransferLine[]
+  stockAdjustmentLines     StockAdjustmentLine[]
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -1007,6 +1011,7 @@ model Warehouse {
   transfersFrom        StockTransfer[]       @relation("TransferFrom")
   transfersTo          StockTransfer[]       @relation("TransferTo")
   adjustments          StockAdjustment[]
+  goodsReceipts        GoodsReceipt[]
 
   @@unique([companyId, code])
   @@map("warehouses")
@@ -1212,8 +1217,8 @@ model PurchaseInvoice {
   createdAt                DateTime        @default(now())
   updatedAt                DateTime        @updatedAt
 
-  lines              PurchaseInvoiceLine[]
-  paymentAllocations PaymentAllocation[]
+  lines                   PurchaseInvoiceLine[]
+  paymentAllocations      PaymentAllocation[]
   hiredEquipmentTimesheet HiredEquipmentTimesheet?
 
   @@unique([companyId, invoiceNumber])
@@ -1300,25 +1305,155 @@ enum PurchaseQuotationStatus {
   DRAFT
   RECEIVED
   CONVERTED
+  // Auto-set on sibling RFQs (same sourceRequisitionId) when one of them is
+  // converted to a purchase order — records that this vendor was compared
+  // but not chosen, without deleting the quote.
+  NOT_SELECTED
   CANCELLED
 }
 
-model PurchaseQuotation {
-  id                String                  @id @default(uuid())
+enum PurchaseRequisitionStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  CLOSED
+  CANCELLED
+}
+
+// Internal purchase request, requiring approval before any vendor is
+// contacted. Optionally the seed for one or more vendor RFQs
+// (PurchaseQuotation.sourceRequisitionId) — first stage of the purchasing
+// cycle, ahead of Quotation → Order → Invoice. Never posts to the GL.
+model PurchaseRequisition {
+  id                String                    @id @default(uuid())
   companyId         String
-  company           Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company           Company                   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  // Null while Draft — allocated on submit, mirroring quotationNumber.
+  requisitionNumber String?
+  requestedByUserId String
+  projectId         String?
+  project           Project?                  @relation(fields: [projectId], references: [id])
+  requiredByDate    DateTime?
+  status            PurchaseRequisitionStatus @default(DRAFT)
+  memo              String?
+  approvedByUserId  String?
+  approvedAt        DateTime?
+  rejectionReason   String?
+  createdByUserId   String
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+
+  lines      PurchaseRequisitionLine[]
+  quotations PurchaseQuotation[]
+
+  @@unique([companyId, requisitionNumber])
+  @@index([companyId, status])
+  @@map("purchase_requisitions")
+}
+
+model PurchaseRequisitionLine {
+  id                    String              @id @default(uuid())
+  purchaseRequisitionId String
+  purchaseRequisition   PurchaseRequisition @relation(fields: [purchaseRequisitionId], references: [id], onDelete: Cascade)
+  lineNumber            Int
+  itemId                String?
+  item                  Item?               @relation(fields: [itemId], references: [id])
+  description           String
+  quantity              Decimal             @db.Decimal(18, 6)
+  // Informational only — not authoritative; the RFQ/PO carry the real price.
+  estimatedUnitPrice    Decimal?            @db.Decimal(18, 4)
+
+  @@index([purchaseRequisitionId])
+  @@map("purchase_requisition_lines")
+}
+
+enum GoodsReceiptStatus {
+  DRAFT
+  QC_PENDING
+  COMPLETED
+  CANCELLED
+}
+
+enum QualityCheckResult {
+  PENDING
+  PASSED
+  FAILED
+  PARTIAL
+}
+
+// Receiving + QC record against a Purchase Order. Deliberately does NOT
+// call InventoryService.receiveStock() or touch the GL — stock still enters
+// the system at PurchaseInvoice posting time exactly as before (see
+// ap.service.ts::post). This document exists purely to capture what was
+// physically received/accepted so the invoice-generation screen can show a
+// non-blocking three-way-match warning when invoiced quantities differ from
+// accepted quantities.
+model GoodsReceipt {
+  id               String             @id @default(uuid())
+  companyId        String
+  company          Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  receiptNumber    String?
+  purchaseOrderId  String
+  purchaseOrder    PurchaseOrder      @relation(fields: [purchaseOrderId], references: [id])
+  warehouseId      String
+  warehouse        Warehouse          @relation(fields: [warehouseId], references: [id])
+  receivedDate     DateTime
+  status           GoodsReceiptStatus @default(DRAFT)
+  receivedByUserId String
+  qcByUserId       String?
+  qcAt             DateTime?
+  memo             String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  lines GoodsReceiptLine[]
+
+  @@unique([companyId, receiptNumber])
+  @@index([companyId, status])
+  @@index([purchaseOrderId])
+  @@map("goods_receipts")
+}
+
+model GoodsReceiptLine {
+  id                  String             @id @default(uuid())
+  goodsReceiptId      String
+  goodsReceipt        GoodsReceipt       @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+  purchaseOrderLineId String
+  purchaseOrderLine   PurchaseOrderLine  @relation(fields: [purchaseOrderLineId], references: [id])
+  quantityReceived    Decimal            @db.Decimal(18, 6)
+  qcResult            QualityCheckResult @default(PENDING)
+  quantityAccepted    Decimal            @default(0) @db.Decimal(18, 6)
+  quantityRejected    Decimal            @default(0) @db.Decimal(18, 6)
+  qcNotes             String?
+
+  @@index([goodsReceiptId])
+  @@index([purchaseOrderLineId])
+  @@map("goods_receipt_lines")
+}
+
+model PurchaseQuotation {
+  id                  String                  @id @default(uuid())
+  companyId           String
+  company             Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
   // Null while Draft — allocated at RECEIVED, mirroring how invoice numbers
   // are allocated only once a document becomes real (see PurchaseInvoice).
-  quotationNumber   String?
-  businessPartnerId String
-  businessPartner   BusinessPartner         @relation(fields: [businessPartnerId], references: [id])
-  quotationDate     DateTime
-  validUntil        DateTime?
-  status            PurchaseQuotationStatus @default(DRAFT)
-  memo              String?
-  createdByUserId   String
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
+  quotationNumber     String?
+  businessPartnerId   String
+  businessPartner     BusinessPartner         @relation(fields: [businessPartnerId], references: [id])
+  // Optional — an RFQ can also be raised directly, without a requisition.
+  // Multiple quotations can share the same requisition (multi-vendor RFQ
+  // comparison); converting one to a PO auto-marks its siblings
+  // NOT_SELECTED (see PurchaseOrdersService.createFromQuotation).
+  sourceRequisitionId String?
+  sourceRequisition   PurchaseRequisition?    @relation(fields: [sourceRequisitionId], references: [id])
+  quotationDate       DateTime
+  validUntil          DateTime?
+  status              PurchaseQuotationStatus @default(DRAFT)
+  memo                String?
+  createdByUserId     String
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
 
   lines          PurchaseQuotationLine[]
   purchaseOrders PurchaseOrder[]
@@ -1372,6 +1507,7 @@ model PurchaseOrder {
 
   lines            PurchaseOrderLine[]
   purchaseInvoices PurchaseInvoice[]
+  goodsReceipts    GoodsReceipt[]
 
   @@unique([companyId, orderNumber])
   @@index([companyId, status])
@@ -1392,6 +1528,11 @@ model PurchaseOrderLine {
   // PurchaseInvoice — drives PARTIALLY_INVOICED vs INVOICED and how much
   // remains to prefill on the next invoice.
   invoicedQuantity Decimal       @default(0) @db.Decimal(18, 6)
+  // How much of `quantity` has been confirmed on a COMPLETED goods receipt —
+  // drives "remaining to receive" prefill on new GRNs and the three-way-match
+  // comparison against invoiced quantity. Does not affect stock/GL (see
+  // GoodsReceipt doc comment).
+  receivedQuantity Decimal       @default(0) @db.Decimal(18, 6)
   unitPrice        Decimal       @db.Decimal(18, 4)
   vatCategory      VatCategory?
   // Carried onto the generated PurchaseInvoiceLine at invoice time.
@@ -1399,6 +1540,8 @@ model PurchaseOrderLine {
   warehouse        Warehouse?    @relation(fields: [warehouseId], references: [id])
   costCenterId     String?
   costCenter       CostCenter?   @relation(fields: [costCenterId], references: [id])
+
+  goodsReceiptLines GoodsReceiptLine[]
 
   @@index([purchaseOrderId])
   @@map("purchase_order_lines")
@@ -1468,22 +1611,22 @@ enum SalesOrderStatus {
 }
 
 model SalesOrder {
-  id                String            @id @default(uuid())
+  id                String           @id @default(uuid())
   companyId         String
-  company           Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company           Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   orderNumber       String?
   businessPartnerId String
-  businessPartner   BusinessPartner   @relation(fields: [businessPartnerId], references: [id])
+  businessPartner   BusinessPartner  @relation(fields: [businessPartnerId], references: [id])
   // Optional — a sales order can be raised directly, without a prior quotation.
   sourceQuotationId String?
-  sourceQuotation   SalesQuotation?   @relation(fields: [sourceQuotationId], references: [id])
+  sourceQuotation   SalesQuotation?  @relation(fields: [sourceQuotationId], references: [id])
   orderDate         DateTime
   expectedDate      DateTime?
-  status            SalesOrderStatus  @default(DRAFT)
+  status            SalesOrderStatus @default(DRAFT)
   memo              String?
   createdByUserId   String
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
   lines         SalesOrderLine[]
   salesInvoices SalesInvoice[]
@@ -1495,25 +1638,25 @@ model SalesOrder {
 }
 
 model SalesOrderLine {
-  id               String      @id @default(uuid())
+  id               String       @id @default(uuid())
   salesOrderId     String
-  salesOrder       SalesOrder  @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  salesOrder       SalesOrder   @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
   lineNumber       Int
   itemId           String?
-  item             Item?       @relation(fields: [itemId], references: [id])
+  item             Item?        @relation(fields: [itemId], references: [id])
   description      String
-  quantity         Decimal     @db.Decimal(18, 6)
+  quantity         Decimal      @db.Decimal(18, 6)
   // How much of `quantity` has already been carried onto a generated
   // SalesInvoice — drives PARTIALLY_INVOICED vs INVOICED and how much
   // remains to prefill on the next invoice.
-  invoicedQuantity Decimal     @default(0) @db.Decimal(18, 6)
-  unitPrice        Decimal     @db.Decimal(18, 4)
+  invoicedQuantity Decimal      @default(0) @db.Decimal(18, 6)
+  unitPrice        Decimal      @db.Decimal(18, 4)
   vatCategory      VatCategory?
   // Carried onto the generated SalesInvoiceLine at invoice time.
   warehouseId      String?
-  warehouse        Warehouse?  @relation(fields: [warehouseId], references: [id])
+  warehouse        Warehouse?   @relation(fields: [warehouseId], references: [id])
   costCenterId     String?
-  costCenter       CostCenter? @relation(fields: [costCenterId], references: [id])
+  costCenter       CostCenter?  @relation(fields: [costCenterId], references: [id])
 
   @@index([salesOrderId])
   @@map("sales_order_lines")
@@ -1815,13 +1958,14 @@ model Project {
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 
-  tasks                  WbsTask[]
-  revenueRecognitionRuns RevenueRecognitionRun[]
-  salesInvoiceLines      SalesInvoiceLine[]
-  purchaseInvoiceLines   PurchaseInvoiceLine[]
-  equipmentAssignments   ProjectEquipmentAssignment[]
+  tasks                      WbsTask[]
+  revenueRecognitionRuns     RevenueRecognitionRun[]
+  salesInvoiceLines          SalesInvoiceLine[]
+  purchaseInvoiceLines       PurchaseInvoiceLine[]
+  equipmentAssignments       ProjectEquipmentAssignment[]
   equipmentPeriodAttachments ProjectEquipmentPeriodAttachment[]
-  hiredEquipmentContracts HiredEquipmentContract[]
+  hiredEquipmentContracts    HiredEquipmentContract[]
+  purchaseRequisitions       PurchaseRequisition[]
 
   @@unique([companyId, code])
   @@index([companyId, status])
@@ -2315,7 +2459,7 @@ model EmployeePayment {
   // ALLOWANCE_EXPENSE control account). Null on ADVANCE/OTHER payments
   // (those debit EMPLOYEE_LOANS, not an expense) and on rows created before
   // this field existed.
-  expenseAccountId String?
+  expenseAccountId  String?
   expenseAccount    Account?                @relation("EmployeePaymentExpenseAccount", fields: [expenseAccountId], references: [id])
   memo              String?
   recoveredAmount   Decimal                 @default(0) @db.Decimal(18, 4)
@@ -2326,7 +2470,7 @@ model EmployeePayment {
   // Set once this payment is reversed (a wrong entry corrected via a
   // reversing JE rather than a hard delete). Reversed payments are excluded
   // from all paid/pending aggregations but kept for the audit trail.
-  reversedAt DateTime?
+  reversedAt        DateTime?
 
   recoveries EmployeePaymentRecovery[]
   attachment EmployeePaymentAttachment?
@@ -2611,21 +2755,21 @@ model UsageLog {
 }
 
 model UsageLogEntry {
-  id           String              @id @default(uuid())
-  usageLogId   String
-  usageLog     UsageLog            @relation(fields: [usageLogId], references: [id], onDelete: Cascade)
-  companyId    String
-  assignmentId String
-  assignment   EquipmentAssignment @relation(fields: [assignmentId], references: [id])
-  equipmentId  String
-  equipment    Equipment           @relation(fields: [equipmentId], references: [id])
-  date         DateTime
-  dayStatus    UsageDayType        @default(ON_RENT)
+  id            String              @id @default(uuid())
+  usageLogId    String
+  usageLog      UsageLog            @relation(fields: [usageLogId], references: [id], onDelete: Cascade)
+  companyId     String
+  assignmentId  String
+  assignment    EquipmentAssignment @relation(fields: [assignmentId], references: [id])
+  equipmentId   String
+  equipment     Equipment           @relation(fields: [equipmentId], references: [id])
+  date          DateTime
+  dayStatus     UsageDayType        @default(ON_RENT)
   // Metered hours that day — drives HOURLY-basis billing
-  hoursUsed    Decimal             @default(0) @db.Decimal(7, 2)
+  hoursUsed     Decimal             @default(0) @db.Decimal(7, 2)
   // Recorded and reported only — like EmployeeTimesheetEntry.overtimeHours,
   // never feeds billing or the assignment's own hoursUsed-driven revenue.
-  overtimeHours Decimal            @default(0) @db.Decimal(7, 2)
+  overtimeHours Decimal             @default(0) @db.Decimal(7, 2)
 
   attachment UsageLogEntryAttachment?
 
@@ -2637,17 +2781,17 @@ model UsageLogEntry {
 // A single evidence file (site photo, gate pass, etc.) attached to one day's
 // usage-log entry — same storage pattern as EmployeeTimesheetEntryAttachment.
 model UsageLogEntryAttachment {
-  id               String         @id @default(uuid())
+  id               String        @id @default(uuid())
   companyId        String
-  company          Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  usageLogEntryId  String         @unique
-  usageLogEntry    UsageLogEntry  @relation(fields: [usageLogEntryId], references: [id], onDelete: Cascade)
+  company          Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  usageLogEntryId  String        @unique
+  usageLogEntry    UsageLogEntry @relation(fields: [usageLogEntryId], references: [id], onDelete: Cascade)
   filename         String
   mimeType         String
   size             Int
   data             Bytes
   uploadedByUserId String
-  createdAt        DateTime       @default(now())
+  createdAt        DateTime      @default(now())
 
   @@map("usage_log_entry_attachments")
 }
@@ -2719,24 +2863,24 @@ enum LeadStatus {
 }
 
 model Lead {
-  id                    String     @id @default(uuid())
-  companyId             String
-  company               Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  name                  String
-  companyName           String?
-  email                 String?
-  phone                 String?
-  source                LeadSource @default(OTHER)
-  status                LeadStatus @default(NEW)
-  ownerUserId           String?
-  notes                 String?
+  id                     String       @id @default(uuid())
+  companyId              String
+  company                Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name                   String
+  companyName            String?
+  email                  String?
+  phone                  String?
+  source                 LeadSource   @default(OTHER)
+  status                 LeadStatus   @default(NEW)
+  ownerUserId            String?
+  notes                  String?
   // Set once QUALIFIED and converted into an Opportunity — after that, the
   // lead itself becomes read-only history (service-enforced).
-  convertedOpportunityId String?    @unique
+  convertedOpportunityId String?      @unique
   convertedOpportunity   Opportunity? @relation("LeadConversion", fields: [convertedOpportunityId], references: [id])
-  createdByUserId       String
-  createdAt             DateTime   @default(now())
-  updatedAt             DateTime   @updatedAt
+  createdByUserId        String
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
 
   opportunities Opportunity[] @relation("OpportunitySourceLead")
   activities    CrmActivity[]
@@ -2813,9 +2957,9 @@ enum CrmActivityType {
 }
 
 model CrmActivity {
-  id                String          @id @default(uuid())
+  id                String           @id @default(uuid())
   companyId         String
-  company           Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company           Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   type              CrmActivityType
   subject           String
   notes             String?
@@ -2824,13 +2968,13 @@ model CrmActivity {
   ownerUserId       String?
   // Exactly one of the three is set (DB CHECK in crm-constraints migration).
   leadId            String?
-  lead              Lead?           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  lead              Lead?            @relation(fields: [leadId], references: [id], onDelete: Cascade)
   opportunityId     String?
-  opportunity       Opportunity?    @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  opportunity       Opportunity?     @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
   businessPartnerId String?
   businessPartner   BusinessPartner? @relation(fields: [businessPartnerId], references: [id], onDelete: Cascade)
   createdByUserId   String
-  createdAt         DateTime        @default(now())
+  createdAt         DateTime         @default(now())
 
   @@index([companyId, leadId])
   @@index([companyId, opportunityId])

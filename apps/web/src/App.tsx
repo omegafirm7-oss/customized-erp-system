@@ -23,6 +23,10 @@ import { SalesInvoicesPage, NewSalesInvoicePage } from "./pages/SalesInvoicesPag
 import { PurchaseInvoicesPage, NewPurchaseInvoicePage } from "./pages/PurchaseInvoicesPage";
 import { PurchaseQuotationsPage } from "./pages/PurchaseQuotationsPage";
 import { PurchaseOrdersPage } from "./pages/PurchaseOrdersPage";
+import { PurchaseOrderDetailPage } from "./pages/PurchaseOrderDetailPage";
+import { PurchaseRequisitionsPage } from "./pages/PurchaseRequisitionsPage";
+import { PurchaseRequisitionDetailPage } from "./pages/PurchaseRequisitionDetailPage";
+import { GoodsReceiptDetailPage } from "./pages/GoodsReceiptDetailPage";
 import { SalesQuotationsPage } from "./pages/SalesQuotationsPage";
 import { SalesOrdersPage } from "./pages/SalesOrdersPage";
 import { LeadsPage } from "./pages/crm/LeadsPage";
@@ -100,6 +104,10 @@ const companyRoutes: Array<{ path: string; element: JSX.Element }> = [
   { path: "/ap/invoices/:id/edit", element: <EditPurchaseInvoicePage /> },
   { path: "/ap/quotations", element: <PurchaseQuotationsPage /> },
   { path: "/ap/orders", element: <PurchaseOrdersPage /> },
+  { path: "/ap/orders/:id", element: <PurchaseOrderDetailPage /> },
+  { path: "/procurement/requisitions", element: <PurchaseRequisitionsPage /> },
+  { path: "/procurement/requisitions/:id", element: <PurchaseRequisitionDetailPage /> },
+  { path: "/procurement/goods-receipts/:id", element: <GoodsReceiptDetailPage /> },
   { path: "/ar/quotations", element: <SalesQuotationsPage /> },
   { path: "/ar/orders", element: <SalesOrdersPage /> },
   { path: "/crm/leads", element: <LeadsPage /> },

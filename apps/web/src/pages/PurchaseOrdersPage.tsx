@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { useDocumentPdfDownload } from "../hooks/useDocumentPdfDownload";
 
@@ -251,7 +252,9 @@ export function PurchaseOrdersPage() {
                 .map((o) => (
                 <>
                   <tr key={o.id}>
-                    <td>{o.orderNumber ?? "—"}</td>
+                    <td>
+                      <Link to={`/ap/orders/${o.id}`}>{o.orderNumber ?? "—"}</Link>
+                    </td>
                     <td>{o.businessPartner.code} — {o.businessPartner.name}</td>
                     <td>{new Date(o.orderDate).toLocaleDateString()}</td>
                     <td>{money(orderTotal(o))}</td>

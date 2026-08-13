@@ -105,6 +105,7 @@ const NAV_SECTIONS: NavSection[] = [
 const PURCHASE_SECTION: NavSection = {
   label: "Purchase",
   items: [
+    { to: "/procurement/requisitions", label: "Requisitions" },
     { to: "/ap/quotations", label: "Purchase Quotations" },
     { to: "/ap/orders", label: "Purchase Orders" },
   ],

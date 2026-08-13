@@ -32,6 +32,15 @@ export class PurchaseQuotationsService {
     return this.getOwned(companyId, id);
   }
 
+  /** All RFQs raised under the same requisition — used for multi-vendor comparison. */
+  async listByRequisition(companyId: string, requisitionId: string) {
+    return this.prisma.purchaseQuotation.findMany({
+      where: { companyId, sourceRequisitionId: requisitionId },
+      orderBy: { createdAt: "asc" },
+      include: { lines: true, businessPartner: { select: { code: true, name: true } } },
+    });
+  }
+
   async create(companyId: string, userId: string, dto: CreatePurchaseQuotationDto) {
     const partner = await this.getVendor(companyId, dto.businessPartnerId);
 
@@ -46,6 +55,7 @@ export class PurchaseQuotationsService {
           companyId,
           quotationNumber,
           businessPartnerId: partner.id,
+          sourceRequisitionId: dto.sourceRequisitionId,
           quotationDate: new Date(dto.quotationDate),
           validUntil: dto.validUntil ? new Date(dto.validUntil) : undefined,
           status: PurchaseQuotationStatus.RECEIVED,

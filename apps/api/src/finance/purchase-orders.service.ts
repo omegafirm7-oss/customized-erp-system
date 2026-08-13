@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import { DocumentType, PartnerType, PurchaseOrderStatus, PurchaseQuotationStatus } from "@prisma/client";
+import { DocumentType, GoodsReceiptStatus, PartnerType, Prisma, PurchaseOrderStatus, PurchaseQuotationStatus, PurchaseRequisitionStatus } from "@prisma/client";
 import { PrismaService } from "../common/prisma/prisma.service";
 import { NumberingService } from "../numbering/numbering.service";
 import { AuditService } from "../audit/audit.service";
@@ -69,7 +69,72 @@ export class PurchaseOrdersService {
     // Separate write, optimistically checked — mirrors the two-phase
     // generate-invoice pattern (see PurchaseQuotationsService.markConverted).
     await this.quotationsService.markConverted(companyId, quotation.id, userId);
+
+    // Multi-vendor RFQ comparison: mark sibling quotations (same
+    // requisition, still RECEIVED) NOT_SELECTED, and close the requisition
+    // itself — done directly here rather than via RequisitionsService to
+    // avoid a FinanceModule <-> ProcurementModule import cycle.
+    if (quotation.sourceRequisitionId) {
+      await this.prisma.purchaseQuotation.updateMany({
+        where: {
+          companyId,
+          sourceRequisitionId: quotation.sourceRequisitionId,
+          id: { not: quotation.id },
+          status: PurchaseQuotationStatus.RECEIVED,
+        },
+        data: { status: PurchaseQuotationStatus.NOT_SELECTED },
+      });
+      const closed = await this.prisma.purchaseRequisition.updateMany({
+        where: { id: quotation.sourceRequisitionId, companyId, status: PurchaseRequisitionStatus.APPROVED },
+        data: { status: PurchaseRequisitionStatus.CLOSED },
+      });
+      if (closed.count > 0) {
+        await this.auditService.log({
+          companyId,
+          entityName: "PurchaseRequisition",
+          entityId: quotation.sourceRequisitionId,
+          action: "UPDATE",
+          changedByUserId: userId,
+          afterSnapshot: { status: PurchaseRequisitionStatus.CLOSED },
+        });
+      }
+    }
+
     return order;
+  }
+
+  /**
+   * Read-only comparison of what's been accepted on COMPLETED goods
+   * receipts against this PO's lines, for the non-blocking three-way-match
+   * warning shown before generating an invoice. Never blocks posting.
+   */
+  async getThreeWayMatchWarning(companyId: string, orderId: string) {
+    const order = await this.getOwned(companyId, orderId);
+    const acceptedByLine = await this.prisma.goodsReceiptLine.groupBy({
+      by: ["purchaseOrderLineId"],
+      where: {
+        purchaseOrderLine: { purchaseOrderId: orderId },
+        goodsReceipt: { status: GoodsReceiptStatus.COMPLETED },
+      },
+      _sum: { quantityAccepted: true },
+    });
+    const acceptedById = new Map(acceptedByLine.map((row) => [row.purchaseOrderLineId, row._sum.quantityAccepted ?? new Prisma.Decimal(0)]));
+
+    const mismatches = order.lines
+      .map((line) => {
+        const remainingToInvoice = line.quantity.sub(line.invoicedQuantity);
+        const accepted = acceptedById.get(line.id) ?? new Prisma.Decimal(0);
+        return {
+          lineId: line.id,
+          description: line.description,
+          quantityToInvoice: remainingToInvoice.toString(),
+          quantityAccepted: accepted.toString(),
+          matches: remainingToInvoice.lte(0) || remainingToInvoice.equals(accepted),
+        };
+      })
+      .filter((row) => !row.matches);
+
+    return { mismatches };
   }
 
   private async createRow(

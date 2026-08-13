@@ -56,6 +56,11 @@ export class CreatePurchaseQuotationDto {
   @IsString()
   memo?: string;
 
+  @ApiProperty({ required: false, description: "Requisition this RFQ was raised from — enables multi-vendor comparison" })
+  @IsOptional()
+  @IsUUID()
+  sourceRequisitionId?: string;
+
   @ApiProperty({ type: [PurchaseQuotationLineDto] })
   @IsArray()
   @ArrayMinSize(1)
