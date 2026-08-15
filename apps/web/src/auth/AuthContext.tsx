@@ -9,6 +9,7 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   switchCompany: (companyId: string) => Promise<void>;
+  restoreFromToken: (token: string) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -23,17 +24,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // /auth/callback immediately does window.location.replace("/companies")
-    // (AuthCallbackPage) — a full navigation away, not a react-router push —
-    // so this component is about to unmount via page unload regardless.
-    // Firing a refresh here anyway raced the *next* page's own bootstrap
-    // refresh: both present the same just-set cookie, one rotates it and
-    // the other observes a "used" token and treats it as reuse, revoking
-    // the whole session it just created — the user would land back on
-    // /login instead of the app. The single-flight refreshPromise in
-    // client.ts only dedupes within one page load, not across this
-    // callback→destination navigation, so the fix is to simply not start a
-    // refresh on this page at all.
+    // AuthCallbackPage (Google sign-in) delivers the access token directly
+    // via restoreFromToken() and never needs this bootstrap call — calling
+    // refresh() here too used to race that page's own token application:
+    // both ultimately relied on the same just-rotated refresh cookie, and
+    // whichever request lost the race got treated as token reuse, revoking
+    // the session that was just created. Skip the bootstrap entirely on
+    // this route; AuthCallbackPage owns restoring the session there.
     if (window.location.pathname === "/auth/callback") {
       setLoading(false);
       return;
@@ -47,6 +44,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .catch(() => setUser(null))
       .finally(() => setLoading(false));
   }, [applyToken]);
+
+  const restoreFromToken = useCallback(
+    (token: string) => {
+      applyToken(token);
+      setLoading(false);
+    },
+    [applyToken],
+  );
 
   const login = useCallback(
     async (email: string, password: string) => {
@@ -75,7 +80,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [applyToken],
   );
 
-  const value = useMemo(() => ({ user, loading, login, logout, switchCompany }), [user, loading, login, logout, switchCompany]);
+  const value = useMemo(
+    () => ({ user, loading, login, logout, switchCompany, restoreFromToken }),
+    [user, loading, login, logout, switchCompany, restoreFromToken],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

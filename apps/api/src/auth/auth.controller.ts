@@ -68,10 +68,14 @@ export class AuthController {
     const tokens = await this.authService.login(user.id, this.requestMeta(req));
     this.setRefreshCookie(res, tokens);
     // This request is a top-level browser navigation back from Google, not
-    // an AJAX call — the access token can't be handed back as JSON. Redirect
-    // to a frontend route that picks up the session from the refresh cookie
-    // just set above, the same way a page reload already does on app load.
-    res.redirect("/auth/callback");
+    // an AJAX call — the access token can't be handed back as JSON body.
+    // Pass it in the URL fragment instead of relying on the frontend calling
+    // /auth/refresh to derive one from the cookie: a fragment never reaches
+    // this server (or any proxy/log) and the frontend can read it
+    // synchronously on load. This also sidesteps a real race that was
+    // occurring when the frontend "picked the session up from the cookie" by
+    // calling refresh() itself — see AuthCallbackPage.tsx for the full story.
+    res.redirect(`/auth/callback#at=${encodeURIComponent(tokens.accessToken)}`);
   }
 
   @Public()
