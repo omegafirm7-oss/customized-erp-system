@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { formatAmount, formatSigned } from "../utils/currency";
 
 interface FinancialPositionLine {
   subClassCode: string;
@@ -20,7 +22,12 @@ interface FinancialPositionReport {
   isBalanced: boolean;
 }
 
-function LineGroup({ title, lines }: { title: string; lines: FinancialPositionLine[] }) {
+// The equity group's "Current Year Earnings" line is computed on the fly
+// from unposted-to-equity P&L activity, not a real GL sub-class — it has no
+// accounts to drill into, so it's the one line left unclickable below.
+const SYNTHETIC_LINE_CODE = "CURRENT_YEAR_EARNINGS";
+
+function LineGroup({ title, lines, asOfDate }: { title: string; lines: FinancialPositionLine[]; asOfDate: string }) {
   const total = lines.reduce((sum, l) => sum + Number(l.balance), 0);
   return (
     <>
@@ -31,8 +38,14 @@ function LineGroup({ title, lines }: { title: string; lines: FinancialPositionLi
       </tr>
       {lines.map((line) => (
         <tr key={line.subClassCode}>
-          <td style={{ paddingLeft: "1.5rem" }}>{line.subClassName}</td>
-          <td>{line.balance}</td>
+          <td style={{ paddingLeft: "1.5rem" }}>
+            {line.subClassCode === SYNTHETIC_LINE_CODE ? (
+              line.subClassName
+            ) : (
+              <Link to={`/financial-position/line/${line.subClassCode}?asOfDate=${asOfDate}`}>{line.subClassName}</Link>
+            )}
+          </td>
+          <td>{formatSigned(line.balance)}</td>
         </tr>
       ))}
       <tr>
@@ -40,7 +53,7 @@ function LineGroup({ title, lines }: { title: string; lines: FinancialPositionLi
           <em>Total {title}</em>
         </td>
         <td>
-          <em>{total.toFixed(2)}</em>
+          <em>{formatAmount(total)}</em>
         </td>
       </tr>
     </>
@@ -75,33 +88,33 @@ export function FinancialPositionPage() {
         <>
           <table>
             <tbody>
-              <LineGroup title="Current Assets" lines={report.currentAssets} />
-              <LineGroup title="Non-Current Assets" lines={report.nonCurrentAssets} />
+              <LineGroup title="Current Assets" lines={report.currentAssets} asOfDate={asOfDate} />
+              <LineGroup title="Non-Current Assets" lines={report.nonCurrentAssets} asOfDate={asOfDate} />
               <tr>
                 <td>
                   <strong>Total Assets</strong>
                 </td>
                 <td>
-                  <strong>{report.totalAssets}</strong>
+                  <strong>{formatAmount(report.totalAssets)}</strong>
                 </td>
               </tr>
-              <LineGroup title="Current Liabilities" lines={report.currentLiabilities} />
-              <LineGroup title="Non-Current Liabilities" lines={report.nonCurrentLiabilities} />
+              <LineGroup title="Current Liabilities" lines={report.currentLiabilities} asOfDate={asOfDate} />
+              <LineGroup title="Non-Current Liabilities" lines={report.nonCurrentLiabilities} asOfDate={asOfDate} />
               <tr>
                 <td>
                   <strong>Total Liabilities</strong>
                 </td>
                 <td>
-                  <strong>{report.totalLiabilities}</strong>
+                  <strong>{formatAmount(report.totalLiabilities)}</strong>
                 </td>
               </tr>
-              <LineGroup title="Equity" lines={report.equity} />
+              <LineGroup title="Equity" lines={report.equity} asOfDate={asOfDate} />
               <tr>
                 <td>
                   <strong>Total Liabilities + Equity</strong>
                 </td>
                 <td>
-                  <strong>{(Number(report.totalLiabilities) + Number(report.totalEquity)).toFixed(2)}</strong>
+                  <strong>{formatAmount(Number(report.totalLiabilities) + Number(report.totalEquity))}</strong>
                 </td>
               </tr>
             </tbody>

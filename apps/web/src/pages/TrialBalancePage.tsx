@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { formatAmount } from "../utils/currency";
 
 interface TrialBalanceRow {
   accountId: string;
@@ -61,11 +63,15 @@ export function TrialBalancePage() {
               {report.rows.map((row) => (
                 <tr key={row.accountId}>
                   <td>{row.accountCode}</td>
-                  <td>{row.accountName}</td>
-                  <td>{row.openingBalance}</td>
-                  <td>{row.debit}</td>
-                  <td>{row.credit}</td>
-                  <td>{row.closingBalance}</td>
+                  <td>
+                    <Link to={`/accounts/${row.accountId}/transactions?asOfDate=${asOfDate}&back=${encodeURIComponent("/trial-balance")}`}>
+                      {row.accountName}
+                    </Link>
+                  </td>
+                  <td>{formatAmount(row.openingBalance)}</td>
+                  <td>{formatAmount(row.debit)}</td>
+                  <td>{formatAmount(row.credit)}</td>
+                  <td>{formatAmount(row.closingBalance)}</td>
                 </tr>
               ))}
             </tbody>
@@ -75,10 +81,10 @@ export function TrialBalancePage() {
                   <strong>Totals</strong>
                 </td>
                 <td>
-                  <strong>{report.totalDebit}</strong>
+                  <strong>{formatAmount(report.totalDebit)}</strong>
                 </td>
                 <td>
-                  <strong>{report.totalCredit}</strong>
+                  <strong>{formatAmount(report.totalCredit)}</strong>
                 </td>
                 <td />
               </tr>

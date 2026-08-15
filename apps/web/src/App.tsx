@@ -12,7 +12,10 @@ import { JournalEntriesPage } from "./pages/JournalEntriesPage";
 import { NewJournalEntryPage } from "./pages/NewJournalEntryPage";
 import { TrialBalancePage } from "./pages/TrialBalancePage";
 import { ProfitOrLossPage } from "./pages/ProfitOrLossPage";
+import { ProfitOrLossLineDetailPage } from "./pages/ProfitOrLossLineDetailPage";
 import { FinancialPositionPage } from "./pages/FinancialPositionPage";
+import { FinancialPositionLineDetailPage } from "./pages/FinancialPositionLineDetailPage";
+import { AccountTransactionsPage } from "./pages/AccountTransactionsPage";
 import { ChangesInEquityPage } from "./pages/ChangesInEquityPage";
 import { CashFlowPage } from "./pages/CashFlowPage";
 import { PartnersPage } from "./pages/PartnersPage";
@@ -116,7 +119,10 @@ const companyRoutes: Array<{ path: string; element: JSX.Element }> = [
   { path: "/payments/new", element: <NewPaymentPage /> },
   { path: "/trial-balance", element: <TrialBalancePage /> },
   { path: "/profit-or-loss", element: <ProfitOrLossPage /> },
+  { path: "/profit-or-loss/line/:line", element: <ProfitOrLossLineDetailPage /> },
   { path: "/financial-position", element: <FinancialPositionPage /> },
+  { path: "/financial-position/line/:subClassCode", element: <FinancialPositionLineDetailPage /> },
+  { path: "/accounts/:accountId/transactions", element: <AccountTransactionsPage /> },
   { path: "/changes-in-equity", element: <ChangesInEquityPage /> },
   { path: "/cash-flow", element: <CashFlowPage /> },
   { path: "/reports/ar-aging", element: <ArAgingPage /> },

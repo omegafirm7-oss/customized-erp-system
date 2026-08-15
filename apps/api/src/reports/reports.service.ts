@@ -625,6 +625,188 @@ export class ReportsService {
   }
 
   /**
+   * Per-account breakdown of a P&L line — the same REVENUE/EXPENSE
+   * aggregation profitOrLoss() nets into a single subtotal (e.g.
+   * OPERATING_EXPENSE), grouped by account instead so the line can be
+   * drilled into. subClassCodes can list more than one sub-class (Operating
+   * Revenue nets OPERATING_REVENUE + OTHER_INCOME together, same as
+   * profitOrLoss()'s amountFor calls) — queried separately per sub-class and
+   * concatenated, since an account belongs to exactly one sub-class so no
+   * duplicates can result.
+   */
+  async profitOrLossLineDetail(
+    companyId: string,
+    subClassCodes: string[],
+    label: string,
+    fromDate: Date,
+    toDate: Date,
+  ): Promise<LineDetailReport> {
+    const perSubClass = await Promise.all(
+      subClassCodes.map((subClassCode) =>
+        this.prisma.$queryRaw<
+          Array<{ accountId: string; code: string; name: string; classCode: string; debit: Prisma.Decimal; credit: Prisma.Decimal }>
+        >`
+          SELECT
+            a."id" AS "accountId", a."code" AS "code", a."name" AS "name", ac."code" AS "classCode",
+            COALESCE(SUM(jel."debit"), 0) AS "debit", COALESCE(SUM(jel."credit"), 0) AS "credit"
+          FROM "accounts" a
+          JOIN "account_sub_classes" sc ON sc."id" = a."accountSubClassId"
+          JOIN "account_classes" ac ON ac."id" = a."accountClassId"
+          JOIN "journal_entry_lines" jel ON jel."accountId" = a."id"
+          JOIN "journal_entries" je ON je."id" = jel."journalEntryId"
+          WHERE a."companyId" = ${companyId}
+            AND sc."code" = ${subClassCode}
+            AND je."status" IN ('POSTED', 'REVERSED')
+            AND je."postingDate" >= ${fromDate}
+            AND je."postingDate" <= ${toDate}
+          GROUP BY a."id", a."code", a."name", ac."code"
+        `,
+      ),
+    );
+    return this.toLineDetail(perSubClass.flat(), label);
+  }
+
+  /**
+   * Per-account breakdown of a Balance Sheet line — mirrors
+   * financialPosition()'s cumulative-to-date aggregation for one sub-class,
+   * grouped by account. The synthetic "Current Year Earnings" equity line
+   * has no real sub-class, so it simply returns no accounts.
+   */
+  async financialPositionLineDetail(companyId: string, subClassCode: string, asOfDate: Date): Promise<LineDetailReport> {
+    const rows = await this.prisma.$queryRaw<
+      Array<{ accountId: string; code: string; name: string; classCode: string; subClassName: string; debit: Prisma.Decimal; credit: Prisma.Decimal }>
+    >`
+      SELECT
+        a."id" AS "accountId", a."code" AS "code", a."name" AS "name",
+        ac."code" AS "classCode", sc."name" AS "subClassName",
+        COALESCE(SUM(CASE WHEN je."id" IS NOT NULL THEN jel."debit" ELSE 0 END), 0) AS "debit",
+        COALESCE(SUM(CASE WHEN je."id" IS NOT NULL THEN jel."credit" ELSE 0 END), 0) AS "credit"
+      FROM "accounts" a
+      JOIN "account_sub_classes" sc ON sc."id" = a."accountSubClassId"
+      JOIN "account_classes" ac ON ac."id" = a."accountClassId"
+      LEFT JOIN "journal_entry_lines" jel ON jel."accountId" = a."id"
+      LEFT JOIN "journal_entries" je
+        ON je."id" = jel."journalEntryId"
+        AND je."status" IN ('POSTED', 'REVERSED')
+        AND je."postingDate" <= ${asOfDate}
+      WHERE a."companyId" = ${companyId} AND sc."code" = ${subClassCode}
+      GROUP BY a."id", a."code", a."name", ac."code", sc."name"
+    `;
+    return this.toLineDetail(rows, rows[0]?.subClassName);
+  }
+
+  private toLineDetail(
+    rows: Array<{ accountId: string; code: string; name: string; classCode: string; debit: Prisma.Decimal; credit: Prisma.Decimal }>,
+    label?: string,
+  ): LineDetailReport {
+    // Debit-normal classes (Asset, Expense): balance = debit - credit.
+    // Credit-normal classes (Revenue, Liability, Equity): balance = credit - debit.
+    const debitNormal = new Set(["ASSET", "EXPENSE"]);
+    const accounts = rows
+      .map((r) => {
+        const amount = debitNormal.has(r.classCode)
+          ? new Prisma.Decimal(r.debit).sub(r.credit)
+          : new Prisma.Decimal(r.credit).sub(r.debit);
+        return { accountId: r.accountId, code: r.code, name: r.name, amount };
+      })
+      .filter((a) => !a.amount.isZero())
+      .sort((a, b) => b.amount.abs().sub(a.amount.abs()).toNumber());
+    const total = accounts.reduce((sum, a) => sum.add(a.amount), new Prisma.Decimal(0));
+    return {
+      label: label ?? "",
+      total: total.toFixed(2),
+      accounts: accounts.map((a) => ({ accountId: a.accountId, code: a.code, name: a.name, amount: a.amount.toFixed(2) })),
+    };
+  }
+
+  /**
+   * The journal entry lines behind a single account's balance for a date
+   * range — the transaction-level view a P&L/Balance Sheet line-detail
+   * account, or a Trial Balance row, drills into. Pass asOfDate (Trial
+   * Balance's own convention) to get fiscal-year-to-date activity, or an
+   * explicit fromDate/toDate to match whatever period a P&L line was run
+   * for.
+   */
+  async accountTransactions(
+    companyId: string,
+    accountId: string,
+    range: { fromDate: Date; toDate: Date } | { asOfDate: Date },
+  ): Promise<AccountTransactionsReport> {
+    let fromDate: Date;
+    let toDate: Date;
+    if ("asOfDate" in range) {
+      const fiscalYear = await this.prisma.fiscalYear.findFirst({
+        where: { companyId, startDate: { lte: range.asOfDate }, endDate: { gte: range.asOfDate } },
+      });
+      fromDate = fiscalYear?.startDate ?? new Date(0);
+      toDate = range.asOfDate;
+    } else {
+      fromDate = range.fromDate;
+      toDate = range.toDate;
+    }
+
+    const account = await this.prisma.account.findFirst({ where: { id: accountId, companyId }, select: { code: true, name: true } });
+    if (!account) {
+      return { accountId, accountCode: "", accountName: "", totalDebit: "0.00", totalCredit: "0.00", transactions: [] };
+    }
+
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        journalEntryId: string;
+        entryNumber: string | null;
+        postingDate: Date;
+        memo: string | null;
+        lineDescription: string | null;
+        partnerName: string | null;
+        debit: Prisma.Decimal;
+        credit: Prisma.Decimal;
+      }>
+    >`
+      SELECT
+        je."id" AS "journalEntryId", je."entryNumber" AS "entryNumber", je."postingDate" AS "postingDate",
+        je."memo" AS "memo", jel."description" AS "lineDescription", bp."name" AS "partnerName",
+        jel."debit" AS "debit", jel."credit" AS "credit"
+      FROM "journal_entry_lines" jel
+      JOIN "journal_entries" je ON je."id" = jel."journalEntryId"
+      LEFT JOIN "business_partners" bp ON bp."id" = jel."businessPartnerId"
+      WHERE jel."accountId" = ${accountId}
+        AND jel."companyId" = ${companyId}
+        AND je."status" IN ('POSTED', 'REVERSED')
+        AND je."postingDate" >= ${fromDate}
+        AND je."postingDate" <= ${toDate}
+      ORDER BY je."postingDate" ASC, je."entryNumber" ASC
+    `;
+
+    let totalDebit = new Prisma.Decimal(0);
+    let totalCredit = new Prisma.Decimal(0);
+    const transactions = rows.map((r) => {
+      const debit = new Prisma.Decimal(r.debit);
+      const credit = new Prisma.Decimal(r.credit);
+      totalDebit = totalDebit.add(debit);
+      totalCredit = totalCredit.add(credit);
+      return {
+        journalEntryId: r.journalEntryId,
+        entryNumber: r.entryNumber,
+        postingDate: r.postingDate.toISOString(),
+        memo: r.memo,
+        lineDescription: r.lineDescription,
+        partnerName: r.partnerName,
+        debit: debit.toFixed(2),
+        credit: credit.toFixed(2),
+      };
+    });
+
+    return {
+      accountId,
+      accountCode: account.code,
+      accountName: account.name,
+      totalDebit: totalDebit.toFixed(2),
+      totalCredit: totalCredit.toFixed(2),
+      transactions,
+    };
+  }
+
+  /**
    * Statement of Changes in Equity for a period: opening balance, profit for
    * the period (folded into Retained Earnings — this system doesn't run
    * year-end closing entries, so the *only* other way retained earnings
@@ -946,6 +1128,39 @@ export interface VatReturnReport {
   outputVat: string;
   inputVat: string;
   netVatPayable: string;
+}
+
+export interface LineDetailAccount {
+  accountId: string;
+  code: string;
+  name: string;
+  amount: string;
+}
+
+export interface LineDetailReport {
+  label: string;
+  total: string;
+  accounts: LineDetailAccount[];
+}
+
+export interface AccountTransactionRow {
+  journalEntryId: string;
+  entryNumber: string | null;
+  postingDate: string;
+  memo: string | null;
+  lineDescription: string | null;
+  partnerName: string | null;
+  debit: string;
+  credit: string;
+}
+
+export interface AccountTransactionsReport {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  totalDebit: string;
+  totalCredit: string;
+  transactions: AccountTransactionRow[];
 }
 
 export interface ProfitOrLossReport {

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { formatAmount, formatSigned } from "../utils/currency";
 
 interface ProfitOrLossReport {
   fromDate: string;
@@ -59,51 +61,67 @@ export function ProfitOrLossPage() {
           <table>
             <tbody>
               <tr>
-                <td>Operating Revenue</td>
-                <td>{report.operatingRevenue}</td>
+                <td>
+                  <Link to={`/profit-or-loss/line/operatingRevenue?fromDate=${fromDate}&toDate=${toDate}`}>Operating Revenue</Link>
+                </td>
+                <td>{formatSigned(report.operatingRevenue)}</td>
               </tr>
               <tr>
-                <td>Cost of Sales</td>
-                <td>({report.costOfSales})</td>
+                <td>
+                  <Link to={`/profit-or-loss/line/costOfSales?fromDate=${fromDate}&toDate=${toDate}`}>Cost of Sales</Link>
+                </td>
+                <td>({formatAmount(report.costOfSales)})</td>
               </tr>
               <tr>
-                <td>Operating Expenses</td>
-                <td>({report.operatingExpense})</td>
+                <td>
+                  <Link to={`/profit-or-loss/line/operatingExpense?fromDate=${fromDate}&toDate=${toDate}`}>
+                    Operating Expenses
+                  </Link>
+                </td>
+                <td>({formatAmount(report.operatingExpense)})</td>
               </tr>
               <tr>
                 <td>
                   <strong>Operating Profit</strong>
                 </td>
                 <td>
-                  <strong>{report.operatingProfit}</strong>
+                  <strong>{formatSigned(report.operatingProfit)}</strong>
                 </td>
               </tr>
               <tr>
-                <td>Investing Income/(Expense)</td>
-                <td>{report.investingIncome}</td>
+                <td>
+                  <Link to={`/profit-or-loss/line/investingIncome?fromDate=${fromDate}&toDate=${toDate}`}>
+                    Investing Income/(Expense)
+                  </Link>
+                </td>
+                <td>{formatSigned(report.investingIncome)}</td>
               </tr>
               <tr>
                 <td>
                   <strong>Profit before financing and income tax</strong>
                 </td>
                 <td>
-                  <strong>{report.profitBeforeFinancingAndTax}</strong>
+                  <strong>{formatSigned(report.profitBeforeFinancingAndTax)}</strong>
                 </td>
               </tr>
               <tr>
-                <td>Finance Costs</td>
-                <td>({report.financeCosts})</td>
+                <td>
+                  <Link to={`/profit-or-loss/line/financeCosts?fromDate=${fromDate}&toDate=${toDate}`}>Finance Costs</Link>
+                </td>
+                <td>({formatAmount(report.financeCosts)})</td>
               </tr>
               <tr>
-                <td>Tax Expense</td>
-                <td>({report.taxExpense})</td>
+                <td>
+                  <Link to={`/profit-or-loss/line/taxExpense?fromDate=${fromDate}&toDate=${toDate}`}>Tax Expense</Link>
+                </td>
+                <td>({formatAmount(report.taxExpense)})</td>
               </tr>
               <tr>
                 <td>
                   <strong>Profit for the Period</strong>
                 </td>
                 <td>
-                  <strong>{report.profitForThePeriod}</strong>
+                  <strong>{formatSigned(report.profitForThePeriod)}</strong>
                 </td>
               </tr>
             </tbody>
@@ -123,7 +141,7 @@ export function ProfitOrLossPage() {
                   {ebitda.reconciliation.map((line) => (
                     <tr key={line.label}>
                       <td>{line.label}</td>
-                      <td>{line.amount}</td>
+                      <td>{formatSigned(line.amount)}</td>
                     </tr>
                   ))}
                 </tbody>

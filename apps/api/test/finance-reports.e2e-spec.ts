@@ -270,6 +270,61 @@ describe("Finance reports (e2e)", () => {
     expect(Number(deprLine.amount)).toBe(50);
   });
 
+  it("drills a P&L line down to its constituent accounts and each account down to its transactions", async () => {
+    const ctx = await setupContext();
+
+    await postArInvoice(ctx, "1000", 30);
+    await postJournalEntry(ctx, [
+      { accountCode: "5240", debit: "200", credit: "0" },
+      { accountCode: "1120", debit: "0", credit: "200" },
+    ]);
+    await postJournalEntry(ctx, [
+      { accountCode: "5230", debit: "50", credit: "0" },
+      { accountCode: "1120", debit: "0", credit: "50" },
+    ]);
+
+    const from = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    const to = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+
+    const report = (
+      await request(app.getHttpServer())
+        .get(`/reports/profit-or-loss?fromDate=${from}&toDate=${to}`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200)
+    ).body;
+    expect(Number(report.operatingExpense)).toBe(250);
+
+    const detail = (
+      await request(app.getHttpServer())
+        .get(`/reports/profit-or-loss/line-detail?line=operatingExpense&fromDate=${from}&toDate=${to}`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200)
+    ).body;
+    // The breakdown must reconcile exactly with the top-line P&L figure.
+    expect(Number(detail.total)).toBe(Number(report.operatingExpense));
+    const officeAdmin = detail.accounts.find((a: any) => a.code === "5240");
+    const depreciation = detail.accounts.find((a: any) => a.code === "5230");
+    expect(Number(officeAdmin.amount)).toBe(200);
+    expect(Number(depreciation.amount)).toBe(50);
+
+    const officeAdminAccountId = ctx.accountByCode("5240").id;
+    const transactions = (
+      await request(app.getHttpServer())
+        .get(`/reports/accounts/${officeAdminAccountId}/transactions?fromDate=${from}&toDate=${to}`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200)
+    ).body;
+    expect(Number(transactions.totalDebit)).toBe(200);
+    expect(transactions.transactions).toHaveLength(1);
+    expect(Number(transactions.transactions[0].debit)).toBe(200);
+
+    // Rejects an unrecognized line key rather than silently returning nothing.
+    await request(app.getHttpServer())
+      .get(`/reports/profit-or-loss/line-detail?line=notARealLine&fromDate=${from}&toDate=${to}`)
+      .set("Authorization", `Bearer ${ctx.accessToken}`)
+      .expect(400);
+  });
+
   it("balances the Statement of Financial Position (Assets = Liabilities + Equity)", async () => {
     const ctx = await setupContext();
 
@@ -294,6 +349,51 @@ describe("Finance reports (e2e)", () => {
     expect(currentYearEarnings).toBeDefined();
     // Revenue 1000 (AR ex-VAT) − expense 150 = 850 current-year earnings
     expect(Number(currentYearEarnings.balance)).toBe(850);
+  });
+
+  it("drills a Balance Sheet line, and a Trial Balance row, down to their transactions", async () => {
+    const ctx = await setupContext();
+    await postArInvoice(ctx, "1000", 30);
+
+    const asOfDate = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+
+    const bsReport = (
+      await request(app.getHttpServer())
+        .get(`/reports/financial-position?asOfDate=${asOfDate}`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200)
+    ).body;
+    const currentAssetsLine = bsReport.currentAssets.find((l: any) => l.subClassCode === "CURRENT_ASSET");
+    expect(currentAssetsLine).toBeDefined();
+
+    const bsDetail = (
+      await request(app.getHttpServer())
+        .get(`/reports/financial-position/line-detail?subClassCode=${currentAssetsLine.subClassCode}&asOfDate=${asOfDate}`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200)
+    ).body;
+    expect(Number(bsDetail.total)).toBe(Number(currentAssetsLine.balance));
+
+    const arAccount = bsDetail.accounts[0];
+    const arTransactions = (
+      await request(app.getHttpServer())
+        .get(`/reports/accounts/${arAccount.accountId}/transactions?asOfDate=${asOfDate}`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200)
+    ).body;
+    expect(Number(arTransactions.totalDebit) - Number(arTransactions.totalCredit)).toBe(Number(arAccount.amount));
+
+    // Trial Balance row -> transactions drill-down goes straight to the
+    // account (already granular), skipping the sub-class breakdown step.
+    const trialBalance = (
+      await request(app.getHttpServer())
+        .get(`/reports/trial-balance?asOfDate=${asOfDate}`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200)
+    ).body;
+    const tbRow = trialBalance.rows.find((r: any) => r.accountId === arAccount.accountId);
+    expect(tbRow).toBeDefined();
+    expect(Number(tbRow.closingBalance)).toBe(Number(arTransactions.totalDebit) - Number(arTransactions.totalCredit));
   });
 
   // Regression test for a real bug: financialPosition()'s raw SQL used an
