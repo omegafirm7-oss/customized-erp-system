@@ -23,6 +23,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // /auth/callback immediately does window.location.replace("/companies")
+    // (AuthCallbackPage) — a full navigation away, not a react-router push —
+    // so this component is about to unmount via page unload regardless.
+    // Firing a refresh here anyway raced the *next* page's own bootstrap
+    // refresh: both present the same just-set cookie, one rotates it and
+    // the other observes a "used" token and treats it as reuse, revoking
+    // the whole session it just created — the user would land back on
+    // /login instead of the app. The single-flight refreshPromise in
+    // client.ts only dedupes within one page load, not across this
+    // callback→destination navigation, so the fix is to simply not start a
+    // refresh on this page at all.
+    if (window.location.pathname === "/auth/callback") {
+      setLoading(false);
+      return;
+    }
     // Restore the session from the httpOnly refresh cookie on load — via the
     // single-flight refreshAccessToken so a StrictMode double-mount can't
     // fire two rotations of the same token (which the server treats as
