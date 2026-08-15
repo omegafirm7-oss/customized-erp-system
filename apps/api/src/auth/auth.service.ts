@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Logger, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
 import { AuditAction } from "@prisma/client";
@@ -32,6 +32,8 @@ interface RequestMeta {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
@@ -75,6 +77,7 @@ export class AuthService {
   }
 
   async login(userId: string, meta: RequestMeta = {}): Promise<IssuedTokens> {
+    this.logger.debug(`login() called userId=${userId} ip=${meta.ipAddress} ua=${(meta.userAgent ?? "").slice(0, 60)}`);
     const memberships = await this.iamService.getCompanyMemberships(userId);
     const activeMemberships = memberships.filter((m) => m.status === "ACTIVE");
     // A user whose every company membership has been suspended (or who was
@@ -110,6 +113,7 @@ export class AuthService {
 
   async refresh(rawToken: string, meta: RequestMeta = {}): Promise<IssuedTokens> {
     const [id, secret] = rawToken.split(".");
+    this.logger.debug(`refresh() called tokenId=${id} ip=${meta.ipAddress} ua=${(meta.userAgent ?? "").slice(0, 60)}`);
     if (!id || !secret) {
       throw new UnauthorizedException("Malformed refresh token");
     }
@@ -122,6 +126,9 @@ export class AuthService {
     if (existing.revokedAt) {
       // Reuse of an already-rotated/revoked token is a compromise signal —
       // revoke the entire token family (all tokens for this user) to force re-login.
+      this.logger.warn(
+        `refresh() REUSE DETECTED tokenId=${id} userId=${existing.userId} revokedAt=${existing.revokedAt.toISOString()} ip=${meta.ipAddress} ua=${(meta.userAgent ?? "").slice(0, 60)}`,
+      );
       await this.prisma.refreshToken.updateMany({
         where: { userId: existing.userId, revokedAt: null },
         data: { revokedAt: new Date() },
@@ -281,6 +288,7 @@ export class AuthService {
         ipAddress: meta.ipAddress,
       },
     });
+    this.logger.debug(`issueTokens() minted newTokenId=${refreshId} userId=${user.id} ip=${meta.ipAddress}`);
 
     return {
       accessToken,
