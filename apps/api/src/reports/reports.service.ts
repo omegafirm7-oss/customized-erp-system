@@ -2,6 +2,28 @@ import { Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../common/prisma/prisma.service";
 
+// Shared between statementOfCashFlows() and cashFlowLineDetail() — the two
+// must classify accounts into the same buckets or a line-detail breakdown
+// could silently disagree with the top-line report it's meant to explain.
+const CASH_FLOW_BUCKET_CASE = Prisma.raw(`
+  CASE
+    WHEN a."controlAccountType" IN ('CASH', 'BANK') THEN 'CASH'
+    WHEN a."controlAccountType" = 'AR' THEN 'AR'
+    WHEN a."controlAccountType" = 'INVENTORY' THEN 'INVENTORY'
+    WHEN sc."code" = 'CURRENT_ASSET' THEN 'OTHER_CURRENT_ASSET'
+    WHEN a."controlAccountType" = 'AP' THEN 'AP'
+    WHEN sc."code" = 'CURRENT_LIABILITY' THEN 'OTHER_CURRENT_LIABILITY'
+    WHEN a."controlAccountType" = 'DEPRECIATION_EXPENSE' THEN 'DEPRECIATION'
+    WHEN a."controlAccountType" = 'DISPOSAL_GAIN_LOSS' THEN 'DISPOSAL_GAIN_LOSS'
+    WHEN a."controlAccountType" = 'EOSB_PROVISION' THEN 'EOSB_PROVISION'
+    WHEN sc."code" = 'NON_CURRENT_LIABILITY' THEN 'LONG_TERM_LOANS'
+    WHEN sc."code" = 'SHARE_CAPITAL' THEN 'SHARE_CAPITAL'
+    WHEN sc."code" = 'RETAINED_EARNINGS' THEN 'RETAINED_EARNINGS'
+    WHEN sc."code" = 'FINANCE_COST' THEN 'FINANCE_COST'
+    ELSE NULL
+  END
+`);
+
 interface TrialBalanceRawRow {
   accountId: string;
   accountCode: string;
@@ -755,6 +777,7 @@ export class ReportsService {
         journalEntryId: string;
         entryNumber: string | null;
         postingDate: Date;
+        status: string;
         memo: string | null;
         lineDescription: string | null;
         partnerName: string | null;
@@ -764,7 +787,7 @@ export class ReportsService {
     >`
       SELECT
         je."id" AS "journalEntryId", je."entryNumber" AS "entryNumber", je."postingDate" AS "postingDate",
-        je."memo" AS "memo", jel."description" AS "lineDescription", bp."name" AS "partnerName",
+        je."status"::text AS "status", je."memo" AS "memo", jel."description" AS "lineDescription", bp."name" AS "partnerName",
         jel."debit" AS "debit", jel."credit" AS "credit"
       FROM "journal_entry_lines" jel
       JOIN "journal_entries" je ON je."id" = jel."journalEntryId"
@@ -788,6 +811,7 @@ export class ReportsService {
         journalEntryId: r.journalEntryId,
         entryNumber: r.entryNumber,
         postingDate: r.postingDate.toISOString(),
+        status: r.status,
         memo: r.memo,
         lineDescription: r.lineDescription,
         partnerName: r.partnerName,
@@ -928,22 +952,7 @@ export class ReportsService {
         this.profitOrLoss(companyId, fromDate, toDate),
         this.prisma.$queryRaw<Array<{ bucket: string | null; debit: Prisma.Decimal; credit: Prisma.Decimal }>>`
           SELECT
-            CASE
-              WHEN a."controlAccountType" IN ('CASH', 'BANK') THEN 'CASH'
-              WHEN a."controlAccountType" = 'AR' THEN 'AR'
-              WHEN a."controlAccountType" = 'INVENTORY' THEN 'INVENTORY'
-              WHEN sc."code" = 'CURRENT_ASSET' THEN 'OTHER_CURRENT_ASSET'
-              WHEN a."controlAccountType" = 'AP' THEN 'AP'
-              WHEN sc."code" = 'CURRENT_LIABILITY' THEN 'OTHER_CURRENT_LIABILITY'
-              WHEN a."controlAccountType" = 'DEPRECIATION_EXPENSE' THEN 'DEPRECIATION'
-              WHEN a."controlAccountType" = 'DISPOSAL_GAIN_LOSS' THEN 'DISPOSAL_GAIN_LOSS'
-              WHEN a."controlAccountType" = 'EOSB_PROVISION' THEN 'EOSB_PROVISION'
-              WHEN sc."code" = 'NON_CURRENT_LIABILITY' THEN 'LONG_TERM_LOANS'
-              WHEN sc."code" = 'SHARE_CAPITAL' THEN 'SHARE_CAPITAL'
-              WHEN sc."code" = 'RETAINED_EARNINGS' THEN 'RETAINED_EARNINGS'
-              WHEN sc."code" = 'FINANCE_COST' THEN 'FINANCE_COST'
-              ELSE NULL
-            END AS "bucket",
+            ${CASH_FLOW_BUCKET_CASE} AS "bucket",
             COALESCE(SUM(jel."debit"), 0) AS "debit",
             COALESCE(SUM(jel."credit"), 0) AS "credit"
           FROM "accounts" a
@@ -1041,6 +1050,96 @@ export class ReportsService {
       openingCash: openingCash.toFixed(2),
       closingCash: closingCash.toFixed(2),
       isReconciled: netChangeInCash.sub(actualCashMovement).abs().lt("0.01"),
+    };
+  }
+
+  /**
+   * Per-account breakdown of one Cash Flow Statement line — same bucket
+   * classification and sign convention as statementOfCashFlows(), grouped by
+   * account instead of netted into one line. `sign` mirrors whether that
+   * display line used `nc(bucket)` as-is (1) or `nc(bucket).neg()` (-1) —
+   * see the sign-convention doc comment on statementOfCashFlows() above.
+   */
+  async cashFlowLineDetail(
+    companyId: string,
+    bucket: string,
+    sign: 1 | -1,
+    label: string,
+    fromDate: Date,
+    toDate: Date,
+  ): Promise<LineDetailReport> {
+    const rows = await this.prisma.$queryRaw<
+      Array<{ accountId: string; code: string; name: string; debit: Prisma.Decimal; credit: Prisma.Decimal }>
+    >`
+      SELECT a."id" AS "accountId", a."code" AS "code", a."name" AS "name",
+        COALESCE(SUM(jel."debit"), 0) AS "debit", COALESCE(SUM(jel."credit"), 0) AS "credit"
+      FROM "accounts" a
+      JOIN "account_sub_classes" sc ON sc."id" = a."accountSubClassId"
+      JOIN "journal_entry_lines" jel ON jel."accountId" = a."id"
+      JOIN "journal_entries" je ON je."id" = jel."journalEntryId"
+      WHERE a."companyId" = ${companyId}
+        AND je."status" IN ('POSTED', 'REVERSED')
+        AND je."postingDate" >= ${fromDate}
+        AND je."postingDate" <= ${toDate}
+        AND (${CASH_FLOW_BUCKET_CASE}) = ${bucket}
+      GROUP BY a."id", a."code", a."name"
+    `;
+    const accounts = rows
+      .map((r) => {
+        const netCredit = new Prisma.Decimal(r.credit).sub(r.debit);
+        return { accountId: r.accountId, code: r.code, name: r.name, amount: sign === -1 ? netCredit.neg() : netCredit };
+      })
+      .filter((a) => !a.amount.isZero())
+      .sort((a, b) => b.amount.abs().sub(a.amount.abs()).toNumber());
+    const total = accounts.reduce((sum, a) => sum.add(a.amount), new Prisma.Decimal(0));
+    return {
+      label,
+      total: total.toFixed(2),
+      accounts: accounts.map((a) => ({ accountId: a.accountId, code: a.code, name: a.name, amount: a.amount.toFixed(2) })),
+    };
+  }
+
+  /**
+   * Per-account breakdown of one Statement of Changes in Equity column
+   * (opening balance, or the period's other direct movements) for one
+   * equity sub-class — mirrors equitySubClassBalances()/
+   * equitySubClassMovements()'s aggregation exactly, grouped by account.
+   */
+  async equityLineDetail(
+    companyId: string,
+    subClassCode: string,
+    column: "opening" | "otherMovements",
+    fromDate: Date,
+    toDate: Date,
+  ): Promise<LineDetailReport> {
+    const dateFilter =
+      column === "opening"
+        ? Prisma.sql`AND je."postingDate" < ${fromDate}`
+        : Prisma.sql`AND je."postingDate" >= ${fromDate} AND je."postingDate" <= ${toDate}`;
+    const rows = await this.prisma.$queryRaw<
+      Array<{ accountId: string; code: string; name: string; subClassName: string; debit: Prisma.Decimal; credit: Prisma.Decimal }>
+    >`
+      SELECT a."id" AS "accountId", a."code" AS "code", a."name" AS "name", sc."name" AS "subClassName",
+        COALESCE(SUM(jel."debit"), 0) AS "debit", COALESCE(SUM(jel."credit"), 0) AS "credit"
+      FROM "accounts" a
+      JOIN "account_sub_classes" sc ON sc."id" = a."accountSubClassId"
+      JOIN "account_classes" ac ON ac."id" = a."accountClassId"
+      JOIN "journal_entry_lines" jel ON jel."accountId" = a."id"
+      JOIN "journal_entries" je ON je."id" = jel."journalEntryId"
+      WHERE a."companyId" = ${companyId} AND ac."code" = 'EQUITY' AND sc."code" = ${subClassCode}
+        AND je."status" IN ('POSTED', 'REVERSED')
+        ${dateFilter}
+      GROUP BY a."id", a."code", a."name", sc."name"
+    `;
+    const accounts = rows
+      .map((r) => ({ accountId: r.accountId, code: r.code, name: r.name, amount: new Prisma.Decimal(r.credit).sub(r.debit) }))
+      .filter((a) => !a.amount.isZero())
+      .sort((a, b) => b.amount.abs().sub(a.amount.abs()).toNumber());
+    const total = accounts.reduce((sum, a) => sum.add(a.amount), new Prisma.Decimal(0));
+    return {
+      label: rows[0]?.subClassName ?? subClassCode,
+      total: total.toFixed(2),
+      accounts: accounts.map((a) => ({ accountId: a.accountId, code: a.code, name: a.name, amount: a.amount.toFixed(2) })),
     };
   }
 
@@ -1147,6 +1246,7 @@ export interface AccountTransactionRow {
   journalEntryId: string;
   entryNumber: string | null;
   postingDate: string;
+  status: string;
   memo: string | null;
   lineDescription: string | null;
   partnerName: string | null;

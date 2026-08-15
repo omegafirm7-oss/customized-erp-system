@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { formatAmount, formatSigned } from "../utils/currency";
 
 interface EquityChangeLine {
   subClassCode: string;
@@ -39,6 +41,10 @@ export function ChangesInEquityPage() {
       .finally(() => setLoading(false));
   }, [fromDate, toDate]);
 
+  function columnHref(subClassCode: string, column: "opening" | "otherMovements") {
+    return `/changes-in-equity/line/${subClassCode}/${column}?fromDate=${fromDate}&toDate=${toDate}`;
+  }
+
   return (
     <div className="card">
       <div className="form-row" style={{ justifyContent: "space-between" }}>
@@ -67,10 +73,14 @@ export function ChangesInEquityPage() {
             {report.lines.map((line) => (
               <tr key={line.subClassCode}>
                 <td>{line.subClassName}</td>
-                <td>{line.opening}</td>
-                <td>{line.profitForPeriod}</td>
-                <td>{line.otherMovements}</td>
-                <td>{line.closing}</td>
+                <td>
+                  <Link to={columnHref(line.subClassCode, "opening")}>{formatSigned(line.opening)}</Link>
+                </td>
+                <td>{formatSigned(line.profitForPeriod)}</td>
+                <td>
+                  <Link to={columnHref(line.subClassCode, "otherMovements")}>{formatSigned(line.otherMovements)}</Link>
+                </td>
+                <td>{formatSigned(line.closing)}</td>
               </tr>
             ))}
           </tbody>
@@ -80,16 +90,16 @@ export function ChangesInEquityPage() {
                 <strong>Total</strong>
               </td>
               <td>
-                <strong>{report.totalOpening}</strong>
+                <strong>{formatAmount(report.totalOpening)}</strong>
               </td>
               <td>
-                <strong>{report.totalProfitForPeriod}</strong>
+                <strong>{formatAmount(report.totalProfitForPeriod)}</strong>
               </td>
               <td>
-                <strong>{report.totalOtherMovements}</strong>
+                <strong>{formatAmount(report.totalOtherMovements)}</strong>
               </td>
               <td>
-                <strong>{report.totalClosing}</strong>
+                <strong>{formatAmount(report.totalClosing)}</strong>
               </td>
             </tr>
           </tfoot>

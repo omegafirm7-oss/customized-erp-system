@@ -17,7 +17,9 @@ import { FinancialPositionPage } from "./pages/FinancialPositionPage";
 import { FinancialPositionLineDetailPage } from "./pages/FinancialPositionLineDetailPage";
 import { AccountTransactionsPage } from "./pages/AccountTransactionsPage";
 import { ChangesInEquityPage } from "./pages/ChangesInEquityPage";
+import { EquityLineDetailPage } from "./pages/EquityLineDetailPage";
 import { CashFlowPage } from "./pages/CashFlowPage";
+import { CashFlowLineDetailPage } from "./pages/CashFlowLineDetailPage";
 import { PartnersPage } from "./pages/PartnersPage";
 import { PartnerDetailPage } from "./pages/PartnerDetailPage";
 import { EditPurchaseInvoicePage } from "./pages/EditPurchaseInvoicePage";
@@ -124,7 +126,9 @@ const companyRoutes: Array<{ path: string; element: JSX.Element }> = [
   { path: "/financial-position/line/:subClassCode", element: <FinancialPositionLineDetailPage /> },
   { path: "/accounts/:accountId/transactions", element: <AccountTransactionsPage /> },
   { path: "/changes-in-equity", element: <ChangesInEquityPage /> },
+  { path: "/changes-in-equity/line/:subClassCode/:column", element: <EquityLineDetailPage /> },
   { path: "/cash-flow", element: <CashFlowPage /> },
+  { path: "/cash-flow/line/:line", element: <CashFlowLineDetailPage /> },
   { path: "/reports/ar-aging", element: <ArAgingPage /> },
   { path: "/reports/ap-aging", element: <ApAgingPage /> },
   { path: "/reports/vat-return", element: <VatReturnPage /> },

@@ -550,6 +550,123 @@ describe("Finance reports (e2e)", () => {
     expect(Number(report.openingCash)).toBe(0);
     expect(Number(report.closingCash)).toBe(4950);
     expect(report.isReconciled).toBe(true);
+
+    // Drill down: two of the top-line figures above, verified against their
+    // per-account breakdown, then down to the transaction that caused them.
+    const arDetail = (
+      await request(app.getHttpServer())
+        .get(`/reports/cash-flow/line-detail?line=wcTradeReceivables&fromDate=${from.toISOString()}&toDate=${to.toISOString()}`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200)
+    ).body;
+    expect(Number(arDetail.total)).toBe(Number(ar.amount));
+    expect(arDetail.accounts).toHaveLength(1);
+
+    const shareCapitalDetail = (
+      await request(app.getHttpServer())
+        .get(`/reports/cash-flow/line-detail?line=financingShareCapital&fromDate=${from.toISOString()}&toDate=${to.toISOString()}`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200)
+    ).body;
+    expect(Number(shareCapitalDetail.total)).toBe(5000);
+    const shareCapitalAccount = shareCapitalDetail.accounts[0];
+    const shareCapitalTransactions = (
+      await request(app.getHttpServer())
+        .get(`/reports/accounts/${shareCapitalAccount.accountId}/transactions?fromDate=${from.toISOString()}&toDate=${to.toISOString()}`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200)
+    ).body;
+    expect(Number(shareCapitalTransactions.totalCredit)).toBe(5000);
+    expect(shareCapitalTransactions.transactions[0].status).toBe("POSTED");
+  });
+
+  it("drills a Changes in Equity line down to accounts, reconciling opening and other-movements columns", async () => {
+    const ctx = await setupContext();
+    const from = new Date("2026-06-01T00:00:00.000Z");
+    const to = new Date("2026-06-30T00:00:00.000Z");
+
+    // Prior-period capital (opening balance for the June statement).
+    await postJournalEntry(
+      ctx,
+      [
+        { accountCode: "1120", debit: "2000", credit: "0" },
+        { accountCode: "3100", debit: "0", credit: "2000" },
+      ],
+      new Date("2026-05-01T00:00:00.000Z"),
+    );
+    // In-period capital injection (an "other movement" for June).
+    await postJournalEntry(
+      ctx,
+      [
+        { accountCode: "1120", debit: "500", credit: "0" },
+        { accountCode: "3100", debit: "0", credit: "500" },
+      ],
+      new Date("2026-06-10T00:00:00.000Z"),
+    );
+
+    const report = (
+      await request(app.getHttpServer())
+        .get(`/reports/changes-in-equity?fromDate=${from.toISOString()}&toDate=${to.toISOString()}`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200)
+    ).body;
+    const shareCapitalLine = report.lines.find((l: any) => l.subClassCode === "SHARE_CAPITAL");
+    expect(Number(shareCapitalLine.opening)).toBe(2000);
+    expect(Number(shareCapitalLine.otherMovements)).toBe(500);
+
+    const openingDetail = (
+      await request(app.getHttpServer())
+        .get(
+          `/reports/changes-in-equity/line-detail?subClassCode=SHARE_CAPITAL&column=opening&fromDate=${from.toISOString()}&toDate=${to.toISOString()}`,
+        )
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200)
+    ).body;
+    expect(Number(openingDetail.total)).toBe(2000);
+
+    const movementsDetail = (
+      await request(app.getHttpServer())
+        .get(
+          `/reports/changes-in-equity/line-detail?subClassCode=SHARE_CAPITAL&column=otherMovements&fromDate=${from.toISOString()}&toDate=${to.toISOString()}`,
+        )
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200)
+    ).body;
+    expect(Number(movementsDetail.total)).toBe(500);
+  });
+
+  it("lets an Administrator reverse a posted entry from the account-transactions drill-down", async () => {
+    const ctx = await setupContext();
+    await postJournalEntry(ctx, [
+      { accountCode: "5240", debit: "300", credit: "0" },
+      { accountCode: "1120", debit: "0", credit: "300" },
+    ]);
+
+    const officeAdminAccountId = ctx.accountByCode("5240").id;
+    const from = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    const to = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+
+    const before = (
+      await request(app.getHttpServer())
+        .get(`/reports/accounts/${officeAdminAccountId}/transactions?fromDate=${from}&toDate=${to}`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200)
+    ).body;
+    expect(before.transactions[0].status).toBe("POSTED");
+
+    await request(app.getHttpServer())
+      .post(`/gl/journal-entries/${before.transactions[0].journalEntryId}/reverse`)
+      .set("Authorization", `Bearer ${ctx.accessToken}`)
+      .expect(201);
+
+    const after = (
+      await request(app.getHttpServer())
+        .get(`/reports/accounts/${officeAdminAccountId}/transactions?fromDate=${from}&toDate=${to}`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200)
+    ).body;
+    const original = after.transactions.find((t: any) => t.journalEntryId === before.transactions[0].journalEntryId);
+    expect(original.status).toBe("REVERSED");
   });
 
   it("isolates reports between companies and blocks viewers from writing", async () => {

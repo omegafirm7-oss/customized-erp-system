@@ -17,6 +17,25 @@ const PROFIT_OR_LOSS_LINES: Record<string, { label: string; subClassCodes: strin
   taxExpense: { label: "Tax Expense", subClassCodes: ["TAX_EXPENSE"] },
 };
 
+// Whitelisted Cash Flow line keys — bucket + sign mirror exactly how
+// ReportsService.statementOfCashFlows() computes each display line (nc(bucket)
+// vs nc(bucket).neg()), so a line-detail breakdown always reconciles.
+const CASH_FLOW_LINES: Record<string, { bucket: string; sign: 1 | -1; label: string }> = {
+  depreciation: { bucket: "DEPRECIATION", sign: -1, label: "Depreciation (non-cash addback)" },
+  disposalGainLossAdjustment: { bucket: "DISPOSAL_GAIN_LOSS", sign: -1, label: "(Gain)/loss on disposal of assets" },
+  financeCostsAddback: { bucket: "FINANCE_COST", sign: -1, label: "Finance costs (classified as financing)" },
+  wcTradeReceivables: { bucket: "AR", sign: 1, label: "(Increase)/decrease in trade receivables" },
+  wcInventory: { bucket: "INVENTORY", sign: 1, label: "(Increase)/decrease in inventory" },
+  wcOtherCurrentAssets: { bucket: "OTHER_CURRENT_ASSET", sign: 1, label: "(Increase)/decrease in other current assets" },
+  wcTradePayables: { bucket: "AP", sign: 1, label: "Increase/(decrease) in trade payables" },
+  wcOtherCurrentLiabilities: { bucket: "OTHER_CURRENT_LIABILITY", sign: 1, label: "Increase/(decrease) in other current liabilities" },
+  wcEosb: { bucket: "EOSB_PROVISION", sign: 1, label: "Increase/(decrease) in end-of-service benefits provision" },
+  financingLongTermLoans: { bucket: "LONG_TERM_LOANS", sign: 1, label: "Proceeds from/(repayment of) long-term loans" },
+  financingShareCapital: { bucket: "SHARE_CAPITAL", sign: 1, label: "Proceeds from issue of share capital" },
+  financingDividends: { bucket: "RETAINED_EARNINGS", sign: 1, label: "Dividends/distributions paid" },
+  financingFinanceCostsPaid: { bucket: "FINANCE_COST", sign: 1, label: "Finance costs paid" },
+};
+
 // JwtAuthGuard + PermissionsGuard are registered globally in AppModule.
 @ApiTags("reports")
 @ApiBearerAuth()
@@ -152,6 +171,36 @@ export class ReportsController {
     @Query("toDate") toDate: string,
   ) {
     return this.reportsService.statementOfCashFlows(companyId, new Date(fromDate), new Date(toDate));
+  }
+
+  @Get("cash-flow/line-detail")
+  @Permissions(PERMISSIONS.REPORTS_VIEW)
+  async cashFlowLineDetail(
+    @CurrentCompanyId() companyId: string,
+    @Query("line") line: string,
+    @Query("fromDate") fromDate: string,
+    @Query("toDate") toDate: string,
+  ) {
+    const def = CASH_FLOW_LINES[line];
+    if (!def) {
+      throw new BadRequestException(`Unknown cash flow line: ${line}`);
+    }
+    return this.reportsService.cashFlowLineDetail(companyId, def.bucket, def.sign, def.label, new Date(fromDate), new Date(toDate));
+  }
+
+  @Get("changes-in-equity/line-detail")
+  @Permissions(PERMISSIONS.REPORTS_VIEW)
+  async equityLineDetail(
+    @CurrentCompanyId() companyId: string,
+    @Query("subClassCode") subClassCode: string,
+    @Query("column") column: string,
+    @Query("fromDate") fromDate: string,
+    @Query("toDate") toDate: string,
+  ) {
+    if (column !== "opening" && column !== "otherMovements") {
+      throw new BadRequestException(`Unknown equity column: ${column}`);
+    }
+    return this.reportsService.equityLineDetail(companyId, subClassCode, column, new Date(fromDate), new Date(toDate));
   }
 
   @Get("stock-movements")

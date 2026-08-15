@@ -1,12 +1,14 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 import { formatAmount } from "../utils/currency";
 
 interface AccountTransactionRow {
   journalEntryId: string;
   entryNumber: string | null;
   postingDate: string;
+  status: string;
   memo: string | null;
   lineDescription: string | null;
   partnerName: string | null;
@@ -30,13 +32,39 @@ export function AccountTransactionsPage() {
   const toDate = searchParams.get("toDate");
   const asOfDate = searchParams.get("asOfDate");
   const back = searchParams.get("back");
+  const { user } = useAuth();
+  const isAdministrator = user?.roleName === "Administrator";
   const [data, setData] = useState<AccountTransactionsReport | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [reversingId, setReversingId] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     if (!accountId) return;
     const params = asOfDate ? { asOfDate } : { fromDate, toDate };
     apiClient.get<AccountTransactionsReport>(`/reports/accounts/${accountId}/transactions`, { params }).then((res) => setData(res.data));
   }, [accountId, fromDate, toDate, asOfDate]);
+
+  useEffect(load, [load]);
+
+  async function handleReverse(journalEntryId: string) {
+    if (
+      !window.confirm(
+        "Reverse this journal entry? Posted entries can't be edited directly — this creates an offsetting reversal entry, which is the correct way to fix a mistake. You can then post a new corrected entry.",
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    setReversingId(journalEntryId);
+    try {
+      await apiClient.post(`/gl/journal-entries/${journalEntryId}/reverse`);
+      load();
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to reverse entry");
+    } finally {
+      setReversingId(null);
+    }
+  }
 
   if (!data) return <p style={{ padding: 24 }}>Loading…</p>;
 
@@ -45,6 +73,7 @@ export function AccountTransactionsPage() {
       <Link to={back || "/trial-balance"} className="intelligence-crumb">
         ← Back
       </Link>
+      {error && <div className="error-banner">{error}</div>}
       <div className="intelligence-panel-header">
         <div className="intelligence-panel-title">
           {data.accountCode} — {data.accountName}
@@ -60,6 +89,12 @@ export function AccountTransactionsPage() {
           </div>
         </div>
       </div>
+      {isAdministrator && (
+        <p style={{ color: "#98a2b3", fontSize: 13, marginTop: -8 }}>
+          Posted entries are permanent (required for audit trail) and can't be edited directly. As Administrator you can reverse a
+          wrong entry below, then post a new corrected one from Journal Entries.
+        </p>
+      )}
       <table>
         <thead>
           <tr>
@@ -69,6 +104,8 @@ export function AccountTransactionsPage() {
             <th>Description</th>
             <th>Debit</th>
             <th>Credit</th>
+            <th>Status</th>
+            {isAdministrator && <th>Correction</th>}
           </tr>
         </thead>
         <tbody>
@@ -80,11 +117,23 @@ export function AccountTransactionsPage() {
               <td>{t.lineDescription ?? t.memo ?? "—"}</td>
               <td>{Number(t.debit) !== 0 ? formatAmount(t.debit) : ""}</td>
               <td>{Number(t.credit) !== 0 ? formatAmount(t.credit) : ""}</td>
+              <td>
+                <span className={`badge ${t.status === "REVERSED" ? "reversed" : "posted"}`}>{t.status}</span>
+              </td>
+              {isAdministrator && (
+                <td>
+                  {t.status === "POSTED" && (
+                    <button className="secondary" disabled={reversingId === t.journalEntryId} onClick={() => handleReverse(t.journalEntryId)}>
+                      {reversingId === t.journalEntryId ? "Reversing…" : "Reverse"}
+                    </button>
+                  )}
+                </td>
+              )}
             </tr>
           ))}
           {data.transactions.length === 0 && (
             <tr>
-              <td colSpan={6} style={{ color: "#98a2b3" }}>
+              <td colSpan={isAdministrator ? 8 : 7} style={{ color: "#98a2b3" }}>
                 No transactions recorded for this period
               </td>
             </tr>
