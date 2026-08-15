@@ -20,6 +20,17 @@ export class GoogleStrategy extends PassportStrategy(Strategy, "google") {
     });
   }
 
+  /**
+   * Without this, Google silently reuses whatever single Google session is
+   * already active in the browser and skips the account chooser entirely —
+   * the exact "sometimes it signs me in directly" behavior reported. Forcing
+   * `select_account` makes Google always show the chooser, even for a user
+   * with only one signed-in Google account, so the flow is consistent.
+   */
+  authorizationParams(): Record<string, string> {
+    return { prompt: "select_account" };
+  }
+
   async validate(_accessToken: string, _refreshToken: string, profile: Profile, done: VerifyCallback): Promise<void> {
     const email = profile.emails?.[0]?.value;
     if (!email) {

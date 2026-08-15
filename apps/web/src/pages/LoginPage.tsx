@@ -1,5 +1,5 @@
 import { FormEvent, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { AuthVisual } from "../components/AuthVisual";
 import { GoogleSignInButton } from "../components/GoogleSignInButton";
@@ -11,9 +11,12 @@ import { AuthContact } from "../components/AuthContact";
 export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(
+    searchParams.get("error") === "google_auth_failed" ? "Google sign-in was cancelled or failed — please try again." : null,
+  );
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {

@@ -418,3 +418,11 @@ export const MODULE_KEYS = {
 } as const;
 
 export type ModuleKey = (typeof MODULE_KEYS)[keyof typeof MODULE_KEYS];
+
+// Single source of truth for the idle-logout timing, shared between the
+// frontend's IdleTimeoutGuard (client-side countdown UI) and the backend's
+// refresh/heartbeat staleness check (server-side enforcement) — see
+// auth.service.ts's IDLE_TOTAL_MS. 3 minutes of no activity, then a 2-minute
+// warning countdown; 5 minutes total before the session is force-revoked.
+export const IDLE_TIMEOUT_MS = 3 * 60 * 1000;
+export const IDLE_WARNING_MS = 2 * 60 * 1000;

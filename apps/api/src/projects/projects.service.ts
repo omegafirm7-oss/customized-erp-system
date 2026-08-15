@@ -120,6 +120,8 @@ export class ProjectsService {
         endDate: dto.endDate ? new Date(dto.endDate) : undefined,
         contractValue: dto.contractValue !== undefined ? new Prisma.Decimal(dto.contractValue) : undefined,
         estimatedTotalCost: dto.estimatedTotalCost !== undefined ? new Prisma.Decimal(dto.estimatedTotalCost) : undefined,
+        currentPhase: dto.currentPhase,
+        natureOfWork: dto.natureOfWork,
         updatedByUserId: userId,
       },
       include: { costCenter: true, businessPartner: { select: { code: true, name: true } } },

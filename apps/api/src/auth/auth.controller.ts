@@ -1,6 +1,5 @@
 import { Body, Controller, Get, Post, Req, Res, UnauthorizedException, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { AuthGuard } from "@nestjs/passport";
 import { Request, Response } from "express";
 import { User } from "@prisma/client";
 import { AuthService, IssuedTokens } from "./auth.service";
@@ -12,6 +11,7 @@ import { ResetPasswordDto } from "./dto/reset-password.dto";
 import { Public } from "../common/decorators/public.decorator";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { JwtPayload } from "./types/jwt-payload.type";
+import { GoogleAuthGuard } from "./guards/google-auth.guard";
 
 const REFRESH_COOKIE_NAME = "erp_refresh_token";
 
@@ -53,7 +53,7 @@ export class AuthController {
 
   @Public()
   @Get("google")
-  @UseGuards(AuthGuard("google"))
+  @UseGuards(GoogleAuthGuard)
   // eslint-disable-next-line @typescript-eslint/no-empty-function
   async googleAuth(): Promise<void> {
     // Passport's Google strategy intercepts this request and redirects to
@@ -62,7 +62,7 @@ export class AuthController {
 
   @Public()
   @Get("google/callback")
-  @UseGuards(AuthGuard("google"))
+  @UseGuards(GoogleAuthGuard)
   async googleCallback(@Req() req: Request, @Res() res: Response): Promise<void> {
     const user = req.user as User;
     const tokens = await this.authService.login(user.id, this.requestMeta(req));
@@ -88,6 +88,25 @@ export class AuthController {
   async resetPassword(@Body() dto: ResetPasswordDto) {
     await this.authService.resetPassword(dto.token, dto.newPassword);
     return { success: true };
+  }
+
+  /**
+   * Called by the frontend's IdleTimeoutGuard, throttled, on real user
+   * activity — the server-side half of idle-timeout enforcement (see
+   * AuthService.touchActivity). Not itself proof the session is fine: it
+   * still revokes and 401s if the gap since the last heartbeat exceeded the
+   * idle+warning window, which is what makes a stale session actually die
+   * server-side instead of only in whichever tab's JS timer happens to fire.
+   */
+  @Public()
+  @Post("heartbeat")
+  async heartbeat(@Req() req: Request) {
+    const rawToken = req.cookies?.[REFRESH_COOKIE_NAME];
+    if (!rawToken) {
+      throw new UnauthorizedException("No refresh token presented");
+    }
+    await this.authService.touchActivity(rawToken);
+    return { ok: true };
   }
 
   @Public()

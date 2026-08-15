@@ -56,6 +56,16 @@ export class CreateProjectDto {
   @IsOptional()
   @IsNumberString()
   estimatedTotalCost?: string;
+
+  @ApiProperty({ required: false, description: "e.g. 'Execution' — feeds the admin-only network diagram" })
+  @IsOptional()
+  @IsString()
+  currentPhase?: string;
+
+  @ApiProperty({ required: false, description: "e.g. 'Raft Foundation & Finishing' — feeds the admin-only network diagram" })
+  @IsOptional()
+  @IsString()
+  natureOfWork?: string;
 }
 
 export class UpdateProjectDto {
@@ -98,6 +108,16 @@ export class UpdateProjectDto {
   @IsOptional()
   @IsNumberString()
   estimatedTotalCost?: string;
+
+  @ApiProperty({ required: false, description: "e.g. 'Execution' — feeds the admin-only network diagram" })
+  @IsOptional()
+  @IsString()
+  currentPhase?: string;
+
+  @ApiProperty({ required: false, description: "e.g. 'Raft Foundation & Finishing' — feeds the admin-only network diagram" })
+  @IsOptional()
+  @IsString()
+  natureOfWork?: string;
 }
 
 export class TransitionStatusDto {

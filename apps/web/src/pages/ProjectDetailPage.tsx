@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { downloadCsv } from "../utils/csv";
 import { downloadPdf } from "../utils/pdf";
+import { useAuth } from "../auth/AuthContext";
 
 interface WbsTask {
   id: string;
@@ -29,26 +30,18 @@ interface ProjectDetail {
   name: string;
   status: string;
   recognitionMethod: string;
+  startDate: string | null;
   contractValue: string;
   estimatedTotalCost: string;
+  currentPhase: string | null;
+  natureOfWork: string | null;
   costCenter: { id: string; code: string; name: string };
   businessPartner: { code: string; name: string } | null;
   tasks: WbsTask[];
   revenueRecognitionRuns: RevRecRun[];
 }
 
-interface CostBreakdownRow {
-  code: string;
-  name: string;
-  amount: string;
-}
-
-interface CostBreakdown {
-  totalCosts: string;
-  pendingAmount: string;
-  paidAmount: string;
-  byAccount: CostBreakdownRow[];
-}
+const PROJECT_PHASES = ["Mobilization", "Design & Procurement", "Execution", "Finishing", "Handover"] as const;
 
 interface IntelligenceAccountRow {
   id: string;
@@ -94,20 +87,20 @@ export function ProjectDetailPage() {
   const [busy, setBusy] = useState(false);
   const [taskForm, setTaskForm] = useState({ code: "", name: "", parentTaskId: "", costBudget: "" });
   const [estimates, setEstimates] = useState({ code: "", name: "", contractValue: "", estimatedTotalCost: "" });
-  const [costBreakdown, setCostBreakdown] = useState<CostBreakdown | null>(null);
   const [intelligence, setIntelligence] = useState<IntelligenceSummary | null>(null);
   const [costCenterForm, setCostCenterForm] = useState({ code: "", name: "" });
+  const [phaseForm, setPhaseForm] = useState({ startDate: "", currentPhase: "", natureOfWork: "" });
+  const { user } = useAuth();
+  const isAdministrator = user?.roleName === "Administrator";
 
   const load = useCallback(async () => {
-    const [projectRes, periodsRes, breakdownRes, intelligenceRes] = await Promise.all([
+    const [projectRes, periodsRes, intelligenceRes] = await Promise.all([
       apiClient.get<ProjectDetail>(`/projects/${id}`),
       apiClient.get<FiscalPeriod[]>("/companies/current/fiscal-periods"),
-      apiClient.get<CostBreakdown>(`/projects/${id}/cost-breakdown`),
       apiClient.get<IntelligenceSummary>(`/projects/${id}/intelligence`),
     ]);
     setProject(projectRes.data);
     setPeriods(periodsRes.data);
-    setCostBreakdown(breakdownRes.data);
     setIntelligence(intelligenceRes.data);
     setEstimates({
       code: projectRes.data.code,
@@ -116,6 +109,11 @@ export function ProjectDetailPage() {
       estimatedTotalCost: projectRes.data.estimatedTotalCost,
     });
     setCostCenterForm({ code: projectRes.data.costCenter.code, name: projectRes.data.costCenter.name });
+    setPhaseForm({
+      startDate: projectRes.data.startDate ? projectRes.data.startDate.slice(0, 10) : "",
+      currentPhase: projectRes.data.currentPhase ?? "",
+      natureOfWork: projectRes.data.natureOfWork ?? "",
+    });
   }, [id]);
 
   useEffect(() => {
@@ -141,6 +139,24 @@ export function ProjectDetailPage() {
     setBusy(true);
     try {
       await apiClient.patch(`/projects/${id}`, estimates);
+      await load();
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Update failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function savePhase(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      await apiClient.patch(`/projects/${id}`, {
+        startDate: phaseForm.startDate ? new Date(phaseForm.startDate).toISOString() : undefined,
+        currentPhase: phaseForm.currentPhase || undefined,
+        natureOfWork: phaseForm.natureOfWork || undefined,
+      });
       await load();
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "Update failed");
@@ -507,48 +523,78 @@ export function ProjectDetailPage() {
         </div>
       )}
 
-      {costBreakdown && (
+      {isAdministrator && (
         <div className="card">
-          <h3>Cost breakdown (real, from posted purchase invoices &amp; GL)</h3>
-          <div className="form-row">
+          <h3>Network diagram</h3>
+          <p style={{ color: "#667085", fontSize: 13 }}>
+            Execution-status overview — visible to Administrators only.
+          </p>
+
+          <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 0, margin: "16px 0" }}>
+            {PROJECT_PHASES.map((phase, i) => {
+              const isCurrent = (project.currentPhase ?? "").trim().toLowerCase() === phase.toLowerCase();
+              return (
+                <div key={phase} style={{ display: "flex", alignItems: "center" }}>
+                  <div
+                    style={{
+                      padding: "10px 16px",
+                      borderRadius: 8,
+                      border: isCurrent ? "2px solid #1570ef" : "1px solid #d0d5dd",
+                      background: isCurrent ? "#eff8ff" : "#fff",
+                      color: isCurrent ? "#1570ef" : "#344054",
+                      fontWeight: isCurrent ? 700 : 500,
+                      fontSize: 13,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {phase}
+                  </div>
+                  {i < PROJECT_PHASES.length - 1 && (
+                    <div style={{ padding: "0 8px", color: "#98a2b3", fontSize: 18 }}>→</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {project.currentPhase && !PROJECT_PHASES.some((p) => p.toLowerCase() === project.currentPhase!.toLowerCase()) && (
+            <p style={{ fontSize: 13, color: "#667085" }}>
+              Current phase (custom): <strong>{project.currentPhase}</strong>
+            </p>
+          )}
+
+          <div className="form-row" style={{ marginTop: 4 }}>
             <div className="kpi-tile">
-              <div>Total Costs</div>
-              <strong>{Number(costBreakdown.totalCosts).toFixed(2)}</strong>
+              <div>Project start</div>
+              <strong>{project.startDate ? new Date(project.startDate).toLocaleDateString() : "—"}</strong>
             </div>
             <div className="kpi-tile">
-              <div>Paid</div>
-              <strong>{Number(costBreakdown.paidAmount).toFixed(2)}</strong>
-            </div>
-            <div className="kpi-tile">
-              <div>Pending (yet to be paid)</div>
-              <strong>{Number(costBreakdown.pendingAmount).toFixed(2)}</strong>
+              <div>Nature of work</div>
+              <strong>{project.natureOfWork || "—"}</strong>
             </div>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Account</th>
-                <th>Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {costBreakdown.byAccount.map((row) => (
-                <tr key={row.code}>
-                  <td>
-                    {row.code} — {row.name}
-                  </td>
-                  <td>{Number(row.amount).toFixed(2)}</td>
-                </tr>
-              ))}
-              {costBreakdown.byAccount.length === 0 && (
-                <tr>
-                  <td colSpan={2} style={{ color: "#98a2b3" }}>
-                    No posted costs yet
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+
+          <form onSubmit={savePhase} className="form-row" style={{ marginTop: 12 }}>
+            <div>
+              <label>Start date </label>
+              <input type="date" value={phaseForm.startDate} onChange={(e) => setPhaseForm({ ...phaseForm, startDate: e.target.value })} />
+            </div>
+            <input
+              placeholder="Current phase (e.g. Execution)"
+              value={phaseForm.currentPhase}
+              onChange={(e) => setPhaseForm({ ...phaseForm, currentPhase: e.target.value })}
+              style={{ width: 200 }}
+            />
+            <input
+              placeholder="Nature of work (e.g. Raft Foundation & Finishing)"
+              value={phaseForm.natureOfWork}
+              onChange={(e) => setPhaseForm({ ...phaseForm, natureOfWork: e.target.value })}
+              style={{ flex: 1 }}
+            />
+            <button type="submit" disabled={busy}>
+              Save
+            </button>
+          </form>
         </div>
       )}
 

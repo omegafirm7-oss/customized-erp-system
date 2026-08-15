@@ -395,6 +395,12 @@ model RefreshToken {
   userAgent       String?
   ipAddress       String?
   createdAt       DateTime  @default(now())
+  // Server-side idle-timeout enforcement: touched by /auth/heartbeat on
+  // real user activity and re-checked on every /auth/refresh — a session
+  // stale for longer than IDLE_TIMEOUT_MS+IDLE_WARNING_MS gets revoked
+  // outright rather than silently renewed, independent of the frontend's
+  // own countdown UI (see auth.service.ts).
+  lastActivityAt  DateTime  @default(now())
 
   @@index([userId])
   @@map("refresh_tokens")
@@ -1951,6 +1957,12 @@ model Project {
   endDate            DateTime?
   contractValue      Decimal           @default(0) @db.Decimal(18, 4)
   estimatedTotalCost Decimal           @default(0) @db.Decimal(18, 4)
+  // Free-text execution-status fields feeding the admin-only network
+  // diagram on the project detail page (e.g. "Execution", "Raft Foundation
+  // & Finishing") — deliberately not enums, since phase/scope-of-work
+  // vocabulary varies too much between projects to model rigidly.
+  currentPhase       String?
+  natureOfWork       String?
   costCenterId       String            @unique
   costCenter         CostCenter        @relation(fields: [costCenterId], references: [id])
   createdByUserId    String

@@ -4,6 +4,7 @@ import { ConfigService } from "@nestjs/config";
 import { AuditAction } from "@prisma/client";
 import { randomBytes, randomUUID, createHash } from "crypto";
 import ms from "ms";
+import { IDLE_TIMEOUT_MS, IDLE_WARNING_MS } from "@erp/shared-constants";
 import { PrismaService } from "../common/prisma/prisma.service";
 import { MailService } from "../common/mail/mail.service";
 import { IamService } from "../iam/iam.service";
@@ -11,6 +12,11 @@ import { UsersService } from "../iam/users.service";
 import { AuditService } from "../audit/audit.service";
 import { JwtPayload } from "./types/jwt-payload.type";
 import { AppConfig } from "../core/config/configuration";
+
+// Mirrors the frontend's IdleTimeoutGuard countdown (3min idle + 2min
+// warning) — a session with no activity heartbeat in this long is revoked
+// server-side regardless of whether the client-side timer actually fired.
+const IDLE_SESSION_TOTAL_MS = IDLE_TIMEOUT_MS + IDLE_WARNING_MS;
 
 export interface IssuedTokens {
   accessToken: string;
@@ -127,6 +133,16 @@ export class AuthService {
       throw new UnauthorizedException("Refresh token invalid or expired");
     }
 
+    // Server-side idle enforcement: a session with no activity heartbeat
+    // (see touchActivity, called from POST /auth/heartbeat) for longer than
+    // the idle+warning window is dead regardless of what the client-side
+    // timer thinks — this is what makes opening a fresh tab after being
+    // away not silently grant another full idle window.
+    if (Date.now() - existing.lastActivityAt.getTime() > IDLE_SESSION_TOTAL_MS) {
+      await this.prisma.refreshToken.update({ where: { id: existing.id }, data: { revokedAt: new Date() } });
+      throw new UnauthorizedException("Session expired due to inactivity");
+    }
+
     // Re-check access on every refresh, not just at the original login — a
     // user deactivated or a company membership suspended after a token was
     // issued must not be able to keep minting fresh access tokens with it.
@@ -174,6 +190,33 @@ export class AuthService {
     }
   }
 
+  /**
+   * Called by POST /auth/heartbeat, throttled client-side, whenever the
+   * frontend observes real user activity (mouse/keyboard/scroll) — the only
+   * server-side signal of "the user is actually here" that exists, since
+   * access-token validation is pure local JWT verification with no DB
+   * round-trip. If the session was already stale past the idle+warning
+   * window (e.g. the tab was suspended and stopped sending heartbeats, or
+   * a stray request arrives just after the deadline), revoke it instead of
+   * reviving it — a heartbeat is evidence of activity now, not proof there
+   * wasn't a gap long enough to have already timed the session out.
+   */
+  async touchActivity(rawToken: string): Promise<void> {
+    const [id, secret] = rawToken.split(".");
+    if (!id || !secret) {
+      throw new UnauthorizedException("Malformed refresh token");
+    }
+    const existing = await this.prisma.refreshToken.findUnique({ where: { id } });
+    if (!existing || existing.revokedAt || existing.expiresAt < new Date() || this.hashSecret(secret) !== existing.tokenHash) {
+      throw new UnauthorizedException("Refresh token invalid or expired");
+    }
+    if (Date.now() - existing.lastActivityAt.getTime() > IDLE_SESSION_TOTAL_MS) {
+      await this.prisma.refreshToken.update({ where: { id: existing.id }, data: { revokedAt: new Date() } });
+      throw new UnauthorizedException("Session expired due to inactivity");
+    }
+    await this.prisma.refreshToken.update({ where: { id: existing.id }, data: { lastActivityAt: new Date() } });
+  }
+
   private async issueTokens(
     userId: string,
     activeCompanyId: string | null,
@@ -185,12 +228,14 @@ export class AuthService {
     }
 
     let roleId: string | null = null;
+    let roleName: string | null = null;
     let permissions: string[] = [];
     let enabledModules: string[] = [];
     if (activeCompanyId) {
       const [membership, company] = await Promise.all([
         this.prisma.companyUser.findUnique({
           where: { userId_companyId: { userId, companyId: activeCompanyId } },
+          include: { role: { select: { name: true } } },
         }),
         this.prisma.company.findUnique({
           where: { id: activeCompanyId },
@@ -198,6 +243,7 @@ export class AuthService {
         }),
       ]);
       roleId = membership?.roleId ?? null;
+      roleName = membership?.role?.name ?? null;
       permissions = await this.iamService.getPermissionsForCompanyUser(userId, activeCompanyId);
       enabledModules = company?.enabledModules ?? [];
     }
@@ -207,6 +253,7 @@ export class AuthService {
       email: user.email,
       activeCompanyId,
       roleId,
+      roleName,
       permissions,
       isPlatformAdmin: user.isPlatformAdmin,
       enabledModules,
