@@ -16,9 +16,12 @@ export function AuthCallbackPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const match = window.location.hash.match(/(?:^|&)at=([^&]+)/);
-    if (match) {
-      restoreFromToken(decodeURIComponent(match[1]));
+    // window.location.hash includes the leading "#" (e.g. "#at=..."), so it
+    // must be stripped before parsing as query-string-shaped params.
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    const token = params.get("at");
+    if (token) {
+      restoreFromToken(token);
       navigate("/companies", { replace: true });
     } else {
       // No token in the URL — not the expected path, but fall back to the
