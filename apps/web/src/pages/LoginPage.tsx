@@ -6,6 +6,7 @@ import { GoogleSignInButton } from "../components/GoogleSignInButton";
 import { AuthFeatureCircles } from "../components/AuthFeatureCircles";
 import { AuthTrustBadges } from "../components/AuthTrustBadges";
 import { AuthPitch } from "../components/AuthPitch";
+import { AuthComplianceMarks } from "../components/AuthComplianceMarks";
 import { AuthContact } from "../components/AuthContact";
 
 export function LoginPage() {
@@ -39,6 +40,7 @@ export function LoginPage() {
       <div className="auth-page-overlay" />
 
       <div className="auth-left-content">
+        <AuthComplianceMarks />
         <div className="auth-glass-header">
           <h1>Universa Centrix</h1>
           <p className="auth-mission">Grow faster. See everything. Stay compliant.</p>
@@ -58,7 +60,7 @@ export function LoginPage() {
             <div className="auth-divider">Or sign in with email</div>
             <div className="auth-field">
               <label>Email</label>
-              <input type="email" placeholder="mail@website.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              <input type="email" placeholder="Enter your email" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </div>
             <div className="auth-field">
               <label>Password</label>

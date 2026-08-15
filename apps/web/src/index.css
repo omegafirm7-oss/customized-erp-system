@@ -829,14 +829,49 @@ button.danger:hover:not(:disabled) {
   position: fixed;
   inset: 0;
   /* Dark fallback so the page's own light-grey body background never
-     flashes through while the (large, ~700KB) photo is still downloading
-     or decoding — most visible right after a hard refresh, before the
-     image is warm in cache. Close to the photo's own dominant night-sky
-     tone so the eventual cross-fade to the real image is unnoticeable. */
-  background-color: #0b1220;
+     flashes through while the (~415KB) photo is still downloading or
+     decoding — most visible right after a hard refresh, before the image is
+     warm in cache. Close to the photo's own dominant shadowed-rock tone so
+     the eventual cross-fade to the real image is unnoticeable. */
+  background-color: #2a1912;
   background-size: cover;
   background-position: center;
   z-index: 0;
+}
+
+/* Riyadh landmarks composited into the lower corners of the photo rather
+   than framed as separate thumbnails. The radial mask dissolves each one's
+   edges into the sand so it never ends on a hard rectangle, and the opacity
+   keeps it scenery rather than subject. Painted after .auth-visual-photo at
+   the same z-index, so they layer over the desert but stay under the
+   overlay that does the darkening. */
+.auth-visual-landmark {
+  position: fixed;
+  bottom: 0;
+  z-index: 0;
+  width: min(40vw, 540px);
+  height: min(30vw, 400px);
+  background-size: cover;
+  background-position: center;
+  /* Raised from 0.42 and given a softer, further-reaching mask: at the old
+     values the towers were technically present but read as smudges. This is
+     still short of full opacity so they stay part of the scene rather than
+     competing with the wordmark. */
+  opacity: 0.68;
+  pointer-events: none;
+  -webkit-mask-image: radial-gradient(135% 120% at 50% 100%, #000 0%, rgba(0, 0, 0, 0.88) 55%, transparent 88%);
+  mask-image: radial-gradient(135% 120% at 50% 100%, #000 0%, rgba(0, 0, 0, 0.88) 55%, transparent 88%);
+}
+
+.auth-visual-landmark.left {
+  left: 0;
+}
+
+.auth-visual-landmark.right {
+  right: 0;
+  /* Al Faisaliah is a tall portrait shot — bias the crop upward so the
+     tower and its spire survive rather than a strip of pavement. */
+  background-position: center 22%;
 }
 
 .auth-page-overlay {
@@ -844,11 +879,14 @@ button.danger:hover:not(:disabled) {
   inset: 0;
   z-index: 1;
   pointer-events: none;
-  /* The wordmark + feature circles now sit directly on the photo on the
-     left (no glass box under them), so that side needs real darkening for
-     legibility too — not just the side behind the glass panel. */
-  background: linear-gradient(100deg, rgba(3, 6, 12, 0.42) 0%, rgba(3, 6, 12, 0.22) 40%, rgba(3, 6, 12, 0.4) 100%),
-    linear-gradient(0deg, rgba(3, 6, 12, 0.35) 0%, transparent 35%);
+  /* The AlUla photo is busy edge to edge — lit rock, sand and haze — rather
+     than a calm sky, so the wash is heavier than the old night shot needed.
+     Warm brown rather than blue-black, so it reads as dusk over the desert
+     instead of a grey film laid on top of it. */
+  /* The bottom wash is lighter than the sides — the two towers are composited
+     into the lower corners, and the heavier gradient was burying them. */
+  background: linear-gradient(100deg, rgba(26, 13, 5, 0.6) 0%, rgba(26, 13, 5, 0.4) 42%, rgba(26, 13, 5, 0.56) 100%),
+    linear-gradient(0deg, rgba(20, 10, 4, 0.3) 0%, transparent 38%);
 }
 
 /* Docked to the top rather than centred: the left column is much taller
@@ -870,10 +908,10 @@ button.danger:hover:not(:disabled) {
   max-width: 100%;
   scrollbar-width: none;
   flex-shrink: 0;
-  background: rgba(10, 15, 25, 0.5);
-  backdrop-filter: blur(22px) saturate(160%);
-  -webkit-backdrop-filter: blur(22px) saturate(160%);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(28, 17, 10, 0.56);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  border: 1px solid rgba(255, 226, 180, 0.22);
   border-radius: 22px;
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
   padding: 28px 30px;
@@ -886,6 +924,45 @@ button.danger:hover:not(:disabled) {
   display: none;
 }
 
+/* Compliance marks, small, at the very top. The source images have solid
+   white backgrounds, so each gets its own white chip. */
+.auth-marks {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.auth-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 96px;
+  padding: 0 22px;
+  border-radius: 11px;
+  /* Fully opaque, not translucent: at 95% the dark photo bled through and
+     greyed the marks down, which is part of why they read as murky. */
+  background: #fffdf9;
+  box-shadow: 0 8px 22px rgba(24, 10, 2, 0.38);
+}
+
+/* 72px is as large as these can go before the smallest source file (Fatoora,
+   120px square) is upscaled into blur. */
+.auth-mark img {
+  height: 72px;
+  width: auto;
+  display: block;
+}
+
+/* ZATCA's official lockup is horizontal, 4.5:1. Matching it to the others on
+   height would make it three times their width and swamp the row, so it is
+   sized to sit optically level with them instead. Its source is 200px tall,
+   so 50px is still a 4x downscale — the Arabic and English both stay crisp. */
+.auth-mark.wide img {
+  height: 50px;
+}
+
 .auth-glass-header {
   text-align: center;
 }
@@ -895,8 +972,8 @@ button.danger:hover:not(:disabled) {
   font-weight: 800;
   margin: 0;
   letter-spacing: -0.015em;
-  color: #a9d4ff;
-  text-shadow: 0 2px 20px rgba(0, 0, 0, 0.78);
+  color: #fff5e6;
+  text-shadow: 0 2px 22px rgba(40, 18, 6, 0.72);
 }
 
 .auth-glass-header .auth-mission {
@@ -905,7 +982,7 @@ button.danger:hover:not(:disabled) {
   font-weight: 650;
   color: #fff;
   letter-spacing: -0.005em;
-  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.72);
+  text-shadow: 0 2px 14px rgba(40, 18, 6, 0.7);
 }
 
 /* The pitch — IFRS claim, strapline and benefits — sits on its own glass
@@ -919,11 +996,11 @@ button.danger:hover:not(:disabled) {
   gap: 11px;
   padding: 16px 28px 18px;
   border-radius: 18px;
-  background: rgba(10, 15, 25, 0.52);
-  backdrop-filter: blur(18px) saturate(150%);
-  -webkit-backdrop-filter: blur(18px) saturate(150%);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.4);
+  background: rgba(34, 20, 12, 0.54);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border: 1px solid rgba(255, 226, 180, 0.22);
+  box-shadow: 0 18px 44px rgba(30, 14, 4, 0.42);
   text-align: center;
 }
 
@@ -940,7 +1017,7 @@ button.danger:hover:not(:disabled) {
   font-weight: 800;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #a9d4ff;
+  color: #f4d3a2;
 }
 
 .auth-ifrs::before,
@@ -948,11 +1025,11 @@ button.danger:hover:not(:disabled) {
   content: "";
   width: 40px;
   height: 2px;
-  background: rgba(169, 212, 255, 0.55);
+  background: rgba(244, 211, 162, 0.55);
 }
 
 .auth-sub {
-  color: #d4dcec;
+  color: #e6cfb2;
   font-size: 14px;
   margin: -3px 0 0;
   line-height: 1.5;
@@ -970,19 +1047,19 @@ button.danger:hover:not(:disabled) {
 
 .auth-benefits li {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  font-size: 13.5px;
-  color: #e8eef8;
+  align-items: baseline;
+  gap: 9px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff5e6;
   text-align: left;
 }
 
-.auth-benefits svg {
+.auth-benefit-dot {
   flex: none;
-  width: 15px;
-  height: 15px;
-  margin-top: 3px;
-  stroke: #6ee7a8;
+  color: #f4d3a2;
+  font-size: 17px;
+  line-height: 1;
 }
 
 /* The module wheel. Discs are absolutely positioned at percentages of this
@@ -1025,15 +1102,15 @@ button.danger:hover:not(:disabled) {
   gap: 3px;
   padding: 0 5px;
   box-sizing: border-box;
-  background: radial-gradient(circle at 33% 24%, #fff 0%, #f4f7fa 52%, #e2e8f0 100%);
-  box-shadow: inset 0 -2px 6px rgba(28, 42, 64, 0.13);
+  background: radial-gradient(circle at 33% 24%, #fffdf8 0%, #fdf7ec 54%, #ece0cd 100%);
+  box-shadow: inset 0 -2px 6px rgba(60, 40, 20, 0.14);
 }
 
 .auth-feature-circle svg {
   width: 27px;
   height: 27px;
   flex: none;
-  stroke: #16202d;
+  stroke: #2b1f14;
   stroke-width: 1.7;
   fill: none;
   stroke-linecap: round;
@@ -1043,7 +1120,7 @@ button.danger:hover:not(:disabled) {
 .auth-feature-circle span {
   font-size: 9px;
   font-weight: 700;
-  color: #1d2836;
+  color: #2b1f14;
   line-height: 1.13;
   text-align: center;
 }
@@ -1084,19 +1161,23 @@ button.danger:hover:not(:disabled) {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle at 34% 26%, #fff 0%, #f2f6fa 56%, #dfe6ee 100%);
-  box-shadow: inset 0 -3px 10px rgba(28, 42, 64, 0.14);
+  background: radial-gradient(circle at 34% 26%, #fffdf8 0%, #fdf7ec 56%, #eadfcb 100%);
+  box-shadow: inset 0 -3px 10px rgba(60, 40, 20, 0.16);
 }
 
+/* Saudi green, picked up from the Vision 2030 mark above it. */
 .auth-hub-inner b {
   display: block;
   font-size: 27px;
   font-weight: 800;
   letter-spacing: -0.015em;
-  color: #1d5fbd;
+  color: #12634a;
   line-height: 1.06;
 }
 
+/* Riyadh landmarks along the foot of the left column. Fixed landscape boxes
+   with object-fit: cover, so the portrait and landscape source photos match
+   each other without either being squashed. */
 /* Contact details, under the sign-in panel. */
 .auth-contact {
   display: flex;
@@ -1114,12 +1195,12 @@ button.danger:hover:not(:disabled) {
   cursor: pointer;
   font-size: 12.5px;
   font-family: inherit;
-  color: #c3cddd;
-  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.7);
+  color: #e6cfb2;
+  text-shadow: 0 1px 8px rgba(40, 18, 6, 0.7);
 }
 
 .auth-contact-trigger b {
-  color: #a9d4ff;
+  color: #f4d3a2;
   font-weight: 650;
   text-decoration: underline;
 }
@@ -1136,9 +1217,9 @@ button.danger:hover:not(:disabled) {
   align-items: center;
   gap: 7px;
   font-size: 12.5px;
-  color: #a9d4ff;
+  color: #f4d3a2;
   text-decoration: none;
-  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.7);
+  text-shadow: 0 1px 8px rgba(40, 18, 6, 0.7);
 }
 
 .auth-contact-details a:hover {
@@ -1149,7 +1230,7 @@ button.danger:hover:not(:disabled) {
   width: 14px;
   height: 14px;
   flex: none;
-  stroke: #a9d4ff;
+  stroke: #f4d3a2;
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -1191,46 +1272,44 @@ button.danger:hover:not(:disabled) {
 }
 
 .auth-glass-form .auth-field-row a {
-  color: #9cc0ff;
+  color: #f4d3a2;
 }
 
 .auth-glass-form p a {
-  color: #9cc0ff;
+  color: #f4d3a2;
 }
 
-/* Trust pills now sit under the wheel rather than inside the sign-in
-   panel, so they wrap across the width of the left column. */
+/* Saudi green, scoped to the auth form so the app's own primary button
+   colour is untouched everywhere else. */
+.auth-glass-form button[type="submit"] {
+  background: #12634a;
+  border-color: #12634a;
+}
+
+.auth-glass-form button[type="submit"]:hover:not(:disabled) {
+  background: #0e5039;
+  border-color: #0e5039;
+}
+
+/* Trust lines sit under the wheel, straight on the photo — no chip, no tick.
+   Weight and a shadow carry the legibility a background would otherwise
+   provide, so nothing competes with the words themselves. */
 .auth-badges {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 8px;
-  max-width: 560px;
-  margin-top: 2px;
+  gap: 8px 26px;
+  max-width: 740px;
+  margin-top: 4px;
 }
 
 .auth-badge {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(9, 15, 26, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-size: 10px;
+  font-size: 12.5px;
   font-weight: 800;
-  color: #cfdcec;
-  letter-spacing: 0.6px;
+  color: #fff5e6;
+  letter-spacing: 0.09em;
   white-space: nowrap;
-}
-
-.auth-badge svg {
-  width: 13px;
-  height: 13px;
-  stroke: #7bd97e;
-  flex-shrink: 0;
+  text-shadow: 0 2px 12px rgba(24, 10, 2, 0.9), 0 0 22px rgba(24, 10, 2, 0.55);
 }
 
 /* Simple centered card used by Forgot/Reset password — same glass
@@ -1399,6 +1478,21 @@ button.danger:hover:not(:disabled) {
 @media (max-width: 480px) {
   .auth-glass-header h1 {
     font-size: 36px;
+  }
+  /* At full size the three chips wrap onto two rows on a phone and eat the
+     screen before the wordmark is even reached. */
+  .auth-mark {
+    height: 56px;
+    padding: 0 10px;
+  }
+  .auth-mark img {
+    height: 40px;
+  }
+  .auth-mark.wide img {
+    height: 28px;
+  }
+  .auth-marks {
+    gap: 7px;
   }
   .auth-ifrs::before,
   .auth-ifrs::after {

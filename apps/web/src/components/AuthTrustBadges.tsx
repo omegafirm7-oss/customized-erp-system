@@ -15,15 +15,16 @@ const BADGES = [
  * Deliberately no ISO 27001 / SOC 2 / GDPR-style badges — Universa Centrix
  * doesn't hold those certifications, and displaying them would be a false
  * claim on a real login page.
+ *
+ * Plain bold text, no tick icon and no pill: these sit straight on the photo
+ * so nothing competes with the words. Legibility comes from weight and a
+ * text-shadow instead of a chip (see .auth-badge).
  */
 export function AuthTrustBadges() {
   return (
     <div className="auth-badges">
       {BADGES.map((b) => (
         <span className="auth-badge" key={b}>
-          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2">
-            <path d="M20 6 9 17l-5-5" />
-          </svg>
           {b}
         </span>
       ))}

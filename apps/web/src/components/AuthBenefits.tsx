@@ -6,15 +6,17 @@ const BENEFITS = [
 ];
 
 /** The "why bother" pitch on the sign-in gateway, aimed at a prospect who
- *  has landed here before they have an account. */
+ *  has landed here before they have an account. Bold, with a plain bullet
+ *  rather than a tick — a tick reads as "verified", which these are not;
+ *  they're claims about the product. */
 export function AuthBenefits() {
   return (
     <ul className="auth-benefits">
       {BENEFITS.map((b) => (
         <li key={b}>
-          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.6">
-            <path d="M20 6 9 17l-5-5" />
-          </svg>
+          <span className="auth-benefit-dot" aria-hidden="true">
+            •
+          </span>
           <span>{b}</span>
         </li>
       ))}
