@@ -660,7 +660,7 @@ export function EmployeeDetailPage() {
               <input type="number" min="0" step="0.01" value={detailsForm.transportAllowance} onChange={set("transportAllowance")} disabled={!active} />
             </div>
             <div>
-              <label>Other </label>
+              <label>Food </label>
               <input type="number" min="0" step="0.01" value={detailsForm.otherAllowance} onChange={set("otherAllowance")} disabled={!active} />
             </div>
             <button type="submit" disabled={!active}>

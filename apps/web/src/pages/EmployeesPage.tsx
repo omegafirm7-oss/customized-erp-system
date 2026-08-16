@@ -250,7 +250,7 @@ export function EmployeesPage() {
             <input type="number" min="0" step="0.01" placeholder="Basic salary" value={form.basicSalary} onChange={(e) => setForm({ ...form, basicSalary: e.target.value })} />
             <input type="number" min="0" step="0.01" placeholder="Housing" value={form.housingAllowance} onChange={(e) => setForm({ ...form, housingAllowance: e.target.value })} />
             <input type="number" min="0" step="0.01" placeholder="Transport" value={form.transportAllowance} onChange={(e) => setForm({ ...form, transportAllowance: e.target.value })} />
-            <input type="number" min="0" step="0.01" placeholder="Other" value={form.otherAllowance} onChange={(e) => setForm({ ...form, otherAllowance: e.target.value })} />
+            <input type="number" min="0" step="0.01" placeholder="Food" value={form.otherAllowance} onChange={(e) => setForm({ ...form, otherAllowance: e.target.value })} />
             <button type="submit" disabled={submitting}>
               {submitting ? "Creating…" : "Create"}
             </button>

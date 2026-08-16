@@ -903,6 +903,13 @@ describe("HR & Saudi Payroll (e2e)", () => {
     expect(unassignedGroup).toBeDefined();
     const rowO2 = unassignedGroup.rows.find((r: any) => r.employeeId === empO2.id);
     expect(Number(rowO2.cost)).toBe(100);
+    // Month-wise food/salary paid, per employee — the Cost by Project board's
+    // "Show months" breakdown. EMPO2's one FOOD payment (25) lands in the
+    // month it was posted (defaults to today), EMPO1's has none for FOOD.
+    expect(rowO2.monthlyPayments).toHaveLength(1);
+    expect(Number(rowO2.monthlyPayments[0].foodPaid)).toBe(25);
+    expect(Number(rowO2.monthlyPayments[0].salaryPaid)).toBe(0);
+    expect(rowO1.monthlyPayments.every((m: any) => Number(m.foodPaid) === 0)).toBe(true);
 
     expect(Number(overview.grandTotal)).toBe(300);
     const dayEntry = overview.dailyLaborCost.find((d: any) => d.date === joinDate);

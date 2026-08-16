@@ -763,6 +763,65 @@ describe("Projects — full job accounting (e2e)", () => {
       expect(intelAfter.body.categories.LABOR.total).toBe("100.00");
     });
 
+    it("Labor pending also accrues Food allowance (otherAllowance) per worked month, offset by FOOD payments actually made", async () => {
+      const ctx = await setupProjectContext();
+      const project = await createOverTimeProject(ctx);
+      const now = Date.now();
+      const period = ctx.periods.find(
+        (p: any) => new Date(p.startDate).getTime() <= now && now <= new Date(p.endDate).getTime(),
+      );
+      const joinDate = new Date(period.startDate).toISOString().slice(0, 10);
+
+      const csvHeader =
+        "code,nameEn,nameAr,designation,nationality,isSaudi,iqamaOrNationalId,iqamaExpiry,passportNumber,passportExpiry,gosiNumber,joinDate,contractType,bankCode,iban,costCenterCode,annualLeaveDays,basicSalary,housingAllowance,transportAllowance,otherAllowance,gosiExempt";
+      // basicSalary=0 isolates the food-allowance accrual from the existing
+      // salary accrual assertion above — otherAllowance=200 is this
+      // employee's fixed monthly food-allowance rate.
+      const csv = [
+        csvHeader,
+        `PE5,Food Worker,,Mason,SA,true,1099999995,2027-06-30,,,50099995,${joinDate},UNLIMITED,80,SA4420000001234567891239,${project.costCenter.code},21,0,0,0,200,false`,
+      ].join("\n");
+      await request(app.getHttpServer())
+        .post("/hr/employees/import")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ csv })
+        .expect(201);
+      const employee = (
+        await request(app.getHttpServer()).get("/hr/employees").set("Authorization", `Bearer ${ctx.accessToken}`).expect(200)
+      ).body.find((e: any) => e.code === "PE5");
+
+      // One worked day this calendar month accrues one month's food (200) —
+      // no SALARY, no FOOD paid yet, so the whole 200 is pending.
+      await request(app.getHttpServer())
+        .post("/hr/employee-timesheet/entry")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ employeeId: employee.id, date: joinDate, dayType: "WORKED", hoursWorked: "10" })
+        .expect(201);
+
+      const intel = await request(app.getHttpServer())
+        .get(`/projects/${project.id}/intelligence`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+      expect(intel.body.categories.LABOR.paid).toBe("0.00");
+      expect(intel.body.categories.LABOR.pending).toBe("200.00");
+      expect(intel.body.categories.LABOR.total).toBe("200.00");
+
+      // Paying 80 of the food allowance moves that much from pending to paid.
+      await request(app.getHttpServer())
+        .post(`/hr/employees/${employee.id}/payments`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ category: "FOOD", amount: "80", bankCashAccountId: ctx.cashAccount.id })
+        .expect(201);
+
+      const intelAfter = await request(app.getHttpServer())
+        .get(`/projects/${project.id}/intelligence`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+      expect(intelAfter.body.categories.LABOR.paid).toBe("80.00");
+      expect(intelAfter.body.categories.LABOR.pending).toBe("120.00");
+      expect(intelAfter.body.categories.LABOR.total).toBe("200.00");
+    });
+
     it("a final settlement's 'Final salary days' line on 5112 is excluded from both the Labor total and the drill-down — a settlement is a one-time exit payout, not project labor cost", async () => {
       const ctx = await setupProjectContext();
       const project = await createOverTimeProject(ctx);

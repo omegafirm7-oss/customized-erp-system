@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { downloadCsv } from "../utils/csv";
@@ -12,6 +12,12 @@ interface FiscalPeriod {
   status: string;
 }
 
+interface MonthlyPaymentRow {
+  month: string;
+  salaryPaid: string;
+  foodPaid: string;
+}
+
 interface DashboardRow {
   employeeId: string;
   code: string;
@@ -21,6 +27,7 @@ interface DashboardRow {
   hourlyRate: string;
   hoursWorked: string;
   cost: string;
+  monthlyPayments: MonthlyPaymentRow[];
 }
 
 interface DashboardGroup {
@@ -132,6 +139,21 @@ export function EmployeesOverviewPage() {
   const [error, setError] = useState<string | null>(null);
   const [showPendingBreakdown, setShowPendingBreakdown] = useState(false);
   const [showPaidBreakdown, setShowPaidBreakdown] = useState(false);
+  const [expandedMonthly, setExpandedMonthly] = useState<Set<string>>(new Set());
+
+  function toggleMonthly(employeeId: string) {
+    setExpandedMonthly((prev) => {
+      const next = new Set(prev);
+      if (next.has(employeeId)) next.delete(employeeId);
+      else next.add(employeeId);
+      return next;
+    });
+  }
+
+  function monthLabel(month: string): string {
+    const [year, m] = month.split("-");
+    return new Date(Number(year), Number(m) - 1, 1).toLocaleDateString(undefined, { month: "short", year: "numeric" });
+  }
 
   useEffect(() => {
     apiClient.get<FiscalPeriod[]>("/companies/current/fiscal-periods").then((res) => {
@@ -608,22 +630,62 @@ export function EmployeesOverviewPage() {
                           <th>Hourly rate</th>
                           <th>Hours</th>
                           <th>Cost</th>
+                          <th>Monthly food/salary paid</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {group.rows.map((row) => (
-                          <tr key={row.employeeId}>
-                            <td>{row.code}</td>
-                            <td>{row.nameEn}</td>
-                            <td>{money(row.basicSalary)}</td>
-                            <td>{money(row.hourlyRate)}</td>
-                            <td>{Number(row.hoursWorked)}</td>
-                            <td>{money(row.cost)}</td>
-                          </tr>
-                        ))}
+                        {group.rows.map((row) => {
+                          const expanded = expandedMonthly.has(row.employeeId);
+                          return (
+                            <Fragment key={row.employeeId}>
+                              <tr>
+                                <td>{row.code}</td>
+                                <td>{row.nameEn}</td>
+                                <td>{money(row.basicSalary)}</td>
+                                <td>{money(row.hourlyRate)}</td>
+                                <td>{Number(row.hoursWorked)}</td>
+                                <td>{money(row.cost)}</td>
+                                <td>
+                                  {row.monthlyPayments.length === 0 ? (
+                                    <span style={{ color: "#98a2b3" }}>No payments</span>
+                                  ) : (
+                                    <button className="secondary" onClick={() => toggleMonthly(row.employeeId)}>
+                                      {expanded ? "Hide" : "Show"} ({row.monthlyPayments.length} mo.)
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                              {expanded && row.monthlyPayments.length > 0 && (
+                                <tr key={`${row.employeeId}-monthly`}>
+                                  <td colSpan={7} style={{ padding: 0 }}>
+                                    <table style={{ margin: "4px 0 4px 24px", width: "auto" }}>
+                                      <thead>
+                                        <tr>
+                                          <th>Month</th>
+                                          <th>Salary paid</th>
+                                          <th>Food paid</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {row.monthlyPayments.map((m) => (
+                                          <tr key={m.month}>
+                                            <td>{monthLabel(m.month)}</td>
+                                            <td>{money(m.salaryPaid)}</td>
+                                            <td>{money(m.foodPaid)}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          );
+                        })}
                         <tr style={{ fontWeight: 600 }}>
                           <td colSpan={5}>Subtotal</td>
                           <td>{money(group.subtotal)}</td>
+                          <td />
                         </tr>
                       </tbody>
                     </table>

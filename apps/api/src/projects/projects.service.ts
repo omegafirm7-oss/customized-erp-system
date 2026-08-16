@@ -348,6 +348,15 @@ export class ProjectsService {
     // released-but-not-yet-fully-paid employee's outstanding hours still
     // count). A final settlement is deliberately excluded here too — same
     // reasoning as the paid side above.
+    //
+    // Food allowance accrues the same way, on its own track: `otherAllowance`
+    // is each employee's fixed monthly food-allowance rate (the field the
+    // HR team already uses to record it, previously just labeled "Other" in
+    // the Employee form). One month's food is owed for every calendar month
+    // the employee logged worked hours in, offset by FOOD-category payments
+    // actually made — mirroring salary's own hourlyRate-times-hours accrual,
+    // just monthly instead of hourly. This makes a month's food obligation
+    // show as Pending until it's actually paid, then move to Paid.
     const HOURLY_DIVISOR = new Prisma.Decimal(260);
     const costCenterEmployees = project.costCenterId
       ? await this.prisma.employee.findMany({
@@ -355,8 +364,12 @@ export class ProjectsService {
           select: {
             id: true,
             basicSalary: true,
-            employeeTimesheetEntries: { select: { hoursWorked: true } },
-            payments: { where: { reversedAt: null, category: EmployeePaymentCategory.SALARY }, select: { amount: true } },
+            otherAllowance: true,
+            employeeTimesheetEntries: { select: { date: true, hoursWorked: true } },
+            payments: {
+              where: { reversedAt: null, category: { in: [EmployeePaymentCategory.SALARY, EmployeePaymentCategory.FOOD] } },
+              select: { category: true, amount: true },
+            },
           },
         })
       : [];
@@ -370,11 +383,25 @@ export class ProjectsService {
     let pendingLabor = new Prisma.Decimal(0);
     for (const e of costCenterEmployees) {
       const hourlyRate = e.basicSalary.div(HOURLY_DIVISOR).toDecimalPlaces(4);
-      const accrued = e.employeeTimesheetEntries.reduce((sum, t) => sum.add(hourlyRate.mul(t.hoursWorked).toDecimalPlaces(2)), new Prisma.Decimal(0));
-      const directSalaryPaid = e.payments.reduce((sum, p) => sum.add(p.amount), new Prisma.Decimal(0));
+      const accruedSalary = e.employeeTimesheetEntries.reduce(
+        (sum, t) => sum.add(hourlyRate.mul(t.hoursWorked).toDecimalPlaces(2)),
+        new Prisma.Decimal(0),
+      );
+      const workedMonths = new Set(
+        e.employeeTimesheetEntries.filter((t) => t.hoursWorked.gt(0)).map((t) => t.date.toISOString().slice(0, 7)),
+      );
+      const accruedFood = e.otherAllowance.mul(workedMonths.size);
+      const directSalaryPaid = e.payments
+        .filter((p) => p.category === EmployeePaymentCategory.SALARY)
+        .reduce((sum, p) => sum.add(p.amount), new Prisma.Decimal(0));
+      const foodPaid = e.payments
+        .filter((p) => p.category === EmployeePaymentCategory.FOOD)
+        .reduce((sum, p) => sum.add(p.amount), new Prisma.Decimal(0));
       const payrollNetPay = payrollNetPayByEmployee.find((p) => p.employeeId === e.id)?._sum.netPay ?? new Prisma.Decimal(0);
-      const paid = directSalaryPaid.add(payrollNetPay);
-      pendingLabor = pendingLabor.add(Prisma.Decimal.max(new Prisma.Decimal(0), accrued.sub(paid)));
+      const salaryPaid = directSalaryPaid.add(payrollNetPay);
+      pendingLabor = pendingLabor
+        .add(Prisma.Decimal.max(new Prisma.Decimal(0), accruedSalary.sub(salaryPaid)))
+        .add(Prisma.Decimal.max(new Prisma.Decimal(0), accruedFood.sub(foodPaid)));
     }
 
     // Machinery cost also includes internal-use equipment (Hiace vans,

@@ -239,6 +239,14 @@ export class HrReportsService {
             where: dateFilter ? { date: dateFilter } : undefined,
             select: { date: true, hoursWorked: true },
           },
+          payments: {
+            where: {
+              reversedAt: null,
+              category: { in: [EmployeePaymentCategory.SALARY, EmployeePaymentCategory.FOOD] },
+              ...(dateFilter ? { paymentDate: dateFilter } : {}),
+            },
+            select: { category: true, amount: true, paymentDate: true },
+          },
         },
       }),
       this.prisma.employee.count({ where: { companyId, status: EmployeeStatus.TERMINATED } }),
@@ -273,6 +281,27 @@ export class HrReportsService {
       if (!groups.has(groupKey)) {
         groups.set(groupKey, { key: groupKey, label: groupLabel, rows: [], subtotal: ZERO });
       }
+      // Month-wise Food/Salary paid per employee — grouped by the calendar
+      // month the payment was actually posted in, so the Cost by Project
+      // board can show "what did this employee actually get paid, month by
+      // month" alongside the accrued cost above.
+      const monthlyByMonth = new Map<string, { month: string; salaryPaid: Prisma.Decimal; foodPaid: Prisma.Decimal }>();
+      for (const p of employee.payments) {
+        const month = p.paymentDate.toISOString().slice(0, 7);
+        if (!monthlyByMonth.has(month)) {
+          monthlyByMonth.set(month, { month, salaryPaid: ZERO, foodPaid: ZERO });
+        }
+        const bucket = monthlyByMonth.get(month)!;
+        if (p.category === EmployeePaymentCategory.SALARY) {
+          bucket.salaryPaid = bucket.salaryPaid.add(p.amount);
+        } else {
+          bucket.foodPaid = bucket.foodPaid.add(p.amount);
+        }
+      }
+      const monthlyPayments = [...monthlyByMonth.values()]
+        .sort((a, b) => a.month.localeCompare(b.month))
+        .map((m) => ({ month: m.month, salaryPaid: m.salaryPaid, foodPaid: m.foodPaid }));
+
       const group = groups.get(groupKey)!;
       group.rows.push({
         employeeId: employee.id,
@@ -283,6 +312,7 @@ export class HrReportsService {
         hourlyRate,
         hoursWorked: employeeHours,
         cost: employeeCost,
+        monthlyPayments,
       });
       group.subtotal = group.subtotal.add(employeeCost);
       grandTotal = grandTotal.add(employeeCost);
