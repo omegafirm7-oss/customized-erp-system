@@ -997,6 +997,86 @@ describe("HR & Saudi Payroll (e2e)", () => {
     expect(Number(releasedTradeRow.cost)).toBe(100);
   });
 
+  it("paid-transactions and pending-accrual reconcile with the dashboard's Total Paid/Pending, with FIFO month allocation for pending", async () => {
+    const ctx = await setupUserWithCompany(app);
+    const { period } = await currentPeriod(ctx);
+    const joinDate = new Date(period.startDate).toISOString().slice(0, 10);
+
+    // basicSalary=0 isolates Food from Salary; otherAllowance=200/month.
+    const csv = [
+      CSV_HEADER,
+      `EMPF1,Food Worker,,Helper,SA,true,,,,,,${joinDate},UNLIMITED,,,,21,0,0,0,200,false`,
+    ].join("\n");
+    await request(app.getHttpServer()).post("/hr/employees/import").set(auth(ctx.accessToken)).send({ csv }).expect(201);
+    const empF1 = (
+      await request(app.getHttpServer()).get("/hr/employees").set(auth(ctx.accessToken)).expect(200)
+    ).body.find((e: any) => e.code === "EMPF1");
+
+    // Two worked days in two different calendar months accrue 200 each —
+    // 400 total food owed, nothing paid yet.
+    const monthTwoDate = new Date(period.startDate);
+    monthTwoDate.setMonth(monthTwoDate.getMonth() + 1);
+    await request(app.getHttpServer())
+      .post("/hr/employee-timesheet/entry")
+      .set(auth(ctx.accessToken))
+      .send({ employeeId: empF1.id, date: joinDate, dayType: "WORKED", hoursWorked: "10" })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post("/hr/employee-timesheet/entry")
+      .set(auth(ctx.accessToken))
+      .send({ employeeId: empF1.id, date: monthTwoDate.toISOString().slice(0, 10), dayType: "WORKED", hoursWorked: "10" })
+      .expect(201);
+
+    const before = (
+      await request(app.getHttpServer()).get("/hr/reports/employees-dashboard").set(auth(ctx.accessToken)).expect(200)
+    ).body;
+    expect(Number(before.pendingFoodAccrual)).toBe(400);
+
+    const pendingBefore = (
+      await request(app.getHttpServer()).get("/hr/reports/pending-accrual").set(auth(ctx.accessToken)).expect(200)
+    ).body;
+    const empF1PendingRows = pendingBefore.rows.filter((r: any) => r.employeeId === empF1.id);
+    expect(empF1PendingRows).toHaveLength(2);
+    expect(empF1PendingRows.every((r: any) => r.category === "FOOD" && Number(r.amount) === 200)).toBe(true);
+    expect(Number(pendingBefore.totalPendingFood)).toBe(400);
+
+    // Pay 200 — FIFO allocates it to the OLDER month first, leaving only
+    // the second month still pending.
+    await request(app.getHttpServer())
+      .post(`/hr/employees/${empF1.id}/payments`)
+      .set(auth(ctx.accessToken))
+      .send({ category: "FOOD", amount: "200", bankCashAccountId: ctx.cashAccount.id })
+      .expect(201);
+
+    const pendingAfter = (
+      await request(app.getHttpServer()).get("/hr/reports/pending-accrual").set(auth(ctx.accessToken)).expect(200)
+    ).body;
+    const empF1RowsAfter = pendingAfter.rows.filter((r: any) => r.employeeId === empF1.id);
+    expect(empF1RowsAfter).toHaveLength(1);
+    expect(empF1RowsAfter[0].month).toBe(monthTwoDate.toISOString().slice(0, 7));
+    expect(Number(empF1RowsAfter[0].amount)).toBe(200);
+
+    // The FOOD payment now shows up as a paid transaction, with no receipt
+    // attached (none was uploaded) and the correct month/employee/amount.
+    const paid = (
+      await request(app.getHttpServer()).get("/hr/reports/paid-transactions").set(auth(ctx.accessToken)).expect(200)
+    ).body;
+    const empF1Payment = paid.transactions.find((t: any) => t.employeeId === empF1.id);
+    expect(empF1Payment).toBeDefined();
+    expect(empF1Payment.category).toBe("FOOD");
+    expect(Number(empF1Payment.amount)).toBe(200);
+    expect(empF1Payment.attachmentFilename).toBeNull();
+    // paymentDate defaults to "now" (not tied to joinDate), so just assert
+    // the month field is a well-formed YYYY-MM derived from that date.
+    expect(empF1Payment.month).toBe(new Date(empF1Payment.paymentDate).toISOString().slice(0, 7));
+
+    const dashboardAfter = (
+      await request(app.getHttpServer()).get("/hr/reports/employees-dashboard").set(auth(ctx.accessToken)).expect(200)
+    ).body;
+    expect(Number(dashboardAfter.pendingFoodAccrual)).toBe(200);
+    expect(Number(dashboardAfter.paidFood)).toBe(200);
+  });
+
   it("labor-cost-by-date-range: sums accrued cost within an arbitrary date range, filters by trade, and excludes entries outside the range", async () => {
     const ctx = await setupUserWithCompany(app);
     const { period } = await currentPeriod(ctx);

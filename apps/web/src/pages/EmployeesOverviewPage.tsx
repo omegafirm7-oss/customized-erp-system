@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { downloadCsv } from "../utils/csv";
 import { downloadPdf } from "../utils/pdf";
@@ -53,6 +53,8 @@ interface DashboardResponse {
   totalPendingReleased: string;
   totalPendingAdvances: string;
   pendingLaborAccrual: string;
+  pendingFoodAccrual: string;
+  releasedPendingFoodAccrual: string;
   dailyLaborCost: Array<{ date: string; cost: string }>;
   groups: DashboardGroup[];
   grandTotal: string;
@@ -409,6 +411,9 @@ export function EmployeesOverviewPage() {
           </div>
           {showPaidBreakdown && (
             <div className="card" style={{ marginTop: -10 }}>
+              <div className="form-row" style={{ justifyContent: "flex-end" }}>
+                <Link to="/hr/employees/overview/paid-transactions">View all transactions (with receipts) →</Link>
+              </div>
               <div className="form-row" style={{ justifyContent: "space-between" }}>
                 <span>
                   Paid — active employees (payroll + allowances/advances) —{" "}
@@ -443,9 +448,12 @@ export function EmployeesOverviewPage() {
           )}
           {showPendingBreakdown && (
             <div className="card" style={{ marginTop: -10 }}>
+              <div className="form-row" style={{ justifyContent: "flex-end" }}>
+                <Link to="/hr/employees/overview/pending-accrual">View pending by employee/month →</Link>
+              </div>
               <div className="form-row" style={{ justifyContent: "space-between" }}>
                 <span>
-                  Pending — active employees (advances + unpaid logged hours) —{" "}
+                  Pending — active employees (advances + unpaid logged hours + unpaid food) —{" "}
                   <a onClick={() => navigate("/hr/employees/overview/active")} style={{ cursor: "pointer" }}>view active employees</a>
                 </span>
                 <strong>{money(dashboard.totalPendingActive)}</strong>
@@ -458,9 +466,13 @@ export function EmployeesOverviewPage() {
                 <span>— of which unpaid labor cost (from timesheets, not yet covered by payroll)</span>
                 <span>{money(dashboard.pendingLaborAccrual)}</span>
               </div>
+              <div className="form-row" style={{ justifyContent: "space-between", paddingLeft: 20, fontSize: 13, color: "#667085" }}>
+                <span>— of which unpaid food allowance</span>
+                <span>{money(dashboard.pendingFoodAccrual)}</span>
+              </div>
               <div className="form-row" style={{ justifyContent: "space-between" }}>
                 <span>
-                  Pending — released employees (unpaid logged hours before release; not their final settlement) —{" "}
+                  Pending — released employees (unpaid logged hours/food before release; not their final settlement) —{" "}
                   <a onClick={() => navigate("/hr/employees/overview/released")} style={{ cursor: "pointer" }}>view released employees</a>
                 </span>
                 <strong>{money(dashboard.totalPendingReleased)}</strong>

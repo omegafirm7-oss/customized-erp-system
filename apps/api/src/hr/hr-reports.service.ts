@@ -258,18 +258,27 @@ export class HrReportsService {
     >();
     const dailyCostByDate = new Map<string, Prisma.Decimal>();
     let grandTotal = ZERO;
+    // Food allowance accrues one month's otherAllowance for every calendar
+    // month an employee logged worked hours in — same accrual concept as
+    // grandTotal above, just monthly instead of hourly. Feeds
+    // pendingFoodAccrual below, alongside the existing salary-only
+    // pendingLaborAccrual.
+    let foodGrandTotal = ZERO;
 
     for (const employee of activeEmployees) {
       const hourlyRate = employee.basicSalary.div(HOURLY_DIVISOR).toDecimalPlaces(4);
       let employeeHours = ZERO;
       let employeeCost = ZERO;
+      const workedMonths = new Set<string>();
       for (const entry of employee.employeeTimesheetEntries) {
         const cost = hourlyRate.mul(entry.hoursWorked).toDecimalPlaces(2);
         employeeHours = employeeHours.add(entry.hoursWorked);
         employeeCost = employeeCost.add(cost);
         const dateKey = entry.date.toISOString().slice(0, 10);
         dailyCostByDate.set(dateKey, (dailyCostByDate.get(dateKey) ?? ZERO).add(cost));
+        if (entry.hoursWorked.gt(0)) workedMonths.add(dateKey.slice(0, 7));
       }
+      foodGrandTotal = foodGrandTotal.add(employee.otherAllowance.mul(workedMonths.size));
 
       const cc = employee.costCenter;
       const groupKey = cc?.id ?? "unassigned";
@@ -338,9 +347,10 @@ export class HrReportsService {
         nameEn: true,
         designation: true,
         basicSalary: true,
+        otherAllowance: true,
         employeeTimesheetEntries: {
           where: dateFilter ? { date: dateFilter } : undefined,
-          select: { hoursWorked: true },
+          select: { date: true, hoursWorked: true },
         },
         payments: {
           where: {
@@ -354,6 +364,7 @@ export class HrReportsService {
     });
 
     let releasedGrandTotal = ZERO;
+    let releasedFoodGrandTotal = ZERO;
     let releasedPaidSalary = ZERO;
     let releasedPaidFood = ZERO;
     const releasedTradeRows: Array<{ employeeId: string; code: string; nameEn: string; designation: string | null; cost: Prisma.Decimal }> =
@@ -362,6 +373,10 @@ export class HrReportsService {
       const hourlyRate = e.basicSalary.div(HOURLY_DIVISOR).toDecimalPlaces(4);
       const cost = e.employeeTimesheetEntries.reduce((sum, t) => sum.add(hourlyRate.mul(t.hoursWorked).toDecimalPlaces(2)), ZERO);
       releasedGrandTotal = releasedGrandTotal.add(cost);
+      const workedMonths = new Set(
+        e.employeeTimesheetEntries.filter((t) => t.hoursWorked.gt(0)).map((t) => t.date.toISOString().slice(0, 7)),
+      );
+      releasedFoodGrandTotal = releasedFoodGrandTotal.add(e.otherAllowance.mul(workedMonths.size));
       releasedPaidSalary = releasedPaidSalary.add(
         e.payments.filter((p) => p.category === EmployeePaymentCategory.SALARY).reduce((sum, p) => sum.add(p.amount), ZERO),
       );
@@ -371,6 +386,7 @@ export class HrReportsService {
       releasedTradeRows.push({ employeeId: e.id, code: e.code, nameEn: e.nameEn, designation: e.designation, cost });
     }
     const releasedPendingLaborAccrual = Prisma.Decimal.max(ZERO, releasedGrandTotal.sub(releasedPaidSalary));
+    const releasedPendingFoodAccrual = Prisma.Decimal.max(ZERO, releasedFoodGrandTotal.sub(releasedPaidFood));
 
     const [payrollNetPay, paymentsByCategory, pendingPayments] = await Promise.all([
       fiscalPeriodId
@@ -427,14 +443,19 @@ export class HrReportsService {
     // so coverage that already meets/exceeds the accrued cost never shows a
     // negative "pending" amount.
     const pendingLaborAccrual = Prisma.Decimal.max(ZERO, grandTotal.sub(payrollNetPay).sub(directSalaryPayments));
+    // Food's own accrual-vs-paid, same "owed but not yet covered" concept as
+    // pendingLaborAccrual above, kept as a separate figure (not folded into
+    // pendingLaborAccrual itself, which existing tests assert stays
+    // salary-only) and added into totalPending instead.
+    const pendingFoodAccrual = Prisma.Decimal.max(ZERO, foodGrandTotal.sub(paidFood));
 
     const totalPaidActive = paidSalary.add(paidAllowance).add(paidFood).add(paidAdvance);
     const totalPaidReleased = releasedPaidSalary.add(releasedPaidFood);
     const totalPaid = totalPaidActive.add(totalPaidReleased);
 
     const totalPendingAdvances = pendingPayments.reduce((sum, p) => sum.add(p.amount.sub(p.recoveredAmount)), ZERO);
-    const totalPendingActive = totalPendingAdvances.add(pendingLaborAccrual);
-    const totalPendingReleased = releasedPendingLaborAccrual;
+    const totalPendingActive = totalPendingAdvances.add(pendingLaborAccrual).add(pendingFoodAccrual);
+    const totalPendingReleased = releasedPendingLaborAccrual.add(releasedPendingFoodAccrual);
     const totalPending = totalPendingActive.add(totalPendingReleased);
 
     const releasedEmployees = await this.releasedEmployeesList(companyId);
@@ -456,12 +477,170 @@ export class HrReportsService {
       totalPendingReleased,
       totalPendingAdvances,
       pendingLaborAccrual,
+      pendingFoodAccrual,
+      releasedPendingFoodAccrual,
       dailyLaborCost,
       groups: [...groups.values()].sort((a, b) => a.label.localeCompare(b.label)),
       grandTotal,
       releasedGrandTotal,
       releasedTradeRows,
       releasedEmployees,
+    };
+  }
+
+  /**
+   * Every individual SALARY/FOOD payment transaction — the drill-down behind
+   * the Employees Overview "Total Paid" tile. Unlike employeesDashboard()'s
+   * aggregate totals, this returns one row per EmployeePayment so it can show
+   * which employee, which month, and whether receipt evidence is attached
+   * (the receipt itself is fetched separately via the existing
+   * GET /hr/employee-payments/:paymentId/receipt route this list just flags
+   * the presence of).
+   */
+  async paidTransactions(companyId: string, fiscalPeriodId?: string) {
+    const range = await this.resolveDateRange(companyId, fiscalPeriodId);
+    const dateFilter = range ? { gte: range.start, lte: range.end } : undefined;
+
+    const payments = await this.prisma.employeePayment.findMany({
+      where: {
+        companyId,
+        category: { in: [EmployeePaymentCategory.SALARY, EmployeePaymentCategory.FOOD] },
+        reversedAt: null,
+        ...(dateFilter ? { paymentDate: dateFilter } : {}),
+      },
+      orderBy: { paymentDate: "desc" },
+      select: {
+        id: true,
+        category: true,
+        amount: true,
+        paymentDate: true,
+        memo: true,
+        employee: { select: { id: true, code: true, nameEn: true } },
+        attachment: { select: { id: true, filename: true, mimeType: true } },
+      },
+    });
+
+    let totalSalary = ZERO;
+    let totalFood = ZERO;
+    const transactions = payments.map((p) => {
+      if (p.category === EmployeePaymentCategory.SALARY) totalSalary = totalSalary.add(p.amount);
+      else totalFood = totalFood.add(p.amount);
+      return {
+        paymentId: p.id,
+        employeeId: p.employee.id,
+        employeeCode: p.employee.code,
+        employeeName: p.employee.nameEn,
+        category: p.category as "SALARY" | "FOOD",
+        amount: p.amount,
+        month: p.paymentDate.toISOString().slice(0, 7),
+        paymentDate: p.paymentDate,
+        memo: p.memo,
+        attachmentFilename: p.attachment?.filename ?? null,
+        attachmentMimeType: p.attachment?.mimeType ?? null,
+      };
+    });
+
+    return { transactions, totalSalary, totalFood, total: totalSalary.add(totalFood) };
+  }
+
+  /**
+   * Which employee owes which month's Salary/Food, still unpaid — the
+   * drill-down behind the Employees Overview "Total Pending" tile. Same
+   * accrual formulas as employeesDashboard()'s pendingLaborAccrual/
+   * pendingFoodAccrual (hourlyRate × hours per month for Salary,
+   * otherAllowance per worked month for Food), but walked month-by-month in
+   * chronological order against a FIFO pool of payments actually made, so
+   * a partially-covered employee shows exactly which of their months are
+   * still short and by how much — rather than only a single running total.
+   * The sum of every row's `amount` here reconciles exactly with
+   * pendingLaborAccrual + pendingFoodAccrual (+ their released equivalents),
+   * since FIFO allocation doesn't change the total owed, only which month
+   * it's attributed to.
+   */
+  async pendingAccrual(companyId: string) {
+    const HOURLY_DIVISOR = new Prisma.Decimal(260);
+    const employees = await this.prisma.employee.findMany({
+      where: { companyId, status: { in: [EmployeeStatus.ACTIVE, EmployeeStatus.TERMINATED] } },
+      select: {
+        id: true,
+        code: true,
+        nameEn: true,
+        status: true,
+        basicSalary: true,
+        otherAllowance: true,
+        employeeTimesheetEntries: { select: { date: true, hoursWorked: true } },
+        payments: {
+          where: { reversedAt: null, category: { in: [EmployeePaymentCategory.SALARY, EmployeePaymentCategory.FOOD] } },
+          select: { category: true, amount: true },
+        },
+      },
+    });
+    const payrollNetPayByEmployee = employees.length
+      ? await this.prisma.payrollRunLine.groupBy({
+          by: ["employeeId"],
+          where: { employeeId: { in: employees.map((e) => e.id) }, run: { status: PayrollRunStatus.POSTED } },
+          _sum: { netPay: true },
+        })
+      : [];
+
+    const rows: Array<{
+      employeeId: string;
+      employeeCode: string;
+      employeeName: string;
+      status: string;
+      category: "SALARY" | "FOOD";
+      month: string;
+      amount: Prisma.Decimal;
+    }> = [];
+    let totalPendingSalary = ZERO;
+    let totalPendingFood = ZERO;
+
+    for (const e of employees) {
+      const hourlyRate = e.basicSalary.div(HOURLY_DIVISOR).toDecimalPlaces(4);
+      const salaryByMonth = new Map<string, Prisma.Decimal>();
+      const foodMonths = new Set<string>();
+      for (const t of e.employeeTimesheetEntries) {
+        const month = t.date.toISOString().slice(0, 7);
+        salaryByMonth.set(month, (salaryByMonth.get(month) ?? ZERO).add(hourlyRate.mul(t.hoursWorked).toDecimalPlaces(2)));
+        if (t.hoursWorked.gt(0)) foodMonths.add(month);
+      }
+
+      let salaryPool = e.payments
+        .filter((p) => p.category === EmployeePaymentCategory.SALARY)
+        .reduce((sum, p) => sum.add(p.amount), ZERO)
+        .add(payrollNetPayByEmployee.find((p) => p.employeeId === e.id)?._sum.netPay ?? ZERO);
+      let foodPool = e.payments
+        .filter((p) => p.category === EmployeePaymentCategory.FOOD)
+        .reduce((sum, p) => sum.add(p.amount), ZERO);
+
+      for (const [month, amount] of [...salaryByMonth.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+        if (amount.lte(0)) continue;
+        const covered = Prisma.Decimal.min(salaryPool, amount);
+        salaryPool = salaryPool.sub(covered);
+        const pending = amount.sub(covered);
+        if (pending.gt(0)) {
+          rows.push({ employeeId: e.id, employeeCode: e.code, employeeName: e.nameEn, status: e.status, category: "SALARY", month, amount: pending });
+          totalPendingSalary = totalPendingSalary.add(pending);
+        }
+      }
+      for (const month of [...foodMonths].sort()) {
+        const amount = e.otherAllowance;
+        if (amount.lte(0)) continue;
+        const covered = Prisma.Decimal.min(foodPool, amount);
+        foodPool = foodPool.sub(covered);
+        const pending = amount.sub(covered);
+        if (pending.gt(0)) {
+          rows.push({ employeeId: e.id, employeeCode: e.code, employeeName: e.nameEn, status: e.status, category: "FOOD", month, amount: pending });
+          totalPendingFood = totalPendingFood.add(pending);
+        }
+      }
+    }
+
+    return {
+      rows: rows.sort((a, b) => a.month.localeCompare(b.month)),
+      totalPendingSalary,
+      totalPendingFood,
+      total: totalPendingSalary.add(totalPendingFood),
     };
   }
 

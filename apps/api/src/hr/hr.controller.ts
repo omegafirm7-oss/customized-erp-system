@@ -482,6 +482,18 @@ export class HrController {
     return this.hrReportsService.employeesDashboard(companyId, fiscalPeriodId);
   }
 
+  @Get("reports/paid-transactions")
+  @Permissions(PERMISSIONS.HR_EMPLOYEE_VIEW)
+  async paidTransactions(@CurrentCompanyId() companyId: string, @Query("fiscalPeriodId") fiscalPeriodId?: string) {
+    return this.hrReportsService.paidTransactions(companyId, fiscalPeriodId);
+  }
+
+  @Get("reports/pending-accrual")
+  @Permissions(PERMISSIONS.HR_EMPLOYEE_VIEW)
+  async pendingAccrual(@CurrentCompanyId() companyId: string) {
+    return this.hrReportsService.pendingAccrual(companyId);
+  }
+
   @Get("reports/labor-cost-by-date-range")
   @Permissions(PERMISSIONS.HR_EMPLOYEE_VIEW)
   async laborCostByDateRange(

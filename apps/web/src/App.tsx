@@ -59,6 +59,8 @@ import { EmployeesPage } from "./pages/EmployeesPage";
 import { EmployeeDetailPage } from "./pages/EmployeeDetailPage";
 import { EmployeeTimesheetDetailPage } from "./pages/EmployeeTimesheetDetailPage";
 import { EmployeesOverviewPage } from "./pages/EmployeesOverviewPage";
+import { PaidTransactionsPage } from "./pages/PaidTransactionsPage";
+import { PendingAccrualPage } from "./pages/PendingAccrualPage";
 import { ActiveEmployeesDetailPage } from "./pages/ActiveEmployeesDetailPage";
 import { ReleasedEmployeesDetailPage } from "./pages/ReleasedEmployeesDetailPage";
 import { AdminUsersPage } from "./pages/AdminUsersPage";
@@ -151,6 +153,8 @@ const companyRoutes: Array<{ path: string; element: JSX.Element }> = [
   { path: "/hr/employees/overview", element: <EmployeesOverviewPage /> },
   { path: "/hr/employees/overview/active", element: <ActiveEmployeesDetailPage /> },
   { path: "/hr/employees/overview/released", element: <ReleasedEmployeesDetailPage /> },
+  { path: "/hr/employees/overview/paid-transactions", element: <PaidTransactionsPage /> },
+  { path: "/hr/employees/overview/pending-accrual", element: <PendingAccrualPage /> },
   { path: "/hr/employees/timesheets", element: <UpdateTimesheetsPage /> },
   { path: "/hr/employees/:id/timesheets", element: <EmployeeTimesheetDetailPage /> },
   { path: "/hr/employees/:id", element: <EmployeeDetailPage /> },
