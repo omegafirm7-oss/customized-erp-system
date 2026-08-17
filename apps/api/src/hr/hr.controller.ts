@@ -42,6 +42,7 @@ import {
   PostSettlementDto,
   PrefillTimesheetDto,
   RecordPaymentRecoveryDto,
+  ReclassifyPaymentAccountDto,
   RecordSettlementPaymentDto,
   TerminationPreviewDto,
   UpdateEmployeeDto,
@@ -423,6 +424,23 @@ export class HrController {
     @CurrentUser() user: JwtPayload,
   ) {
     return this.employeePaymentsService.reversePayment(companyId, paymentId, user.sub);
+  }
+
+  @Get("employee-payments/allowance")
+  @Permissions(PERMISSIONS.HR_EMPLOYEE_VIEW)
+  async allowancePayments(@CurrentCompanyId() companyId: string) {
+    return this.employeePaymentsService.allowancePayments(companyId);
+  }
+
+  @Post("employee-payments/:paymentId/reclassify-account")
+  @Permissions(PERMISSIONS.HR_EMPLOYEE_MANAGE)
+  async reclassifyEmployeePaymentAccount(
+    @CurrentCompanyId() companyId: string,
+    @Param("paymentId") paymentId: string,
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: ReclassifyPaymentAccountDto,
+  ) {
+    return this.employeePaymentsService.reclassifyAccount(companyId, paymentId, user.sub, dto.expenseAccountId);
   }
 
   @Post("employee-payments/:paymentId/receipt")

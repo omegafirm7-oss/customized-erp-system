@@ -1355,6 +1355,97 @@ describe("HR & Saudi Payroll (e2e)", () => {
       .expect(409);
   });
 
+  it("reclassify-account moves an Allowance payment onto the Food account via reversal + repost, and rejects invalid targets", async () => {
+    const ctx = await setupUserWithCompany(app);
+    const { period } = await currentPeriod(ctx);
+    const joinDate = new Date(period.startDate).toISOString().slice(0, 10);
+    const csv = [CSV_HEADER, `EMPRC,Reclass Test,,Helper,SA,true,,,,,,${joinDate},UNLIMITED,,,,21,4000,0,0,0,false`].join("\n");
+    await request(app.getHttpServer()).post("/hr/employees/import").set(auth(ctx.accessToken)).send({ csv }).expect(201);
+    const employee = (
+      await request(app.getHttpServer()).get("/hr/employees").set(auth(ctx.accessToken)).expect(200)
+    ).body[0];
+
+    const prisma = getPrisma(app);
+    const foodAccount = await prisma.account.findFirstOrThrow({ where: { companyId: ctx.companyId, code: "5216" } });
+    const revenueAccount = await prisma.account.findFirstOrThrow({
+      where: { companyId: ctx.companyId, accountClass: { code: "REVENUE" } },
+    });
+
+    const allowance = (
+      await request(app.getHttpServer())
+        .post(`/hr/employees/${employee.id}/payments`)
+        .set(auth(ctx.accessToken))
+        .send({ category: "ALLOWANCE", amount: "300", bankCashAccountId: ctx.cashAccount.id, memo: "actually food" })
+        .expect(201)
+    ).body;
+
+    // Worklist surfaces it
+    const worklist = (
+      await request(app.getHttpServer()).get("/hr/employee-payments/allowance").set(auth(ctx.accessToken)).expect(200)
+    ).body;
+    expect(worklist.some((p: any) => p.paymentId === allowance.id && p.currentAccountCode === "5215")).toBe(true);
+
+    // Rejects a non-expense target account
+    await request(app.getHttpServer())
+      .post(`/hr/employee-payments/${allowance.id}/reclassify-account`)
+      .set(auth(ctx.accessToken))
+      .send({ expenseAccountId: revenueAccount.id })
+      .expect(400);
+
+    // Reclassify onto Food
+    const reclassified = (
+      await request(app.getHttpServer())
+        .post(`/hr/employee-payments/${allowance.id}/reclassify-account`)
+        .set(auth(ctx.accessToken))
+        .send({ expenseAccountId: foodAccount.id })
+        .expect(201)
+    ).body;
+    expect(reclassified.category).toBe("ALLOWANCE");
+    expect(Number(reclassified.amount)).toBe(300);
+    expect(reclassified.expenseAccountId).toBe(foodAccount.id);
+    expect(reclassified.id).not.toBe(allowance.id);
+
+    // Original entry reversed, no longer on the worklist as an open Allowance payment
+    const original = await prisma.employeePayment.findUniqueOrThrow({ where: { id: allowance.id } });
+    expect(original.reversedAt).not.toBeNull();
+    const originalJe = await prisma.journalEntry.findUniqueOrThrow({ where: { id: original.journalEntryId } });
+    expect(originalJe.status).toBe("REVERSED");
+
+    // New entry posts to Food (5216), not Allowance (5215)
+    const newJe = await prisma.employeePayment.findUniqueOrThrow({
+      where: { id: reclassified.id },
+      include: { journalEntry: { include: { lines: { include: { account: true } } } } },
+    });
+    expect(Number(newJe.journalEntry.lines.find((l) => l.account.code === "5216")!.debit)).toBeCloseTo(300, 2);
+    expect(newJe.journalEntry.lines.some((l) => l.account.code === "5215")).toBe(false);
+
+    const worklistAfter = (
+      await request(app.getHttpServer()).get("/hr/employee-payments/allowance").set(auth(ctx.accessToken)).expect(200)
+    ).body;
+    expect(worklistAfter.some((p: any) => p.paymentId === allowance.id)).toBe(false);
+
+    // Reclassifying the already-reversed original again is rejected
+    await request(app.getHttpServer())
+      .post(`/hr/employee-payments/${allowance.id}/reclassify-account`)
+      .set(auth(ctx.accessToken))
+      .send({ expenseAccountId: foodAccount.id })
+      .expect(409);
+
+    // A SALARY payment has no expenseAccountId concept — rejected
+    const salary = (
+      await request(app.getHttpServer())
+        .post(`/hr/employees/${employee.id}/payments`)
+        .set(auth(ctx.accessToken))
+        .send({ category: "SALARY", amount: "100", bankCashAccountId: ctx.cashAccount.id })
+        .expect(201)
+    ).body;
+    await request(app.getHttpServer())
+      .post(`/hr/employee-payments/${salary.id}/reclassify-account`)
+      .set(auth(ctx.accessToken))
+      .send({ expenseAccountId: foodAccount.id })
+      .expect(409);
+  });
+
   it("a receipt can be attached to a payment, replaced by re-upload, fetched back with matching bytes, and is included in payment listings", async () => {
     const ctx = await setupUserWithCompany(app);
     const { period } = await currentPeriod(ctx);

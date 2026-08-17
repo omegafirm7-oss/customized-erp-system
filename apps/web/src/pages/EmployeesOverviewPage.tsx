@@ -448,7 +448,8 @@ export function EmployeesOverviewPage() {
           )}
           {showPendingBreakdown && (
             <div className="card" style={{ marginTop: -10 }}>
-              <div className="form-row" style={{ justifyContent: "flex-end" }}>
+              <div className="form-row" style={{ justifyContent: "flex-end", gap: 16 }}>
+                <Link to="/hr/employees/overview/reclassify-allowance">Reclassify Allowance payments to Food →</Link>
                 <Link to="/hr/employees/overview/pending-accrual">View pending by employee/month →</Link>
               </div>
               <div className="form-row" style={{ justifyContent: "space-between" }}>

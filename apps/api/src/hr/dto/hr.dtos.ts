@@ -396,3 +396,9 @@ export class RecordPaymentRecoveryDto {
   @IsString()
   memo?: string;
 }
+
+export class ReclassifyPaymentAccountDto {
+  @ApiProperty({ description: "New expense account to move this payment's posting to" })
+  @IsUUID()
+  expenseAccountId!: string;
+}

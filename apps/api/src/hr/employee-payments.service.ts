@@ -352,4 +352,133 @@ export class EmployeePaymentsService {
 
     return result;
   }
+
+  /** Every posted, non-reversed ALLOWANCE-category payment — the worklist behind the "reclassify to Food" tool. */
+  async allowancePayments(companyId: string) {
+    const payments = await this.prisma.employeePayment.findMany({
+      where: { companyId, category: EmployeePaymentCategory.ALLOWANCE, reversedAt: null },
+      orderBy: { paymentDate: "desc" },
+      select: {
+        id: true,
+        amount: true,
+        paymentDate: true,
+        memo: true,
+        employee: { select: { id: true, code: true, nameEn: true } },
+        expenseAccount: { select: { id: true, code: true, name: true } },
+      },
+    });
+    return payments.map((p) => ({
+      paymentId: p.id,
+      employeeId: p.employee.id,
+      employeeCode: p.employee.code,
+      employeeName: p.employee.nameEn,
+      amount: p.amount,
+      paymentDate: p.paymentDate,
+      memo: p.memo,
+      currentAccountId: p.expenseAccount?.id ?? null,
+      currentAccountCode: p.expenseAccount?.code ?? null,
+      currentAccountName: p.expenseAccount?.name ?? null,
+    }));
+  }
+
+  /**
+   * Moves a posted payment's expense allocation to a different account —
+   * e.g. correcting a batch of ALLOWANCE payments that were really Food, so
+   * the Food expense account carries the true historical total. Posted
+   * entries are immutable by design (see the DB trigger), so this can't be
+   * a quiet in-place edit: it reverses the original entry and records a new
+   * one, identical in every way (employee, category, amount, date,
+   * bank/cash account, memo) except the expense account — a visible,
+   * auditable correction rather than a silent rewrite of history.
+   */
+  async reclassifyAccount(companyId: string, paymentId: string, userId: string, newExpenseAccountId: string) {
+    const result = await this.prisma.$transaction(
+      async (tx) => {
+        const payment = await tx.employeePayment.findFirst({ where: { id: paymentId, companyId } });
+        if (!payment) {
+          throw new NotFoundException("Payment not found");
+        }
+        if (payment.reversedAt) {
+          throw new ConflictException("Payment already reversed");
+        }
+        if (payment.category !== EmployeePaymentCategory.ALLOWANCE && payment.category !== EmployeePaymentCategory.FOOD) {
+          throw new ConflictException("Only Allowance/Food payments can be reclassified to a different expense account");
+        }
+        if (payment.recoveredAmount.gt(0)) {
+          throw new ConflictException("Cannot reclassify a payment that already has recoveries recorded against it");
+        }
+
+        const newAccount = await this.accountResolution.getExpenseAccount(tx, companyId, newExpenseAccountId);
+        const employee = await tx.employee.findFirstOrThrow({ where: { id: payment.employeeId, companyId } });
+        const company = await tx.company.findUniqueOrThrow({ where: { id: companyId } });
+
+        await this.glPostingService.reverseEntryInTx(tx, companyId, payment.journalEntryId, userId);
+        await tx.employeePayment.update({ where: { id: payment.id }, data: { reversedAt: new Date() } });
+
+        const newPaymentId = randomUUID();
+        const paymentNumber = await this.numberingService.allocate(tx, {
+          companyId,
+          documentType: DocumentType.EMPLOYEE_PAYMENT,
+          fiscalYearId: null,
+        });
+        const entry = await this.glPostingService.createPostedEntry(tx, {
+          companyId,
+          userId,
+          postingDate: payment.paymentDate,
+          documentDate: payment.paymentDate,
+          currencyCode: company.baseCurrencyCode,
+          exchangeRateToFunctional: new Prisma.Decimal(1),
+          sourceModule: JournalSourceModule.PAYROLL,
+          sourceDocumentId: newPaymentId,
+          memo: `${paymentNumber} — ${payment.category} — ${employee.code} ${employee.nameEn} (reclassified from ${payment.paymentNumber})`,
+          lines: [
+            {
+              accountId: newAccount.id,
+              debit: payment.amount,
+              credit: new Prisma.Decimal(0),
+              amountInTransactionCurrency: payment.amount,
+              costCenterId: employee.costCenterId,
+              description: `${payment.category} payment — ${employee.code} (reclassified)`,
+            },
+            {
+              accountId: payment.bankCashAccountId,
+              debit: new Prisma.Decimal(0),
+              credit: payment.amount,
+              amountInTransactionCurrency: payment.amount,
+              description: `${payment.category} payment — ${employee.code} (reclassified)`,
+            },
+          ],
+        });
+
+        return tx.employeePayment.create({
+          data: {
+            id: newPaymentId,
+            companyId,
+            employeeId: payment.employeeId,
+            paymentNumber,
+            category: payment.category,
+            amount: payment.amount,
+            paymentDate: payment.paymentDate,
+            bankCashAccountId: payment.bankCashAccountId,
+            expenseAccountId: newAccount.id,
+            memo: payment.memo,
+            journalEntryId: entry.id,
+            createdByUserId: userId,
+          },
+        });
+      },
+      { timeout: 30_000 },
+    );
+
+    await this.auditService.log({
+      companyId,
+      entityName: "EmployeePayment",
+      entityId: result.id,
+      action: "UPDATE",
+      changedByUserId: userId,
+      afterSnapshot: result,
+    });
+
+    return result;
+  }
 }
