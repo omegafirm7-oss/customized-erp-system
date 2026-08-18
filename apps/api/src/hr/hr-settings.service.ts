@@ -46,6 +46,7 @@ export class HrSettingsService {
         daysPerMonth: dec(dto.daysPerMonth),
         defaultAnnualLeaveDays: dec(dto.defaultAnnualLeaveDays),
         eosbBasis: dto.eosbBasis,
+        settlementExcludesEosbAndLeave: dto.settlementExcludesEosbAndLeave,
         molEstablishmentId: dto.molEstablishmentId,
         employerBankCode: dto.employerBankCode,
         employerIban: dto.employerIban,

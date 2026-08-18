@@ -309,6 +309,12 @@ export class HrController {
     return this.terminationService.reverseSettlement(companyId, settlementId, user.sub);
   }
 
+  @Post("settlements/recompute")
+  @Permissions(PERMISSIONS.HR_SETTINGS_MANAGE)
+  async recomputeSettlements(@CurrentCompanyId() companyId: string, @CurrentUser() user: JwtPayload) {
+    return this.terminationService.recomputeSettlements(companyId, user.sub);
+  }
+
   @Post("employees/:id/release/payments")
   @Permissions(PERMISSIONS.HR_EMPLOYEE_MANAGE)
   async recordSettlementPayment(

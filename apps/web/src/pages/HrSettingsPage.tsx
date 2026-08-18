@@ -12,9 +12,15 @@ interface HrSettings {
   daysPerMonth: string;
   defaultAnnualLeaveDays: string;
   eosbBasis: string;
+  settlementExcludesEosbAndLeave: boolean;
   molEstablishmentId: string | null;
   employerBankCode: string | null;
   employerIban: string | null;
+}
+
+interface RecomputeResult {
+  recomputed: { employeeCode: string; employeeName: string; oldNetAmount: string; newNetAmount: string }[];
+  skipped: { employeeCode: string; employeeName: string; reason: string }[];
 }
 
 export function HrSettingsPage() {
@@ -22,6 +28,9 @@ export function HrSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [recomputing, setRecomputing] = useState(false);
+  const [recomputeResult, setRecomputeResult] = useState<RecomputeResult | null>(null);
+  const [recomputeError, setRecomputeError] = useState<string | null>(null);
 
   useEffect(() => {
     apiClient.get<HrSettings>("/hr/settings").then((res) => setForm(res.data));
@@ -45,6 +54,7 @@ export function HrSettingsPage() {
         daysPerMonth: form.daysPerMonth,
         defaultAnnualLeaveDays: form.defaultAnnualLeaveDays,
         eosbBasis: form.eosbBasis,
+        settlementExcludesEosbAndLeave: form.settlementExcludesEosbAndLeave,
         molEstablishmentId: form.molEstablishmentId || undefined,
         employerBankCode: form.employerBankCode || undefined,
         employerIban: form.employerIban || undefined,
@@ -55,6 +65,23 @@ export function HrSettingsPage() {
       setError(err?.response?.data?.message ?? "Failed to save settings");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function recompute() {
+    if (!window.confirm("Reverse and repost every already-released employee's final settlement under the current settings? Settlements with payments already recorded will be skipped.")) {
+      return;
+    }
+    setRecomputeError(null);
+    setRecomputeResult(null);
+    setRecomputing(true);
+    try {
+      const res = await apiClient.post<RecomputeResult>("/hr/settlements/recompute");
+      setRecomputeResult(res.data);
+    } catch (err: any) {
+      setRecomputeError(err?.response?.data?.message ?? "Failed to recompute settlements");
+    } finally {
+      setRecomputing(false);
     }
   }
 
@@ -123,6 +150,17 @@ export function HrSettingsPage() {
             </select>
           </div>
         </div>
+        <h3>Final settlement policy</h3>
+        <div className="form-row">
+          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type="checkbox"
+              checked={form.settlementExcludesEosbAndLeave}
+              onChange={(e) => setForm({ ...form, settlementExcludesEosbAndLeave: e.target.checked })}
+            />
+            Settlements exclude EOSB &amp; leave payout — net amount is only unpaid timesheet wages
+          </label>
+        </div>
         <h3>WPS (Wage Protection System)</h3>
         <div className="form-row">
           <input placeholder="MOL establishment ID" value={form.molEstablishmentId ?? ""} onChange={set("molEstablishmentId")} />
@@ -133,6 +171,71 @@ export function HrSettingsPage() {
           {saving ? "Saving…" : "Save settings"}
         </button>
       </form>
+
+      <hr style={{ margin: "20px 0" }} />
+      <h3>Recompute existing settlements</h3>
+      <p style={{ color: "#667085", fontSize: 13 }}>
+        Applies the settings above (save first) to every already-released employee's final settlement — reverses
+        and reposts each one that has no payments recorded yet. Use this after changing the settlement policy so
+        past releases match the new rule, not just future ones.
+      </p>
+      {recomputeError && <div className="error-banner">{recomputeError}</div>}
+      <button onClick={recompute} disabled={recomputing}>
+        {recomputing ? "Recomputing…" : "Recompute all settlements"}
+      </button>
+      {recomputeResult && (
+        <div style={{ marginTop: 12 }}>
+          <p>
+            <strong>{recomputeResult.recomputed.length}</strong> recomputed,{" "}
+            <strong>{recomputeResult.skipped.length}</strong> skipped.
+          </p>
+          {recomputeResult.recomputed.length > 0 && (
+            <table>
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Old net amount</th>
+                  <th>New net amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recomputeResult.recomputed.map((r) => (
+                  <tr key={r.employeeCode}>
+                    <td>
+                      {r.employeeCode} — {r.employeeName}
+                    </td>
+                    <td>{r.oldNetAmount}</td>
+                    <td>{r.newNetAmount}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {recomputeResult.skipped.length > 0 && (
+            <>
+              <p style={{ marginTop: 10, color: "#b54708" }}>Skipped:</p>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Employee</th>
+                    <th>Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recomputeResult.skipped.map((s) => (
+                    <tr key={s.employeeCode}>
+                      <td>
+                        {s.employeeCode} — {s.employeeName}
+                      </td>
+                      <td>{s.reason}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

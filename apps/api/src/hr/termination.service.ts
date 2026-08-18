@@ -7,6 +7,7 @@ import {
 import {
   ControlAccountType,
   DocumentType,
+  EmployeePaymentCategory,
   EmployeeStatus,
   JournalSourceModule,
   LoanStatus,
@@ -14,6 +15,7 @@ import {
   Prisma,
   SettlementReason,
   SettlementStatus,
+  TimesheetDayType,
 } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { PrismaService } from "../common/prisma/prisma.service";
@@ -285,6 +287,53 @@ export class TerminationService {
   }
 
   /**
+   * Re-derives every already-posted final settlement under the company's
+   * *current* HrSettings (e.g. after flipping settlementExcludesEosbAndLeave)
+   * — reverses each POSTED settlement and reposts it with computeFigures run
+   * fresh, same reason/lastWorkingDay as before. A settlement that already
+   * has payments recorded against it can't be safely reversed (the payment
+   * was made against the old net amount), so those are skipped and reported
+   * rather than silently left stale.
+   */
+  async recomputeSettlements(companyId: string, userId: string) {
+    const settlements = await this.prisma.finalSettlement.findMany({
+      where: { companyId, status: SettlementStatus.POSTED },
+      include: { employee: { select: { code: true, nameEn: true } }, payments: { select: { id: true } } },
+    });
+
+    const recomputed: { employeeCode: string; employeeName: string; oldNetAmount: string; newNetAmount: string }[] = [];
+    const skipped: { employeeCode: string; employeeName: string; reason: string }[] = [];
+
+    for (const settlement of settlements) {
+      if (settlement.payments.length > 0) {
+        skipped.push({
+          employeeCode: settlement.employee.code,
+          employeeName: settlement.employee.nameEn,
+          reason: "Has payments already recorded against it — reverse manually if it needs correcting",
+        });
+        continue;
+      }
+      const oldNetAmount = settlement.netAmount;
+      await this.reverseSettlement(companyId, settlement.id, userId);
+      const reposted = await this.postSettlement(
+        companyId,
+        settlement.employeeId,
+        userId,
+        settlement.reason,
+        settlement.lastWorkingDay,
+      );
+      recomputed.push({
+        employeeCode: settlement.employee.code,
+        employeeName: settlement.employee.nameEn,
+        oldNetAmount: oldNetAmount.toString(),
+        newNetAmount: reposted.netAmount.toString(),
+      });
+    }
+
+    return { recomputed, skipped };
+  }
+
+  /**
    * Records one payout against a POSTED settlement — released employees are
    * often paid over time rather than in one lump sum. Each payment posts
    * its own JE (Dr Accrued Salaries Payable / Cr the chosen bank/cash
@@ -427,31 +476,10 @@ export class TerminationService {
     const leaveProvisionCleared = prior._sum.leaveDelta ?? ZERO;
     const priorLeaveTaken = prior._sum.annualLeaveDaysTaken ?? ZERO;
 
-    // Salary for days worked in the settlement month (payroll covers whole
-    // posted periods; this covers the stub since the last posted run).
-    const lastPosted = await client.payrollRun.findFirst({
-      where: { companyId, status: PayrollRunStatus.POSTED, lines: { some: { employeeId } } },
-      include: { fiscalPeriod: true },
-      orderBy: { fiscalPeriod: { startDate: "desc" } },
-    });
-    const coveredUntil = lastPosted ? lastPosted.fiscalPeriod.endDate : employee.joinDate;
-    let finalSalaryDays = 0;
-    if (lastWorkingDay > coveredUntil) {
-      finalSalaryDays = Math.min(
-        Math.ceil((lastWorkingDay.getTime() - coveredUntil.getTime()) / (24 * 3600 * 1000)),
-        Number(settings.daysPerMonth),
-      );
-    }
-    const finalSalaryAmount = fullGross(salary)
-      .div(settings.daysPerMonth)
-      .mul(finalSalaryDays)
-      .toDecimalPlaces(2);
-
     const accruedDays = employee.leaveOpeningBalance.add(
       computeLeaveAccruedDays(employee.joinDate, lastWorkingDay, employee.annualLeaveDays),
     );
     const leaveBalanceDays = Prisma.Decimal.max(ZERO, accruedDays.sub(priorLeaveTaken)).toDecimalPlaces(2);
-    const leavePayoutAmount = computeLeaveProvision(salary, leaveBalanceDays, settings.daysPerMonth);
 
     const loans = await client.employeeLoan.aggregate({
       where: { employeeId, status: LoanStatus.ACTIVE },
@@ -459,7 +487,63 @@ export class TerminationService {
     });
     const loanRecovery = loans._sum.balance ?? ZERO;
 
-    const netAmount = finalSalaryAmount.add(eosbAmount).add(leavePayoutAmount).sub(loanRecovery);
+    let finalSalaryDays: number;
+    let finalSalaryAmount: Prisma.Decimal;
+    let settlementEosbAmount = eosbAmount;
+    let leavePayoutAmount = computeLeaveProvision(salary, leaveBalanceDays, settings.daysPerMonth);
+
+    if (settings.settlementExcludesEosbAndLeave) {
+      // Company policy override: no EOSB, no leave payout — net settlement
+      // is purely the accrued-but-unpaid timesheet wage, same math as the
+      // "Pending" figure shown everywhere else for this employee (see
+      // employees.service.ts::getSummary, HOURLY_DIVISOR = 26 days x 10h).
+      settlementEosbAmount = ZERO;
+      leavePayoutAmount = ZERO;
+      const HOURLY_DIVISOR = new Prisma.Decimal(260);
+      const [workedAgg, paidSalaryAgg, paidSalaryDirectAgg] = await Promise.all([
+        client.employeeTimesheetEntry.aggregate({
+          where: { employeeId, dayType: TimesheetDayType.WORKED },
+          _sum: { hoursWorked: true },
+          _count: { _all: true },
+        }),
+        client.payrollRunLine.aggregate({
+          where: { employeeId, run: { status: PayrollRunStatus.POSTED } },
+          _sum: { netPay: true },
+        }),
+        client.employeePayment.aggregate({
+          where: { employeeId, category: EmployeePaymentCategory.SALARY, reversedAt: null },
+          _sum: { amount: true },
+        }),
+      ]);
+      const workedHours = workedAgg._sum.hoursWorked ?? ZERO;
+      const hourlyRate = employee.basicSalary.div(HOURLY_DIVISOR).toDecimalPlaces(4);
+      const accruedLaborCost = hourlyRate.mul(workedHours).toDecimalPlaces(2);
+      const paidSalary = (paidSalaryAgg._sum.netPay ?? ZERO).add(paidSalaryDirectAgg._sum.amount ?? ZERO);
+      finalSalaryAmount = Prisma.Decimal.max(ZERO, accruedLaborCost.sub(paidSalary));
+      finalSalaryDays = workedAgg._count._all;
+    } else {
+      // Salary for days worked in the settlement month (payroll covers whole
+      // posted periods; this covers the stub since the last posted run).
+      const lastPosted = await client.payrollRun.findFirst({
+        where: { companyId, status: PayrollRunStatus.POSTED, lines: { some: { employeeId } } },
+        include: { fiscalPeriod: true },
+        orderBy: { fiscalPeriod: { startDate: "desc" } },
+      });
+      const coveredUntil = lastPosted ? lastPosted.fiscalPeriod.endDate : employee.joinDate;
+      finalSalaryDays = 0;
+      if (lastWorkingDay > coveredUntil) {
+        finalSalaryDays = Math.min(
+          Math.ceil((lastWorkingDay.getTime() - coveredUntil.getTime()) / (24 * 3600 * 1000)),
+          Number(settings.daysPerMonth),
+        );
+      }
+      finalSalaryAmount = fullGross(salary)
+        .div(settings.daysPerMonth)
+        .mul(finalSalaryDays)
+        .toDecimalPlaces(2);
+    }
+
+    const netAmount = finalSalaryAmount.add(settlementEosbAmount).add(leavePayoutAmount).sub(loanRecovery);
     if (netAmount.lt(0)) {
       throw new BadRequestException(
         `Outstanding loans (${loanRecovery}) exceed the settlement value — collect the difference separately before posting`,
@@ -472,7 +556,7 @@ export class TerminationService {
       finalSalaryAmount,
       eosbEntitlement: computeEosbPayable(eosbWage, years, "TERMINATION_BY_EMPLOYER"),
       eosbFactorApplied: reason,
-      eosbAmount,
+      eosbAmount: settlementEosbAmount,
       leaveBalanceDays,
       leavePayoutAmount,
       loanRecovery,

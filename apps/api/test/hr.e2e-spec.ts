@@ -431,6 +431,127 @@ describe("HR & Saudi Payroll (e2e)", () => {
       .expect(409); // posted run still exists for the period
   });
 
+  it("settlementExcludesEosbAndLeave policy: net settlement is only unpaid timesheet wages, and recompute reverses+reposts past releases while skipping paid ones", async () => {
+    const ctx = await setupUserWithCompany(app);
+    const { period } = await currentPeriod(ctx);
+    const joinDate = new Date(period.startDate).toISOString().slice(0, 10);
+    const lastWorkingDay = new Date(period.endDate).toISOString().slice(0, 10);
+
+    const csv = [
+      CSV_HEADER,
+      `EMPRQ,No Frills,,Helper,SA,true,,,,,,${joinDate},UNLIMITED,,,,21,5200,0,0,0,false`,
+      `EMPRS,Already Paid,,Helper,SA,true,,,,,,${joinDate},UNLIMITED,,,,21,5200,0,0,0,false`,
+    ].join("\n");
+    await request(app.getHttpServer()).post("/hr/employees/import").set(auth(ctx.accessToken)).send({ csv }).expect(201);
+    const employees = (
+      await request(app.getHttpServer()).get("/hr/employees").set(auth(ctx.accessToken)).expect(200)
+    ).body;
+    const empRQ = employees.find((e: any) => e.code === "EMPRQ");
+    const empRS = employees.find((e: any) => e.code === "EMPRS");
+
+    const dayOffset = (n: number) => {
+      const d = new Date(period.startDate);
+      d.setUTCDate(d.getUTCDate() + n);
+      return d.toISOString().slice(0, 10);
+    };
+
+    // 50 worked hours (5 days x 10h) at 5200/260 = 20/hr → 1,000 accrued, nothing paid yet
+    for (let i = 0; i < 5; i++) {
+      await request(app.getHttpServer())
+        .post("/hr/employee-timesheet/entry")
+        .set(auth(ctx.accessToken))
+        .send({ employeeId: empRQ.id, date: dayOffset(i), dayType: "WORKED", hoursWorked: "10" })
+        .expect(201);
+    }
+
+    // Release both under the statutory default (EOSB/leave apply)
+    const empRQOld = (
+      await request(app.getHttpServer())
+        .post(`/hr/employees/${empRQ.id}/termination`)
+        .set(auth(ctx.accessToken))
+        .send({ reason: "TERMINATION_BY_EMPLOYER", lastWorkingDay })
+        .expect(201)
+    ).body;
+    const empRSOld = (
+      await request(app.getHttpServer())
+        .post(`/hr/employees/${empRS.id}/termination`)
+        .set(auth(ctx.accessToken))
+        .send({ reason: "TERMINATION_BY_EMPLOYER", lastWorkingDay })
+        .expect(201)
+    ).body;
+
+    // A settlement payment locks EMPRS out of recompute — the change must
+    // never retroactively rewrite a settlement someone has already been paid
+    // against
+    await request(app.getHttpServer())
+      .post(`/hr/employees/${empRS.id}/release/payments`)
+      .set(auth(ctx.accessToken))
+      .send({ amount: "1", bankCashAccountId: ctx.cashAccount.id })
+      .expect(201);
+
+    // Flip the policy for this company
+    await request(app.getHttpServer())
+      .patch("/hr/settings")
+      .set(auth(ctx.accessToken))
+      .send({ settlementExcludesEosbAndLeave: true })
+      .expect(200);
+
+    // A fresh preview for a new termination now zeroes EOSB/leave and prices
+    // the settlement purely off accrued-unpaid timesheet wages
+    const csv2 = [CSV_HEADER, `EMPRT,Fresh Under New Rule,,Helper,SA,true,,,,,,${joinDate},UNLIMITED,,,,21,5200,0,0,0,false`].join("\n");
+    await request(app.getHttpServer()).post("/hr/employees/import").set(auth(ctx.accessToken)).send({ csv: csv2 }).expect(201);
+    const empRT = (await request(app.getHttpServer()).get("/hr/employees").set(auth(ctx.accessToken)).expect(200)).body.find(
+      (e: any) => e.code === "EMPRT",
+    );
+    for (const [d, h] of [
+      [dayOffset(0), "13"],
+      [dayOffset(1), "13"],
+    ] as const) {
+      await request(app.getHttpServer())
+        .post("/hr/employee-timesheet/entry")
+        .set(auth(ctx.accessToken))
+        .send({ employeeId: empRT.id, date: d, dayType: "WORKED", hoursWorked: h }) // 13+13 = 26h * 20 = 520
+        .expect(201);
+    }
+    const freshPreview = (
+      await request(app.getHttpServer())
+        .post(`/hr/employees/${empRT.id}/termination/preview`)
+        .set(auth(ctx.accessToken))
+        .send({ reason: "TERMINATION_BY_EMPLOYER", lastWorkingDay })
+        .expect(201)
+    ).body;
+    expect(Number(freshPreview.eosbAmount)).toBe(0);
+    expect(Number(freshPreview.leavePayoutAmount)).toBe(0);
+    expect(Number(freshPreview.finalSalaryAmount)).toBe(520);
+    expect(Number(freshPreview.netAmount)).toBe(520);
+
+    // Bulk-recompute the two already-released employees
+    const result = (
+      await request(app.getHttpServer()).post("/hr/settlements/recompute").set(auth(ctx.accessToken)).expect(201)
+    ).body;
+    expect(result.recomputed.some((r: any) => r.employeeCode === "EMPRQ")).toBe(true);
+    expect(result.skipped).toEqual([
+      { employeeCode: "EMPRS", employeeName: "Already Paid", reason: expect.any(String) },
+    ]);
+
+    // EMPRQ's settlement is reversed+reposted at accrued-unpaid-only
+    const prisma = getPrisma(app);
+    const empRQAfter = await prisma.finalSettlement.findFirstOrThrow({ where: { employeeId: empRQ.id } });
+    expect(Number(empRQAfter.eosbAmount)).toBe(0);
+    expect(Number(empRQAfter.leavePayoutAmount)).toBe(0);
+    expect(Number(empRQAfter.finalSalaryAmount)).toBe(1000);
+    expect(Number(empRQAfter.netAmount)).toBe(1000);
+    expect(empRQAfter.journalEntryId).not.toBe(empRQOld.journalEntryId); // a fresh JE was posted
+
+    const oldJe = await prisma.journalEntry.findUniqueOrThrow({ where: { id: empRQOld.journalEntryId } });
+    expect(oldJe.status).toBe("REVERSED");
+
+    // EMPRS is untouched — its original (pre-policy-change) figures stand
+    const empRSAfter = await prisma.finalSettlement.findFirstOrThrow({ where: { employeeId: empRS.id } });
+    expect(empRSAfter.journalEntryId).toBe(empRSOld.journalEntryId);
+    expect(Number(empRSAfter.netAmount)).toBe(Number(empRSOld.netAmount));
+  });
+
   it("isolates HR data between companies and keeps Viewer without HR grants", async () => {
     const a = await setupUserWithCompany(app);
     const { period } = await currentPeriod(a);

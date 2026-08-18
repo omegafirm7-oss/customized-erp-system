@@ -2135,6 +2135,11 @@ model HrSettings {
   daysPerMonth           Decimal   @default(30) @db.Decimal(7, 2)
   defaultAnnualLeaveDays Decimal   @default(21) @db.Decimal(7, 2)
   eosbBasis              EosbBasis @default(FULL_GROSS)
+  // When true, final settlements skip EOSB and leave payout entirely and the
+  // net amount is just the employee's accrued-but-unpaid timesheet wages
+  // (minus loan recovery) — a company-specific policy override, not the
+  // statutory default.
+  settlementExcludesEosbAndLeave Boolean @default(false)
   // WPS SIF employer identifiers
   molEstablishmentId     String?
   employerBankCode       String?

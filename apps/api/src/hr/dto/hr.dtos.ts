@@ -76,6 +76,15 @@ export class UpdateHrSettingsDto {
   @IsOptional()
   @IsString()
   employerIban?: string;
+
+  @ApiProperty({
+    required: false,
+    description:
+      "Company-specific override: when true, final settlements skip EOSB and leave payout — net amount is just accrued-but-unpaid timesheet wages minus loan recovery",
+  })
+  @IsOptional()
+  @IsBoolean()
+  settlementExcludesEosbAndLeave?: boolean;
 }
 
 export class CreateEmployeeDto {
