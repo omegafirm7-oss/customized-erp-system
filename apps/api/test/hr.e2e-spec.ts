@@ -1567,6 +1567,90 @@ describe("HR & Saudi Payroll (e2e)", () => {
       .expect(409);
   });
 
+  it("bulk-reclassify-food moves every FOOD payment off a stale account onto the current Food Expense account in one pass, and leaves correctly-posted Food payments untouched", async () => {
+    const ctx = await setupUserWithCompany(app);
+    const { period } = await currentPeriod(ctx);
+    const joinDate = new Date(period.startDate).toISOString().slice(0, 10);
+    const csv = [CSV_HEADER, `EMPBF,Bulk Food Test,,Helper,SA,true,,,,,,${joinDate},UNLIMITED,,,,21,4000,0,0,0,false`].join(
+      "\n",
+    );
+    await request(app.getHttpServer()).post("/hr/employees/import").set(auth(ctx.accessToken)).send({ csv }).expect(201);
+    const employee = (
+      await request(app.getHttpServer()).get("/hr/employees").set(auth(ctx.accessToken)).expect(200)
+    ).body[0];
+
+    const prisma = getPrisma(app);
+    const foodAccount = await prisma.account.findFirstOrThrow({ where: { companyId: ctx.companyId, code: "5216" } });
+    const allowanceAccount = await prisma.account.findFirstOrThrow({ where: { companyId: ctx.companyId, code: "5215" } });
+
+    // Two pre-split leftovers: FOOD payments explicitly posted to 5215
+    const stale1 = (
+      await request(app.getHttpServer())
+        .post(`/hr/employees/${employee.id}/payments`)
+        .set(auth(ctx.accessToken))
+        .send({ category: "FOOD", amount: "200", bankCashAccountId: ctx.cashAccount.id, expenseAccountId: allowanceAccount.id })
+        .expect(201)
+    ).body;
+    const stale2 = (
+      await request(app.getHttpServer())
+        .post(`/hr/employees/${employee.id}/payments`)
+        .set(auth(ctx.accessToken))
+        .send({ category: "FOOD", amount: "150", bankCashAccountId: ctx.cashAccount.id, expenseAccountId: allowanceAccount.id })
+        .expect(201)
+    ).body;
+    // A correctly-posted Food payment (default account) — must be untouched
+    const clean = (
+      await request(app.getHttpServer())
+        .post(`/hr/employees/${employee.id}/payments`)
+        .set(auth(ctx.accessToken))
+        .send({ category: "FOOD", amount: "80", bankCashAccountId: ctx.cashAccount.id })
+        .expect(201)
+    ).body;
+
+    const worklist = (
+      await request(app.getHttpServer()).get("/hr/employee-payments/allowance").set(auth(ctx.accessToken)).expect(200)
+    ).body;
+    expect(worklist.filter((p: any) => p.category === "FOOD")).toHaveLength(2);
+    expect(worklist.some((p: any) => p.paymentId === clean.id)).toBe(false);
+
+    const result = (
+      await request(app.getHttpServer())
+        .post("/hr/employee-payments/bulk-reclassify-food")
+        .set(auth(ctx.accessToken))
+        .expect(201)
+    ).body;
+    expect(result.count).toBe(2);
+    expect(Number(result.totalAmount)).toBeCloseTo(350, 2);
+
+    // Both stale payments reversed and reposted onto 5216
+    for (const stalePayment of [stale1, stale2]) {
+      const original = await prisma.employeePayment.findUniqueOrThrow({ where: { id: stalePayment.id } });
+      expect(original.reversedAt).not.toBeNull();
+    }
+    const afterBulk = await prisma.employeePayment.findMany({
+      where: { companyId: ctx.companyId, employeeId: employee.id, category: "FOOD", reversedAt: null },
+    });
+    expect(afterBulk).toHaveLength(3); // clean (untouched) + a repost for each of the 2 stale payments
+    expect(afterBulk.every((p) => p.expenseAccountId === foodAccount.id)).toBe(true);
+    const totalOpenFood = afterBulk.reduce((sum, p) => sum + Number(p.amount), 0);
+    expect(totalOpenFood).toBeCloseTo(430, 2); // 200 + 150 + 80
+
+    // Worklist is now empty — nothing left misallocated
+    const worklistAfter = (
+      await request(app.getHttpServer()).get("/hr/employee-payments/allowance").set(auth(ctx.accessToken)).expect(200)
+    ).body;
+    expect(worklistAfter).toHaveLength(0);
+
+    // Idempotent — nothing left to reclassify
+    const secondRun = (
+      await request(app.getHttpServer())
+        .post("/hr/employee-payments/bulk-reclassify-food")
+        .set(auth(ctx.accessToken))
+        .expect(201)
+    ).body;
+    expect(secondRun.count).toBe(0);
+  });
+
   it("a receipt can be attached to a payment, replaced by re-upload, fetched back with matching bytes, and is included in payment listings", async () => {
     const ctx = await setupUserWithCompany(app);
     const { period } = await currentPeriod(ctx);

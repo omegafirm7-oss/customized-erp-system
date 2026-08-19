@@ -449,6 +449,12 @@ export class HrController {
     return this.employeePaymentsService.reclassifyAccount(companyId, paymentId, user.sub, dto.expenseAccountId);
   }
 
+  @Post("employee-payments/bulk-reclassify-food")
+  @Permissions(PERMISSIONS.HR_EMPLOYEE_MANAGE)
+  async bulkReclassifyFoodPayments(@CurrentCompanyId() companyId: string, @CurrentUser() user: JwtPayload) {
+    return this.employeePaymentsService.bulkReclassifyFoodToDefaultAccount(companyId, user.sub);
+  }
+
   @Post("employee-payments/:paymentId/receipt")
   @Permissions(PERMISSIONS.HR_EMPLOYEE_MANAGE)
   @ApiConsumes("multipart/form-data")

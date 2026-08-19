@@ -4,8 +4,9 @@ import { apiClient } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { formatAmount } from "../utils/currency";
 
-interface AllowancePayment {
+interface MisallocatedPayment {
   paymentId: string;
+  category: "ALLOWANCE" | "FOOD";
   employeeId: string;
   employeeCode: string;
   employeeName: string;
@@ -24,25 +25,34 @@ interface Account {
   isPostable: boolean;
 }
 
+interface BulkResult {
+  count: number;
+  totalAmount: string;
+}
+
 /**
- * Corrects a batch of ALLOWANCE-category payments that were really Food
- * expense, one at a time. Posted entries can't be silently edited (a DB
- * trigger blocks it, on purpose, for audit-trail integrity) — each
- * reclassify reverses the original entry and posts a new one on the
- * account you pick, identical in every other way. Administrator-only,
- * and every reclassify needs an explicit confirm before it runs.
+ * Corrects posted payments sitting on the wrong expense account — ALLOWANCE
+ * payments that were really Food, and FOOD payments still pointing at the
+ * pre-split default account. Posted entries can't be silently edited (a DB
+ * trigger blocks it, on purpose, for audit-trail integrity) — every
+ * correction reverses the original entry and posts a new one on the right
+ * account. Administrator-only; the per-row action needs an explicit
+ * confirm, and the bulk Food fix (an unambiguous mechanical correction,
+ * not a judgment call) needs one confirm for the whole batch.
  */
 export function ReclassifyAllowancePaymentsPage() {
   const { user } = useAuth();
   const isAdministrator = user?.roleName === "Administrator";
-  const [payments, setPayments] = useState<AllowancePayment[] | null>(null);
+  const [payments, setPayments] = useState<MisallocatedPayment[] | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkResult, setBulkResult] = useState<BulkResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   function load() {
-    apiClient.get<AllowancePayment[]>("/hr/employee-payments/allowance").then((res) => setPayments(res.data));
+    apiClient.get<MisallocatedPayment[]>("/hr/employee-payments/allowance").then((res) => setPayments(res.data));
   }
 
   useEffect(load, []);
@@ -50,13 +60,15 @@ export function ReclassifyAllowancePaymentsPage() {
     apiClient.get<Account[]>("/coa/accounts").then((res) => setAccounts(res.data.filter((a) => a.isPostable)));
   }, []);
 
-  async function reclassify(p: AllowancePayment) {
+  const foodRows = (payments ?? []).filter((p) => p.category === "FOOD");
+
+  async function reclassify(p: MisallocatedPayment) {
     const targetId = selectedAccount[p.paymentId];
     if (!targetId) return;
     const target = accounts.find((a) => a.id === targetId);
     if (
       !window.confirm(
-        `Reverse ${p.employeeCode} — ${p.employeeName}'s ${formatAmount(p.amount)} Allowance payment` +
+        `Reverse ${p.employeeCode} — ${p.employeeName}'s ${formatAmount(p.amount)} ${p.category === "ALLOWANCE" ? "Allowance" : "Food"} payment` +
           (p.currentAccountName ? ` on ${p.currentAccountCode} ${p.currentAccountName}` : "") +
           ` and repost the identical amount on ${target?.code} ${target?.name}? This is a visible correction (reversal + new entry), not a silent edit.`,
       )
@@ -72,6 +84,30 @@ export function ReclassifyAllowancePaymentsPage() {
       setError(err?.response?.data?.message ?? "Failed to reclassify payment");
     } finally {
       setBusyId(null);
+    }
+  }
+
+  async function bulkReclassifyFood() {
+    if (foodRows.length === 0) return;
+    const total = foodRows.reduce((sum, p) => sum + Number(p.amount), 0);
+    if (
+      !window.confirm(
+        `Reclassify all ${foodRows.length} Food payments (${formatAmount(total.toFixed(2))} total) currently sitting on the wrong account, onto the Employee Food Expense account? Each is a separate reversal + repost.`,
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    setBulkBusy(true);
+    setBulkResult(null);
+    try {
+      const res = await apiClient.post<BulkResult>("/hr/employee-payments/bulk-reclassify-food");
+      setBulkResult(res.data);
+      load();
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to bulk-reclassify Food payments");
+    } finally {
+      setBulkBusy(false);
     }
   }
 
@@ -92,16 +128,37 @@ export function ReclassifyAllowancePaymentsPage() {
       </Link>
       {error && <div className="error-banner">{error}</div>}
       <div className="intelligence-panel-header">
-        <div className="intelligence-panel-title">Reclassify Allowance payments</div>
+        <div className="intelligence-panel-title">Reclassify misallocated payments</div>
       </div>
       <p style={{ color: "#98a2b3", fontSize: 13, marginTop: -8 }}>
-        Every posted Allowance-category payment, with its current expense account. Pick a new account and confirm to correct it —
-        each row is a separate reversal + repost, so you can move some to Food and leave others as genuine allowances.
+        Allowance payments that were really Food, and Food payments still posted to the old pre-split account. Pick a
+        new account per row and confirm, or fix every misallocated Food payment in one go below.
       </p>
+
+      {foodRows.length > 0 && (
+        <div className="card" style={{ marginBottom: 4 }}>
+          <div className="form-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+            <span>
+              <strong>{foodRows.length}</strong> Food payment{foodRows.length === 1 ? "" : "s"} (
+              {formatAmount(foodRows.reduce((s, p) => s + Number(p.amount), 0).toFixed(2))}) still on the old account
+            </span>
+            <button onClick={bulkReclassifyFood} disabled={bulkBusy}>
+              {bulkBusy ? "Working…" : "Reclassify all Food payments to Employee Food Expense"}
+            </button>
+          </div>
+          {bulkResult && (
+            <p style={{ color: "#027a48", marginTop: 8 }}>
+              Reclassified {bulkResult.count} payment{bulkResult.count === 1 ? "" : "s"} — {formatAmount(bulkResult.totalAmount)} total.
+            </p>
+          )}
+        </div>
+      )}
+
       <table>
         <thead>
           <tr>
             <th>Date</th>
+            <th>Category</th>
             <th>Employee</th>
             <th>Amount</th>
             <th>Current account</th>
@@ -113,6 +170,7 @@ export function ReclassifyAllowancePaymentsPage() {
           {payments.map((p) => (
             <tr key={p.paymentId}>
               <td>{new Date(p.paymentDate).toLocaleDateString()}</td>
+              <td>{p.category === "ALLOWANCE" ? "Allowance" : "Food"}</td>
               <td>
                 <Link to={`/hr/employees/${p.employeeId}`}>
                   {p.employeeCode} — {p.employeeName}
@@ -145,8 +203,8 @@ export function ReclassifyAllowancePaymentsPage() {
           ))}
           {payments.length === 0 && (
             <tr>
-              <td colSpan={6} style={{ color: "#98a2b3" }}>
-                No posted Allowance payments
+              <td colSpan={7} style={{ color: "#98a2b3" }}>
+                No misallocated payments
               </td>
             </tr>
           )}

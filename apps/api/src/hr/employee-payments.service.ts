@@ -353,13 +353,32 @@ export class EmployeePaymentsService {
     return result;
   }
 
-  /** Every posted, non-reversed ALLOWANCE-category payment — the worklist behind the "reclassify to Food" tool. */
+  /**
+   * Every posted, non-reversed ALLOWANCE-category payment, plus every FOOD
+   * payment that isn't already sitting on the company's current Food
+   * Expense account (a leftover from before Food/Allowance were split into
+   * separate control accounts — same payment, same category, wrong GL
+   * account) — the worklist behind the "reclassify" tool.
+   */
   async allowancePayments(companyId: string) {
+    const foodAccount = await this.accountResolution.getControlAccount(
+      this.prisma,
+      companyId,
+      ControlAccountType.FOOD_EXPENSE,
+    );
     const payments = await this.prisma.employeePayment.findMany({
-      where: { companyId, category: EmployeePaymentCategory.ALLOWANCE, reversedAt: null },
+      where: {
+        companyId,
+        reversedAt: null,
+        OR: [
+          { category: EmployeePaymentCategory.ALLOWANCE },
+          { category: EmployeePaymentCategory.FOOD, expenseAccountId: { not: foodAccount.id } },
+        ],
+      },
       orderBy: { paymentDate: "desc" },
       select: {
         id: true,
+        category: true,
         amount: true,
         paymentDate: true,
         memo: true,
@@ -369,6 +388,7 @@ export class EmployeePaymentsService {
     });
     return payments.map((p) => ({
       paymentId: p.id,
+      category: p.category,
       employeeId: p.employee.id,
       employeeCode: p.employee.code,
       employeeName: p.employee.nameEn,
@@ -480,5 +500,43 @@ export class EmployeePaymentsService {
     });
 
     return result;
+  }
+
+  /**
+   * Reclassifies every FOOD payment not already on the company's current
+   * Food Expense account onto it, one reversal+repost per payment — the
+   * mechanical fix for the pre-split leftover described on
+   * allowancePayments(). Unlike a single reclassify, this one doesn't need
+   * per-transaction judgment (the target account is unambiguous: FOOD
+   * payments belong on FOOD_EXPENSE), so it's offered as one confirmed bulk
+   * action instead of 50+ individual clicks.
+   */
+  async bulkReclassifyFoodToDefaultAccount(companyId: string, userId: string) {
+    const foodAccount = await this.accountResolution.getControlAccount(
+      this.prisma,
+      companyId,
+      ControlAccountType.FOOD_EXPENSE,
+    );
+    const mismatched = await this.prisma.employeePayment.findMany({
+      where: {
+        companyId,
+        category: EmployeePaymentCategory.FOOD,
+        reversedAt: null,
+        expenseAccountId: { not: foodAccount.id },
+      },
+      select: { id: true },
+    });
+
+    const reclassified: { paymentId: string; amount: string }[] = [];
+    for (const payment of mismatched) {
+      const result = await this.reclassifyAccount(companyId, payment.id, userId, foodAccount.id);
+      reclassified.push({ paymentId: result.id, amount: result.amount.toString() });
+    }
+
+    return {
+      count: reclassified.length,
+      totalAmount: reclassified.reduce((sum, r) => sum + Number(r.amount), 0).toFixed(2),
+      reclassified,
+    };
   }
 }
