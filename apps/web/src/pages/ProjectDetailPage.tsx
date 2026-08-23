@@ -58,6 +58,13 @@ interface IntelligenceSummary {
   grandTotal: string;
 }
 
+interface MonthlyCostTrendRow {
+  month: string;
+  materialCost: string;
+  machineryCost: string;
+  laborCost: string;
+}
+
 interface FiscalPeriod {
   id: string;
   periodNumber: number;
@@ -68,6 +75,171 @@ interface FiscalPeriod {
 
 function formatMoney(value: string | number | undefined | null): string {
   return Number(value ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatCompact(n: number): string {
+  if (n >= 1000) {
+    const k = n / 1000;
+    return (k % 1 === 0 ? k.toFixed(0) : k.toFixed(1)) + "K";
+  }
+  return String(Math.round(n));
+}
+
+function formatMonthLabel(month: string): string {
+  const [y, m] = month.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: "short", year: "numeric" });
+}
+
+const TREND_SERIES = [
+  { key: "materialCost", name: "Material", color: "#2a78d6" },
+  { key: "machineryCost", name: "Machinery", color: "#eb6834" },
+  { key: "laborCost", name: "Labor", color: "#1baf7a" },
+] as const;
+
+/**
+ * Month-wise clustered columns for Material/Machinery/Labor — approved
+ * design: same color per category across every month, cost above each
+ * bar, category name below each bar, month name below the group of
+ * three. Each bar is a single incurred total (paid + pending combined),
+ * not split — matches the approved chart-approval artifact exactly.
+ */
+function MonthlyCostTrendChart({ rows }: { rows: MonthlyCostTrendRow[] }) {
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; label: string; value: string } | null>(null);
+
+  if (rows.length === 0) {
+    return <p style={{ color: "#98a2b3", fontSize: 13 }}>No Material/Machinery/Labor cost recorded yet.</p>;
+  }
+
+  const barW = 34;
+  const barGap = 34;
+  const groupGap = 58;
+  const groupW = barW * 3 + barGap * 2;
+  const padL = 50;
+  const padR = 24;
+  const padT = 40;
+  const padB = 58;
+  const plotW = rows.length * groupW + (rows.length - 1) * groupGap;
+  const H = 300;
+  const plotH = H - padT - padB;
+  const W = padL + plotW + padR;
+
+  let maxVal = 0;
+  rows.forEach((r) => {
+    maxVal = Math.max(maxVal, Number(r.materialCost), Number(r.machineryCost), Number(r.laborCost));
+  });
+  const niceMax = Math.max(25000, Math.ceil(maxVal / 25000) * 25000);
+
+  const y = (v: number) => padT + plotH - (v / niceMax) * plotH;
+  const h = (v: number) => (v / niceMax) * plotH;
+
+  const steps = 4;
+  const gridLines = Array.from({ length: steps + 1 }, (_, s) => {
+    const val = (niceMax / steps) * s;
+    return { val, gy: y(val) };
+  });
+
+  const total = rows.reduce(
+    (sum, r) => sum + Number(r.materialCost) + Number(r.machineryCost) + Number(r.laborCost),
+    0,
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+          {TREND_SERIES.map((s) => (
+            <span key={s.key} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 500, color: "#475467" }}>
+              <span style={{ width: 11, height: 11, borderRadius: 3, background: s.color, display: "inline-block" }} />
+              {s.name}
+            </span>
+          ))}
+        </div>
+        <span style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 12.5, background: "rgba(42,120,214,0.12)", color: "#2a78d6", padding: "5px 10px", borderRadius: 6 }}>
+          Total {formatMoney(total)}
+        </span>
+      </div>
+      <div style={{ overflowX: "auto", position: "relative" }}>
+        <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} style={{ display: "block", overflow: "visible" }}>
+          {gridLines.map((g, i) => (
+            <g key={i}>
+              {i % 2 === 1 && (
+                <rect x={padL} y={y((niceMax / steps) * (i + 1))} width={plotW} height={plotH / steps} fill="#e1e0d9" opacity={0.35} />
+              )}
+              <line x1={padL} y1={g.gy} x2={padL + plotW} y2={g.gy} stroke="#e1e0d9" strokeWidth={1} />
+              <text x={padL - 10} y={g.gy + 3} textAnchor="end" fontSize={10.5} fill="#898781" style={{ fontVariantNumeric: "tabular-nums" }}>
+                {formatCompact(g.val)}
+              </text>
+            </g>
+          ))}
+
+          {rows.map((r, mi) => {
+            const gx = padL + mi * (groupW + groupGap);
+            const gcx = gx + groupW / 2;
+            return (
+              <g key={r.month}>
+                {mi > 0 && (
+                  <line x1={gx - groupGap / 2} y1={padT} x2={gx - groupGap / 2} y2={padT + plotH} stroke="rgba(11,11,11,0.1)" strokeWidth={1} strokeDasharray="2 3" />
+                )}
+                {TREND_SERIES.map((s, si) => {
+                  const val = Number(r[s.key as keyof MonthlyCostTrendRow]);
+                  const x = gx + si * (barW + barGap);
+                  const yy = y(val);
+                  const hh = h(val);
+                  const rad = 4;
+                  const d = `M${x},${yy + hh} L${x},${yy + rad} Q${x},${yy} ${x + rad},${yy} L${x + barW - rad},${yy} Q${x + barW},${yy} ${x + barW},${yy + rad} L${x + barW},${yy + hh} Z`;
+                  return (
+                    <g key={s.key}>
+                      <path
+                        d={d}
+                        fill={s.color}
+                        style={{ cursor: "pointer" }}
+                        onMouseMove={(e) =>
+                          setTooltip({ x: e.clientX + 14, y: e.clientY + 14, label: `${s.name} — ${formatMonthLabel(r.month)}`, value: formatMoney(val) })
+                        }
+                        onMouseLeave={() => setTooltip(null)}
+                      />
+                      <text x={x + barW / 2} y={yy - 8} textAnchor="middle" fontSize={12.5} fontWeight={700} fill="#0b0b0b" style={{ fontVariantNumeric: "tabular-nums" }}>
+                        {formatCompact(val)}
+                      </text>
+                      <text x={x + barW / 2} y={padT + plotH + 18} textAnchor="middle" fontSize={11.5} fontWeight={600} fill="#475467">
+                        {s.name}
+                      </text>
+                    </g>
+                  );
+                })}
+                <text x={gcx} y={padT + plotH + 40} textAnchor="middle" fontSize={13} fontWeight={700} fill="#0b0b0b">
+                  {formatMonthLabel(r.month)}
+                </text>
+              </g>
+            );
+          })}
+
+          <line x1={padL} y1={padT + plotH} x2={padL + plotW} y2={padT + plotH} stroke="#c3c2b7" strokeWidth={1} />
+        </svg>
+      </div>
+      {tooltip && (
+        <div
+          style={{
+            position: "fixed",
+            left: tooltip.x,
+            top: tooltip.y,
+            pointerEvents: "none",
+            background: "#101828",
+            color: "#fff",
+            fontSize: 12,
+            lineHeight: 1.5,
+            padding: "8px 11px",
+            borderRadius: 6,
+            boxShadow: "0 4px 16px rgba(16,24,40,0.24)",
+            zIndex: 50,
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 3 }}>{tooltip.label}</div>
+          <div style={{ fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{tooltip.value}</div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 const NEXT_STATUS: Record<string, string[]> = {
@@ -88,20 +260,23 @@ export function ProjectDetailPage() {
   const [taskForm, setTaskForm] = useState({ code: "", name: "", parentTaskId: "", costBudget: "" });
   const [estimates, setEstimates] = useState({ code: "", name: "", contractValue: "", estimatedTotalCost: "" });
   const [intelligence, setIntelligence] = useState<IntelligenceSummary | null>(null);
+  const [monthlyTrend, setMonthlyTrend] = useState<MonthlyCostTrendRow[] | null>(null);
   const [costCenterForm, setCostCenterForm] = useState({ code: "", name: "" });
   const [phaseForm, setPhaseForm] = useState({ startDate: "", currentPhase: "", natureOfWork: "" });
   const { user } = useAuth();
   const isAdministrator = user?.roleName === "Administrator";
 
   const load = useCallback(async () => {
-    const [projectRes, periodsRes, intelligenceRes] = await Promise.all([
+    const [projectRes, periodsRes, intelligenceRes, trendRes] = await Promise.all([
       apiClient.get<ProjectDetail>(`/projects/${id}`),
       apiClient.get<FiscalPeriod[]>("/companies/current/fiscal-periods"),
       apiClient.get<IntelligenceSummary>(`/projects/${id}/intelligence`),
+      apiClient.get<{ rows: MonthlyCostTrendRow[] }>(`/projects/${id}/monthly-cost-trend`),
     ]);
     setProject(projectRes.data);
     setPeriods(periodsRes.data);
     setIntelligence(intelligenceRes.data);
+    setMonthlyTrend(trendRes.data.rows);
     setEstimates({
       code: projectRes.data.code,
       name: projectRes.data.name,
@@ -464,6 +639,11 @@ export function ProjectDetailPage() {
                 </Link>
               ));
             })()}
+          </div>
+
+          <div className="pi-chart-card">
+            <h3>Monthly cost — Material, Machinery, Labor</h3>
+            {monthlyTrend ? <MonthlyCostTrendChart rows={monthlyTrend} /> : <p style={{ color: "#98a2b3", fontSize: 13 }}>Loading…</p>}
           </div>
 
           <div className="pi-tables-grid">

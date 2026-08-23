@@ -1014,5 +1014,54 @@ describe("Projects — full job accounting (e2e)", () => {
       expect(Number(report.body.totals.laborCost)).toBeCloseTo(200, 2);
       expect(Number(report.body.totals.totalCost)).toBeCloseTo(730, 2);
     });
+
+    it("monthly-cost-trend buckets a single project's Material/Machinery/Labor by month, combining paid+pending into one incurred total per bar", async () => {
+      const ctx = await setupProjectContext();
+      const project = await createOverTimeProject(ctx);
+
+      // Two months of Material/Machinery invoices
+      await postDraftInvoice(ctx, project.id, "5104", "300", "2026-05-10T00:00:00.000Z");
+      const fuelMay = await postDraftInvoice(ctx, project.id, "5103", "150", "2026-05-12T00:00:00.000Z");
+      await request(app.getHttpServer())
+        .post(`/ap/invoices/${fuelMay.id}/post`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(201);
+      await postDraftInvoice(ctx, project.id, "5104", "500", "2026-06-05T00:00:00.000Z");
+
+      // Labor: one employee, worked hours in May only (basicSalary 2600 -> hourlyRate 10)
+      const employee = await request(app.getHttpServer())
+        .post("/hr/employees")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({
+          code: "MCT",
+          nameEn: "Trend Worker",
+          joinDate: "2026-05-01",
+          basicSalary: "2600",
+          costCenterId: project.costCenter.id,
+        })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post("/hr/employee-timesheet/entry")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ employeeId: employee.body.id, date: "2026-05-15", dayType: "WORKED", hoursWorked: "20" })
+        .expect(201);
+
+      const trend = await request(app.getHttpServer())
+        .get(`/projects/${project.id}/monthly-cost-trend`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+
+      expect(trend.body.rows).toHaveLength(2); // April (no activity) never appears
+      const may = trend.body.rows.find((r: any) => r.month === "2026-05");
+      const june = trend.body.rows.find((r: any) => r.month === "2026-06");
+
+      expect(may.materialCost).toBe("300.00");
+      expect(may.machineryCost).toBe("150.00");
+      expect(Number(may.laborCost)).toBeCloseTo(200, 2); // 10/hr * 20h, DRAFT+POSTED both counted (one incurred total, not split)
+
+      expect(june.materialCost).toBe("500.00");
+      expect(june.machineryCost).toBe("0.00");
+      expect(june.laborCost).toBe("0.00"); // no hours logged in June
+    });
   });
 });

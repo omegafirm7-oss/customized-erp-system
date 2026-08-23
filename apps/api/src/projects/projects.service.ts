@@ -291,6 +291,84 @@ export class ProjectsService {
     };
   }
 
+  /**
+   * Month-by-month Material/Machinery/Labor for a single project — feeds
+   * the clustered-column trend chart under "Cost by category" on the
+   * Project Intelligence page. Each bar is one combined incurred total
+   * (paid + not-yet-paid together), not split into paid/pending — a
+   * deliberately simpler figure than getProjectIntelligence's own
+   * lifetime-to-date Machinery/Labor totals (no accrued-but-unbilled
+   * equipment usage here, same scope note as monthlyCostReport above).
+   * Trailing 12 months with any activity, oldest first.
+   */
+  async monthlyCostTrend(companyId: string, projectId: string) {
+    const project = await this.getOwned(companyId, projectId);
+
+    type MatRow = { month: string; costCategory: "MATERIAL" | "MACHINERY"; amount: Prisma.Decimal };
+    const materialMachineryRows = await this.prisma.$queryRaw<MatRow[]>`
+      SELECT to_char(pi."postingDate", 'YYYY-MM') AS "month", a."costCategory" AS "costCategory", SUM(pil."grossAmount") AS "amount"
+      FROM "purchase_invoice_lines" pil
+      JOIN "purchase_invoices" pi ON pi."id" = pil."purchaseInvoiceId"
+      JOIN "accounts" a ON a."id" = pil."expenseAccountId"
+      WHERE pil."projectId" = ${projectId} AND pi."companyId" = ${companyId} AND pi."status" != 'CANCELLED'
+        AND a."costCategory" IN ('MATERIAL', 'MACHINERY')
+      GROUP BY 1, 2
+    `;
+
+    const HOURLY_DIVISOR = new Prisma.Decimal(260);
+    const employees = project.costCenterId
+      ? await this.prisma.employee.findMany({
+          where: { companyId, costCenterId: project.costCenterId },
+          select: {
+            basicSalary: true,
+            otherAllowance: true,
+            employeeTimesheetEntries: { select: { date: true, hoursWorked: true } },
+          },
+        })
+      : [];
+
+    const laborByMonth = new Map<string, Prisma.Decimal>();
+    for (const e of employees) {
+      const hourlyRate = e.basicSalary.div(HOURLY_DIVISOR).toDecimalPlaces(4);
+      const hoursByMonth = new Map<string, Prisma.Decimal>();
+      for (const t of e.employeeTimesheetEntries) {
+        if (t.hoursWorked.lte(0)) continue;
+        const m = t.date.toISOString().slice(0, 7);
+        hoursByMonth.set(m, (hoursByMonth.get(m) ?? new Prisma.Decimal(0)).add(t.hoursWorked));
+      }
+      for (const [m, hours] of hoursByMonth) {
+        const cost = hourlyRate.mul(hours).toDecimalPlaces(2).add(e.otherAllowance);
+        laborByMonth.set(m, (laborByMonth.get(m) ?? new Prisma.Decimal(0)).add(cost));
+      }
+    }
+
+    const months = new Set<string>();
+    materialMachineryRows.forEach((r) => months.add(r.month));
+    laborByMonth.forEach((_, m) => months.add(m));
+
+    const rows = [...months]
+      .sort()
+      .map((month) => {
+        const material =
+          materialMachineryRows.find((r) => r.month === month && r.costCategory === "MATERIAL")?.amount ??
+          new Prisma.Decimal(0);
+        const machinery =
+          materialMachineryRows.find((r) => r.month === month && r.costCategory === "MACHINERY")?.amount ??
+          new Prisma.Decimal(0);
+        const labor = laborByMonth.get(month) ?? new Prisma.Decimal(0);
+        return {
+          month,
+          materialCost: new Prisma.Decimal(material).toFixed(2),
+          machineryCost: new Prisma.Decimal(machinery).toFixed(2),
+          laborCost: labor.toFixed(2),
+        };
+      })
+      .filter((r) => Number(r.materialCost) + Number(r.machineryCost) + Number(r.laborCost) !== 0)
+      .slice(-12);
+
+    return { rows };
+  }
+
   async get(companyId: string, projectId: string) {
     const project = await this.prisma.project.findFirst({
       where: { id: projectId, companyId },
