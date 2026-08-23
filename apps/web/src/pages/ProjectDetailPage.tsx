@@ -116,10 +116,10 @@ function MonthlyCostTrendChart({ rows }: { rows: MonthlyCostTrendRow[] }) {
   const groupW = barW * 3 + barGap * 2;
   const padL = 50;
   const padR = 24;
-  const padT = 40;
+  const padT = 66;
   const padB = 58;
   const plotW = rows.length * groupW + (rows.length - 1) * groupGap;
-  const H = 300;
+  const H = 400;
   const plotH = H - padT - padB;
   const W = padL + plotW + padR;
 
@@ -175,11 +175,18 @@ function MonthlyCostTrendChart({ rows }: { rows: MonthlyCostTrendRow[] }) {
           {rows.map((r, mi) => {
             const gx = padL + mi * (groupW + groupGap);
             const gcx = gx + groupW / 2;
+            const monthTotal = Number(r.materialCost) + Number(r.machineryCost) + Number(r.laborCost);
+            const totalText = `SAR ${formatCompact(monthTotal)}`;
+            const badgeW = Math.max(64, totalText.length * 7.4 + 20);
             return (
               <g key={r.month}>
                 {mi > 0 && (
                   <line x1={gx - groupGap / 2} y1={padT} x2={gx - groupGap / 2} y2={padT + plotH} stroke="rgba(11,11,11,0.1)" strokeWidth={1} strokeDasharray="2 3" />
                 )}
+                <rect x={gcx - badgeW / 2} y={padT - 40} width={badgeW} height={22} rx={6} fill="#fcfcfb" stroke="rgba(11,11,11,0.1)" strokeWidth={1} />
+                <text x={gcx} y={padT - 25} textAnchor="middle" fontSize={13} fontWeight={800} fill="#2a78d6" style={{ fontVariantNumeric: "tabular-nums" }}>
+                  {totalText}
+                </text>
                 {TREND_SERIES.map((s, si) => {
                   const val = Number(r[s.key as keyof MonthlyCostTrendRow]);
                   const x = gx + si * (barW + barGap);
