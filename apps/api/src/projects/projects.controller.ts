@@ -71,6 +71,17 @@ export class ProjectsController {
     return this.projectsService.monthlyCostTrend(companyId, id);
   }
 
+  @Get("projects/:id/monthly-cost-trend/:month/:category")
+  @Permissions(PERMISSIONS.PROJECT_VIEW)
+  async getMonthlyCostTrendDetail(
+    @CurrentCompanyId() companyId: string,
+    @Param("id") id: string,
+    @Param("month") month: string,
+    @Param("category") category: string,
+  ) {
+    return this.projectsService.monthlyCostTrendDetail(companyId, id, month, category);
+  }
+
   @Get("projects/:id/costs/accounts/:accountId/invoice-lines")
   @Permissions(PERMISSIONS.PROJECT_VIEW)
   async getAccountInvoiceLines(

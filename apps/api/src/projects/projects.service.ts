@@ -369,6 +369,103 @@ export class ProjectsService {
     return { rows };
   }
 
+  /**
+   * Drill-down behind clicking a single bar on the monthly trend chart —
+   * exactly the transactions (Material/Machinery) or per-employee accrual
+   * (Labor) that make up that one month's total for that one category, so
+   * the number on the chart is never a dead end.
+   */
+  async monthlyCostTrendDetail(companyId: string, projectId: string, month: string, category: string) {
+    const normalizedCategory = category.toUpperCase();
+    if (!["MATERIAL", "MACHINERY", "LABOR"].includes(normalizedCategory)) {
+      throw new BadRequestException("category must be MATERIAL, MACHINERY, or LABOR");
+    }
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      throw new BadRequestException("month must be in YYYY-MM format");
+    }
+    const project = await this.getOwned(companyId, projectId);
+
+    if (normalizedCategory === "LABOR") {
+      const HOURLY_DIVISOR = new Prisma.Decimal(260);
+      const monthStart = new Date(`${month}-01T00:00:00.000Z`);
+      const monthEnd = new Date(monthStart);
+      monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1);
+
+      const employees = project.costCenterId
+        ? await this.prisma.employee.findMany({
+            where: { companyId, costCenterId: project.costCenterId },
+            select: {
+              id: true,
+              code: true,
+              nameEn: true,
+              basicSalary: true,
+              otherAllowance: true,
+              employeeTimesheetEntries: {
+                where: { date: { gte: monthStart, lt: monthEnd } },
+                select: { hoursWorked: true },
+              },
+            },
+          })
+        : [];
+
+      const rows = employees
+        .map((e) => {
+          const hourlyRate = e.basicSalary.div(HOURLY_DIVISOR).toDecimalPlaces(4);
+          const hoursWorked = e.employeeTimesheetEntries.reduce((sum, t) => sum.add(t.hoursWorked), new Prisma.Decimal(0));
+          const workedAnyDay = e.employeeTimesheetEntries.some((t) => t.hoursWorked.gt(0));
+          const salaryCost = hourlyRate.mul(hoursWorked).toDecimalPlaces(2);
+          const foodCost = workedAnyDay ? e.otherAllowance : new Prisma.Decimal(0);
+          return {
+            employeeId: e.id,
+            employeeCode: e.code,
+            employeeName: e.nameEn,
+            hoursWorked: hoursWorked.toFixed(2),
+            hourlyRate: hourlyRate.toFixed(4),
+            salaryCost: salaryCost.toFixed(2),
+            foodCost: foodCost.toFixed(2),
+            totalCost: salaryCost.add(foodCost).toFixed(2),
+          };
+        })
+        .filter((r) => Number(r.totalCost) > 0)
+        .sort((a, b) => Number(b.totalCost) - Number(a.totalCost));
+
+      return { month, category: normalizedCategory, rows };
+    }
+
+    type InvoiceLineRow = {
+      lineId: string;
+      invoiceId: string;
+      invoiceNumber: string | null;
+      vendorInvoiceNumber: string;
+      partnerName: string;
+      postingDate: Date;
+      description: string;
+      netAmount: Prisma.Decimal;
+      vatAmount: Prisma.Decimal;
+      grossAmount: Prisma.Decimal;
+      status: string;
+      accountCode: string;
+      accountName: string;
+      attachmentFilename: string | null;
+    };
+    const rows = await this.prisma.$queryRaw<InvoiceLineRow[]>`
+      SELECT pil."id" AS "lineId", pi."id" AS "invoiceId", pi."invoiceNumber", pi."vendorInvoiceNumber", bp."name" AS "partnerName",
+             pi."postingDate", pil."description", pil."netAmount", pil."vatAmount", pil."grossAmount", pi."status",
+             a."code" AS "accountCode", a."name" AS "accountName", pila."filename" AS "attachmentFilename"
+      FROM "purchase_invoice_lines" pil
+      JOIN "purchase_invoices" pi ON pi."id" = pil."purchaseInvoiceId"
+      JOIN "business_partners" bp ON bp."id" = pi."businessPartnerId"
+      JOIN "accounts" a ON a."id" = pil."expenseAccountId"
+      LEFT JOIN "purchase_invoice_line_attachments" pila ON pila."purchaseInvoiceLineId" = pil."id"
+      WHERE pil."projectId" = ${projectId} AND pi."companyId" = ${companyId} AND pi."status" != 'CANCELLED'
+        AND a."costCategory"::text = ${normalizedCategory}
+        AND to_char(pi."postingDate", 'YYYY-MM') = ${month}
+      ORDER BY pi."postingDate" DESC
+    `;
+
+    return { month, category: normalizedCategory, rows };
+  }
+
   async get(companyId: string, projectId: string) {
     const project = await this.prisma.project.findFirst({
       where: { id: projectId, companyId },

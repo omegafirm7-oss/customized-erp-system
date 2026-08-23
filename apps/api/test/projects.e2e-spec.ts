@@ -1062,6 +1062,44 @@ describe("Projects — full job accounting (e2e)", () => {
       expect(june.materialCost).toBe("500.00");
       expect(june.machineryCost).toBe("0.00");
       expect(june.laborCost).toBe("0.00"); // no hours logged in June
+
+      // Drill-down: clicking a bar lists exactly the transactions behind it
+      const mayMaterial = await request(app.getHttpServer())
+        .get(`/projects/${project.id}/monthly-cost-trend/2026-05/material`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+      expect(mayMaterial.body.rows).toHaveLength(1);
+      expect(mayMaterial.body.rows[0].grossAmount).toBe("300");
+      expect(mayMaterial.body.rows[0].accountCode).toBe("5104");
+
+      const mayMachinery = await request(app.getHttpServer())
+        .get(`/projects/${project.id}/monthly-cost-trend/2026-05/machinery`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+      expect(mayMachinery.body.rows).toHaveLength(1);
+      expect(mayMachinery.body.rows[0].grossAmount).toBe("150");
+
+      const mayLabor = await request(app.getHttpServer())
+        .get(`/projects/${project.id}/monthly-cost-trend/2026-05/labor`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+      expect(mayLabor.body.rows).toHaveLength(1);
+      expect(mayLabor.body.rows[0].employeeCode).toBe("MCT");
+      expect(mayLabor.body.rows[0].hoursWorked).toBe("20.00");
+      expect(mayLabor.body.rows[0].totalCost).toBe("200.00");
+
+      // A month/category combination with nothing in it returns an empty list, not an error
+      const juneMachinery = await request(app.getHttpServer())
+        .get(`/projects/${project.id}/monthly-cost-trend/2026-06/machinery`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+      expect(juneMachinery.body.rows).toHaveLength(0);
+
+      // Invalid category is rejected
+      await request(app.getHttpServer())
+        .get(`/projects/${project.id}/monthly-cost-trend/2026-05/other`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(400);
     });
   });
 });

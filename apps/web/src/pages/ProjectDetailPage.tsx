@@ -91,9 +91,9 @@ function formatMonthLabel(month: string): string {
 }
 
 const TREND_SERIES = [
-  { key: "materialCost", name: "Material", color: "#2a78d6" },
-  { key: "machineryCost", name: "Machinery", color: "#eb6834" },
-  { key: "laborCost", name: "Labor", color: "#1baf7a" },
+  { key: "materialCost", category: "material", name: "Material", color: "#2a78d6" },
+  { key: "machineryCost", category: "machinery", name: "Machinery", color: "#eb6834" },
+  { key: "laborCost", category: "labor", name: "Labor", color: "#1baf7a" },
 ] as const;
 
 /**
@@ -103,7 +103,8 @@ const TREND_SERIES = [
  * three. Each bar is a single incurred total (paid + pending combined),
  * not split — matches the approved chart-approval artifact exactly.
  */
-function MonthlyCostTrendChart({ rows }: { rows: MonthlyCostTrendRow[] }) {
+function MonthlyCostTrendChart({ projectId, rows }: { projectId: string; rows: MonthlyCostTrendRow[] }) {
+  const navigate = useNavigate();
   const [tooltip, setTooltip] = useState<{ x: number; y: number; label: string; value: string } | null>(null);
 
   if (rows.length === 0) {
@@ -204,6 +205,7 @@ function MonthlyCostTrendChart({ rows }: { rows: MonthlyCostTrendRow[] }) {
                           setTooltip({ x: e.clientX + 14, y: e.clientY + 14, label: `${s.name} — ${formatMonthLabel(r.month)}`, value: formatMoney(val) })
                         }
                         onMouseLeave={() => setTooltip(null)}
+                        onClick={() => navigate(`/projects/${projectId}/monthly-cost-trend/${r.month}/${s.category}`)}
                       />
                       <text x={x + barW / 2} y={yy - 8} textAnchor="middle" fontSize={12.5} fontWeight={700} fill="#0b0b0b" style={{ fontVariantNumeric: "tabular-nums" }}>
                         {formatCompact(val)}
@@ -650,7 +652,11 @@ export function ProjectDetailPage() {
 
           <div className="pi-chart-card">
             <h3>Monthly cost — Material, Machinery, Labor</h3>
-            {monthlyTrend ? <MonthlyCostTrendChart rows={monthlyTrend} /> : <p style={{ color: "#98a2b3", fontSize: 13 }}>Loading…</p>}
+            {monthlyTrend && id ? (
+              <MonthlyCostTrendChart projectId={id} rows={monthlyTrend} />
+            ) : (
+              <p style={{ color: "#98a2b3", fontSize: 13 }}>Loading…</p>
+            )}
           </div>
 
           <div className="pi-tables-grid">
