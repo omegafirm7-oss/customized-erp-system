@@ -183,6 +183,114 @@ export class ProjectsService {
     });
   }
 
+  /**
+   * Cross-project cost report for a date range (typically one calendar
+   * month) — Material/Machinery from posted purchase invoices dated in the
+   * range, Labor from timesheet-accrued wages plus one month of food per
+   * employee who logged any hours in the range. Same accrual math as
+   * getProjectIntelligence's single-project view, scoped by date and
+   * across every project in one pass. Deliberately simpler than
+   * getProjectIntelligence's Machinery figure: this counts invoiced
+   * equipment cost only, not accrued-but-not-yet-billed internal/hired
+   * equipment usage — the fuller picture stays on the per-project page.
+   */
+  async monthlyCostReport(companyId: string, fromDate: string, toDate: string) {
+    const start = new Date(`${fromDate}T00:00:00.000Z`);
+    const end = new Date(`${toDate}T23:59:59.999Z`);
+
+    const projects = await this.prisma.project.findMany({
+      where: { companyId },
+      select: { id: true, code: true, name: true, costCenterId: true },
+      orderBy: { code: "asc" },
+    });
+
+    type MatRow = { projectId: string; costCategory: "MATERIAL" | "MACHINERY"; amount: Prisma.Decimal };
+    const materialMachineryRows = await this.prisma.$queryRaw<MatRow[]>`
+      SELECT pil."projectId" AS "projectId", a."costCategory" AS "costCategory", SUM(pil."grossAmount") AS "amount"
+      FROM "purchase_invoice_lines" pil
+      JOIN "purchase_invoices" pi ON pi."id" = pil."purchaseInvoiceId"
+      JOIN "accounts" a ON a."id" = pil."expenseAccountId"
+      WHERE pil."projectId" IS NOT NULL AND pi."companyId" = ${companyId} AND pi."status" != 'CANCELLED'
+        AND pi."postingDate" >= ${start} AND pi."postingDate" <= ${end}
+        AND a."costCategory" IN ('MATERIAL', 'MACHINERY')
+      GROUP BY pil."projectId", a."costCategory"
+    `;
+
+    const HOURLY_DIVISOR = new Prisma.Decimal(260);
+    const costCenterIds = [...new Set(projects.map((p) => p.costCenterId).filter((x): x is string => !!x))];
+    const employees = costCenterIds.length
+      ? await this.prisma.employee.findMany({
+          where: { companyId, costCenterId: { in: costCenterIds } },
+          select: {
+            costCenterId: true,
+            basicSalary: true,
+            otherAllowance: true,
+            employeeTimesheetEntries: { where: { date: { gte: start, lte: end } }, select: { hoursWorked: true } },
+          },
+        })
+      : [];
+
+    const laborByCostCenter = new Map<string, Prisma.Decimal>();
+    for (const e of employees) {
+      if (!e.costCenterId || e.employeeTimesheetEntries.length === 0) continue;
+      const hourlyRate = e.basicSalary.div(HOURLY_DIVISOR).toDecimalPlaces(4);
+      const workedHours = e.employeeTimesheetEntries.reduce((sum, t) => sum.add(t.hoursWorked), new Prisma.Decimal(0));
+      const workedAnyDay = e.employeeTimesheetEntries.some((t) => t.hoursWorked.gt(0));
+      const cost = hourlyRate
+        .mul(workedHours)
+        .toDecimalPlaces(2)
+        .add(workedAnyDay ? e.otherAllowance : new Prisma.Decimal(0));
+      laborByCostCenter.set(e.costCenterId, (laborByCostCenter.get(e.costCenterId) ?? new Prisma.Decimal(0)).add(cost));
+    }
+
+    const rows = projects.map((p) => {
+      const material =
+        materialMachineryRows.find((r) => r.projectId === p.id && r.costCategory === "MATERIAL")?.amount ??
+        new Prisma.Decimal(0);
+      const machinery =
+        materialMachineryRows.find((r) => r.projectId === p.id && r.costCategory === "MACHINERY")?.amount ??
+        new Prisma.Decimal(0);
+      const labor = p.costCenterId ? laborByCostCenter.get(p.costCenterId) ?? new Prisma.Decimal(0) : new Prisma.Decimal(0);
+      const total = new Prisma.Decimal(material).add(machinery).add(labor);
+      return {
+        projectId: p.id,
+        code: p.code,
+        name: p.name,
+        materialCost: new Prisma.Decimal(material).toFixed(2),
+        machineryCost: new Prisma.Decimal(machinery).toFixed(2),
+        laborCost: labor.toFixed(2),
+        totalCost: total.toFixed(2),
+      };
+    });
+
+    const totals = rows.reduce(
+      (acc, r) => ({
+        materialCost: acc.materialCost.add(r.materialCost),
+        machineryCost: acc.machineryCost.add(r.machineryCost),
+        laborCost: acc.laborCost.add(r.laborCost),
+        totalCost: acc.totalCost.add(r.totalCost),
+      }),
+      {
+        materialCost: new Prisma.Decimal(0),
+        machineryCost: new Prisma.Decimal(0),
+        laborCost: new Prisma.Decimal(0),
+        totalCost: new Prisma.Decimal(0),
+      },
+    );
+
+    return {
+      fromDate,
+      toDate,
+      rows: rows.filter((r) => Number(r.totalCost) !== 0),
+      totals: {
+        materialCost: totals.materialCost.toFixed(2),
+        machineryCost: totals.machineryCost.toFixed(2),
+        laborCost: totals.laborCost.toFixed(2),
+        totalCost: totals.totalCost.toFixed(2),
+      },
+    };
+  }
+
   async get(companyId: string, projectId: string) {
     const project = await this.prisma.project.findFirst({
       where: { id: projectId, companyId },

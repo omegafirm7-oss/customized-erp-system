@@ -37,6 +37,16 @@ export class ProjectsController {
     return this.projectsService.list(companyId, status);
   }
 
+  @Get("projects/monthly-cost-report")
+  @Permissions(PERMISSIONS.PROJECT_VIEW)
+  async monthlyCostReport(
+    @CurrentCompanyId() companyId: string,
+    @Query("fromDate") fromDate: string,
+    @Query("toDate") toDate: string,
+  ) {
+    return this.projectsService.monthlyCostReport(companyId, fromDate, toDate);
+  }
+
   @Get("projects/:id")
   @Permissions(PERMISSIONS.PROJECT_VIEW)
   async get(@CurrentCompanyId() companyId: string, @Param("id") id: string) {

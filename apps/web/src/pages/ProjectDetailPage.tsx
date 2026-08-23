@@ -314,11 +314,6 @@ export function ProjectDetailPage() {
             <span className={`badge ${project.status === "ACTIVE" ? "posted" : project.status === "CLOSED" ? "reversed" : "draft"}`}>
               {project.status}
             </span>{" "}
-            <Link to={`/projects/${id}/equipment-timesheet`}>
-              <button type="button" className="secondary">
-                Equipment Timesheet
-              </button>
-            </Link>{" "}
             {NEXT_STATUS[project.status]?.map((s) => (
               <button key={s} className="secondary" disabled={busy} onClick={() => transition(s)}>
                 → {s}

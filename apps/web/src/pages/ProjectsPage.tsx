@@ -87,7 +87,14 @@ export function ProjectsPage() {
   return (
     <div>
       <div className="card">
-        <h2>Projects</h2>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h2>Projects</h2>
+          <Link to="/projects/monthly-cost-report">
+            <button type="button" className="secondary">
+              Monthly cost report
+            </button>
+          </Link>
+        </div>
         {loading ? (
           <p>Loading…</p>
         ) : (

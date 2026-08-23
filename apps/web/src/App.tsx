@@ -49,6 +49,7 @@ import { StockTransferPage } from "./pages/StockTransferPage";
 import { StockAdjustmentPage } from "./pages/StockAdjustmentPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { ProjectDetailPage } from "./pages/ProjectDetailPage";
+import { ProjectMonthlyCostReportPage } from "./pages/ProjectMonthlyCostReportPage";
 import { ProjectEquipmentTimesheetPage } from "./pages/ProjectEquipmentTimesheetPage";
 import { ProjectCostCategoryPage } from "./pages/ProjectCostCategoryPage";
 import { ProjectCostAccountDetailPage } from "./pages/ProjectCostAccountDetailPage";
@@ -143,6 +144,7 @@ const companyRoutes: Array<{ path: string; element: JSX.Element }> = [
   { path: "/inventory/transfers", element: <StockTransferPage /> },
   { path: "/inventory/adjustments", element: <StockAdjustmentPage /> },
   { path: "/projects", element: <ProjectsPage /> },
+  { path: "/projects/monthly-cost-report", element: <ProjectMonthlyCostReportPage /> },
   { path: "/projects/:id", element: <ProjectDetailPage /> },
   { path: "/projects/:id/equipment-timesheet", element: <ProjectEquipmentTimesheetPage /> },
   { path: "/projects/:id/costs/labor", element: <ProjectLaborDetailPage /> },

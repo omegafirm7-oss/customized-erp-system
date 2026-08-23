@@ -903,4 +903,116 @@ describe("Projects — full job accounting (e2e)", () => {
       expect(badOverride.body.message).toContain("not an expense account");
     });
   });
+
+  describe("Monthly cost report", () => {
+    async function postDraftInvoice(ctx: any, projectId: string, accountCode: string, gross: string, dateIso: string) {
+      const draft = await request(app.getHttpServer())
+        .post("/ap/invoices")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({
+          businessPartnerId: ctx.vendor.id,
+          vendorInvoiceNumber: `VND-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          postingDate: dateIso,
+          dueDate: dateIso,
+          lines: [
+            {
+              description: "Expense",
+              quantity: "1",
+              unitPrice: gross,
+              vatCategory: "ZERO_RATED",
+              accountId: ctx.accountByCode(accountCode).id,
+              projectId,
+            },
+          ],
+        })
+        .expect(201);
+      return draft.body;
+    }
+
+    it("groups Material/Machinery/Labor cost by project for a date range, excludes costs outside it, and omits zero-cost projects", async () => {
+      const ctx = await setupProjectContext();
+      const projectA = await createOverTimeProject(ctx);
+      const projectB = await request(app.getHttpServer())
+        .post("/projects")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ code: "JOB-2", name: "Villa Fit-out", recognitionMethod: "POINT_IN_TIME" })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post(`/projects/${projectB.body.id}/status`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ status: "ACTIVE" })
+        .expect(201);
+      // A third project never gets any cost — must not appear in the report at all
+      await request(app.getHttpServer())
+        .post("/projects")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ code: "JOB-3", name: "Untouched", recognitionMethod: "POINT_IN_TIME" })
+        .expect(201);
+
+      const inRange = "2026-05-15T00:00:00.000Z";
+      const outOfRange = "2026-06-15T00:00:00.000Z";
+
+      // Project A: 300 Material (5104) + 150 Machinery (5103) in May
+      await postDraftInvoice(ctx, projectA.id, "5104", "300", inRange);
+      const fuel = await postDraftInvoice(ctx, projectA.id, "5103", "150", inRange);
+      await request(app.getHttpServer())
+        .post(`/ap/invoices/${fuel.id}/post`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(201);
+      // Same project, but June — must not count in the May report
+      await postDraftInvoice(ctx, projectA.id, "5104", "999", outOfRange);
+
+      // Project B: 80 Material in May, on its own project/cost center
+      await postDraftInvoice(ctx, projectB.body.id, "5104", "80", inRange);
+
+      // Labor for project A: one employee on its cost center, 20 hours worked in May at basicSalary 2600 (hourlyRate 10)
+      const employee = await request(app.getHttpServer())
+        .post("/hr/employees")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({
+          code: "MCR1",
+          nameEn: "Report Worker",
+          joinDate: "2026-01-01",
+          basicSalary: "2600",
+          costCenterId: projectA.costCenter.id,
+        })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post("/hr/employee-timesheet/entry")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ employeeId: employee.body.id, date: "2026-05-10", dayType: "WORKED", hoursWorked: "20" })
+        .expect(201);
+      // Worked day outside the range — must not count
+      await request(app.getHttpServer())
+        .post("/hr/employee-timesheet/entry")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({ employeeId: employee.body.id, date: "2026-06-10", dayType: "WORKED", hoursWorked: "20" })
+        .expect(201);
+
+      const report = await request(app.getHttpServer())
+        .get("/projects/monthly-cost-report")
+        .query({ fromDate: "2026-05-01", toDate: "2026-05-31" })
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+
+      expect(report.body.rows).toHaveLength(2); // JOB-3 (untouched) is omitted
+      expect(report.body.rows.some((r: any) => r.code === "JOB-3")).toBe(false);
+
+      const rowA = report.body.rows.find((r: any) => r.code === "JOB-1");
+      expect(rowA.materialCost).toBe("300.00");
+      expect(rowA.machineryCost).toBe("150.00");
+      expect(Number(rowA.laborCost)).toBeCloseTo(200, 2); // 10/hr * 20h
+      expect(Number(rowA.totalCost)).toBeCloseTo(650, 2);
+
+      const rowB = report.body.rows.find((r: any) => r.code === "JOB-2");
+      expect(rowB.materialCost).toBe("80.00");
+      expect(rowB.machineryCost).toBe("0.00");
+      expect(rowB.laborCost).toBe("0.00");
+
+      expect(Number(report.body.totals.materialCost)).toBeCloseTo(380, 2);
+      expect(Number(report.body.totals.machineryCost)).toBeCloseTo(150, 2);
+      expect(Number(report.body.totals.laborCost)).toBeCloseTo(200, 2);
+      expect(Number(report.body.totals.totalCost)).toBeCloseTo(730, 2);
+    });
+  });
 });
