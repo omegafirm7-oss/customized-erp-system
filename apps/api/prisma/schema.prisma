@@ -401,8 +401,17 @@ model RefreshToken {
   // outright rather than silently renewed, independent of the frontend's
   // own countdown UI (see auth.service.ts).
   lastActivityAt  DateTime  @default(now())
+  // Stable across every rotation descended from one original login/switch —
+  // set once at issuance and carried forward on each refresh() rotation
+  // (see issueTokens/refresh in auth.service.ts). Lets reuse-detection scope
+  // its revocation to just this lineage (one device/tab's session chain)
+  // instead of every session the user has anywhere: a stale token replayed
+  // by one device must not be able to log out a completely different,
+  // perfectly healthy device's session just because it's the same user.
+  familyId        String    @default(uuid())
 
   @@index([userId])
+  @@index([familyId])
   @@map("refresh_tokens")
 }
 

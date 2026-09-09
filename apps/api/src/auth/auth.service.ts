@@ -18,6 +18,13 @@ import { AppConfig } from "../core/config/configuration";
 // server-side regardless of whether the client-side timer actually fired.
 const IDLE_SESSION_TOTAL_MS = IDLE_TIMEOUT_MS + IDLE_WARNING_MS;
 
+// A rotated token re-presented within this long of its own rotation is far
+// more likely to be a benign race — two tabs/devices on the same login
+// both refreshing around the same moment — than an attacker replaying a
+// stolen token; a real thief's replay shows up much later than this. See
+// the reuse-detection branch in refresh() for how this is used.
+const REUSE_GRACE_MS = 15 * 1000;
+
 export interface IssuedTokens {
   accessToken: string;
   expiresIn: number;
@@ -124,16 +131,37 @@ export class AuthService {
     }
 
     if (existing.revokedAt) {
-      // Reuse of an already-rotated/revoked token is a compromise signal —
-      // revoke the entire token family (all tokens for this user) to force re-login.
+      const msSinceRevoke = Date.now() - existing.revokedAt.getTime();
+      // A second request presenting a token this same tab (or a sibling
+      // tab/device on the same login) *just* rotated is the expected shape
+      // of a benign race, not an attack — e.g. two open tabs whose access
+      // tokens both expire around the same moment, or the heartbeat and the
+      // axios 401-retry both firing close together. As long as we can walk
+      // forward to a still-live descendant of this exact chain, hand that
+      // request a fresh token instead of failing it outright.
+      if (msSinceRevoke <= REUSE_GRACE_MS) {
+        const survivor = await this.findLiveDescendant(existing.replacedById);
+        if (survivor) {
+          this.logger.debug(
+            `refresh() benign rotation race tokenId=${id} userId=${existing.userId} msSinceRevoke=${msSinceRevoke} survivorId=${survivor.id} ip=${meta.ipAddress}`,
+          );
+          return this.rotate(survivor, meta);
+        }
+      }
+      // Outside the grace window (or the chain dead-ends, e.g. the survivor
+      // was itself explicitly logged out) — a real compromise signal. Scope
+      // the revocation to just this token's own family/lineage, not every
+      // session the user has anywhere: a stale/replayed token from one
+      // device must not be able to log out a completely different, healthy
+      // device just because it's the same account.
       this.logger.warn(
-        `refresh() REUSE DETECTED tokenId=${id} userId=${existing.userId} revokedAt=${existing.revokedAt.toISOString()} ip=${meta.ipAddress} ua=${(meta.userAgent ?? "").slice(0, 60)}`,
+        `refresh() REUSE DETECTED tokenId=${id} userId=${existing.userId} familyId=${existing.familyId} revokedAt=${existing.revokedAt.toISOString()} ip=${meta.ipAddress} ua=${(meta.userAgent ?? "").slice(0, 60)}`,
       );
       await this.prisma.refreshToken.updateMany({
-        where: { userId: existing.userId, revokedAt: null },
+        where: { familyId: existing.familyId, revokedAt: null },
         data: { revokedAt: new Date() },
       });
-      throw new UnauthorizedException("Refresh token reuse detected — all sessions revoked");
+      throw new UnauthorizedException("Refresh token reuse detected — this session's devices were signed out");
     }
 
     if (existing.expiresAt < new Date() || this.hashSecret(secret) !== existing.tokenHash) {
@@ -176,10 +204,43 @@ export class AuthService {
       }
     }
 
-    const tokens = await this.issueTokens(existing.userId, existing.activeCompanyId, meta);
+    return this.rotate(existing, meta);
+  }
+
+  /**
+   * Walks forward through a chain's replacedById links from a token that's
+   * already known to be revoked, looking for the live end of the chain —
+   * used only by refresh()'s benign-race grace window. Stops and returns
+   * null the moment the trail goes cold (no replacedById recorded, e.g. an
+   * explicit logout rather than a rotation) or a link is itself expired,
+   * since either means there's no legitimate session left to hand back.
+   */
+  private async findLiveDescendant(startId: string | null) {
+    let nextId = startId;
+    const seen = new Set<string>();
+    while (nextId) {
+      if (seen.has(nextId)) return null;
+      seen.add(nextId);
+      const token = await this.prisma.refreshToken.findUnique({ where: { id: nextId } });
+      if (!token) return null;
+      if (!token.revokedAt) {
+        return token.expiresAt > new Date() ? token : null;
+      }
+      nextId = token.replacedById;
+    }
+    return null;
+  }
+
+  /** Mints a fresh token pair for the same family and retires `existing`, linking the two via replacedById. */
+  private async rotate(
+    existing: { id: string; userId: string; activeCompanyId: string | null; familyId: string },
+    meta: RequestMeta,
+  ): Promise<IssuedTokens> {
+    const tokens = await this.issueTokens(existing.userId, existing.activeCompanyId, meta, existing.familyId);
+    const newId = tokens.refreshToken.split(".")[0];
     await this.prisma.refreshToken.update({
       where: { id: existing.id },
-      data: { revokedAt: new Date() },
+      data: { revokedAt: new Date(), replacedById: newId },
     });
     return tokens;
   }
@@ -270,6 +331,7 @@ export class AuthService {
     userId: string,
     activeCompanyId: string | null,
     meta: RequestMeta,
+    familyId?: string,
   ): Promise<IssuedTokens> {
     const user = await this.usersService.findById(userId);
     if (!user) {
@@ -328,6 +390,11 @@ export class AuthService {
         expiresAt: refreshExpiresAt,
         userAgent: meta.userAgent,
         ipAddress: meta.ipAddress,
+        // A fresh login/switch-company starts a brand-new family; a
+        // rotation (see rotate()) carries the existing one forward so
+        // reuse-detection can later scope its blast radius to this one
+        // lineage instead of every session the user has anywhere.
+        familyId: familyId ?? randomUUID(),
       },
     });
     this.logger.debug(`issueTokens() minted newTokenId=${refreshId} userId=${user.id} ip=${meta.ipAddress}`);
