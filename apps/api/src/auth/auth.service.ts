@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
-import { AuditAction } from "@prisma/client";
+import { AuditAction, PhotoUploadSessionStatus } from "@prisma/client";
 import { randomBytes, randomUUID, createHash } from "crypto";
 import ms from "ms";
 import { IDLE_TIMEOUT_MS, IDLE_WARNING_MS } from "@erp/shared-constants";
@@ -144,8 +144,16 @@ export class AuthService {
     // (see touchActivity, called from POST /auth/heartbeat) for longer than
     // the idle+warning window is dead regardless of what the client-side
     // timer thinks — this is what makes opening a fresh tab after being
-    // away not silently grant another full idle window.
-    if (Date.now() - existing.lastActivityAt.getTime() > IDLE_SESSION_TOTAL_MS) {
+    // away not silently grant another full idle window. Skipped while the
+    // user has a pending phone-camera upload outstanding (see
+    // hasPendingPhotoUpload) — the whole point of that flow is stepping
+    // away for however long it takes, and a backgrounded/suspended tab
+    // can stop sending heartbeats entirely regardless of client-side
+    // fixes, so the grace has to be provable from server-side state alone.
+    if (
+      Date.now() - existing.lastActivityAt.getTime() > IDLE_SESSION_TOTAL_MS &&
+      !(await this.hasPendingPhotoUpload(existing.userId))
+    ) {
       await this.prisma.refreshToken.update({ where: { id: existing.id }, data: { revokedAt: new Date() } });
       throw new UnauthorizedException("Session expired due to inactivity");
     }
@@ -217,11 +225,31 @@ export class AuthService {
     if (!existing || existing.revokedAt || existing.expiresAt < new Date() || this.hashSecret(secret) !== existing.tokenHash) {
       throw new UnauthorizedException("Refresh token invalid or expired");
     }
-    if (Date.now() - existing.lastActivityAt.getTime() > IDLE_SESSION_TOTAL_MS) {
+    if (
+      Date.now() - existing.lastActivityAt.getTime() > IDLE_SESSION_TOTAL_MS &&
+      !(await this.hasPendingPhotoUpload(existing.userId))
+    ) {
       await this.prisma.refreshToken.update({ where: { id: existing.id }, data: { revokedAt: new Date() } });
       throw new UnauthorizedException("Session expired due to inactivity");
     }
     await this.prisma.refreshToken.update({ where: { id: existing.id }, data: { lastActivityAt: new Date() } });
+  }
+
+  /**
+   * True while this user has a not-yet-expired, not-yet-uploaded
+   * phone-camera session outstanding (see PhotoUploadService) — the only
+   * server-side-provable signal that a desktop tab with no recent
+   * heartbeat is legitimately mid-task rather than actually abandoned.
+   * Deliberately checked from real DB state, not a client-reported
+   * timestamp, so it survives the desktop tab being backgrounded or
+   * suspended entirely while the user is away using their phone.
+   */
+  private async hasPendingPhotoUpload(userId: string): Promise<boolean> {
+    const session = await this.prisma.photoUploadSession.findFirst({
+      where: { createdByUserId: userId, status: PhotoUploadSessionStatus.PENDING, expiresAt: { gt: new Date() } },
+      select: { id: true },
+    });
+    return session !== null;
   }
 
   private async issueTokens(

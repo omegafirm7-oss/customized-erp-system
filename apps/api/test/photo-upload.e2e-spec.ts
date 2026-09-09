@@ -1,6 +1,6 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { createTestApp, setupUserWithCompany } from "./utils/test-app";
+import { createTestApp, setupUserWithCompany, uniqueEmail, uniqueCode, getPrisma } from "./utils/test-app";
 
 describe("Photo upload sessions — phone-to-desktop camera bridge (e2e)", () => {
   let app: INestApplication;
@@ -116,5 +116,66 @@ describe("Photo upload sessions — phone-to-desktop camera bridge (e2e)", () =>
   it("requires authentication to create a session or collect a result", async () => {
     await request(app.getHttpServer()).post("/photo-upload-sessions").expect(401);
     await request(app.getHttpServer()).get("/photo-upload-sessions/anything/file").expect(401);
+  });
+
+  /**
+   * A desktop tab left backgrounded (or fully suspended by the OS) while
+   * the user is away on their phone can stop running JS entirely — no
+   * client-side timer, however carefully designed, is guaranteed to keep
+   * sending heartbeats through that. This proves the grace is real from
+   * server-side DB state alone: a stale `lastActivityAt` normally revokes
+   * the session, but doesn't when a pending PhotoUploadSession exists —
+   * simulated here by backdating the timestamp directly, with zero
+   * reliance on any client behavior.
+   */
+  it("keeps a session alive past the idle window when a phone-camera upload is pending, but still expires it when nothing is pending", async () => {
+    const email = uniqueEmail("idle-grace");
+    const password = "SuperSecret123!";
+    await request(app.getHttpServer()).post("/auth/register").send({ email, password, fullName: "Idle Grace Test" }).expect(201);
+    const prisma = getPrisma(app);
+    const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+
+    // ── Baseline: no pending upload — a 6-minute-stale session (past the
+    // 5-minute idle+warning window) is correctly revoked, same as today.
+    const login1 = await request(app.getHttpServer()).post("/auth/login").send({ email, password }).expect(201);
+    const cookies1 = login1.headers["set-cookie"];
+    await prisma.refreshToken.updateMany({
+      where: { userId: user.id, revokedAt: null },
+      data: { lastActivityAt: new Date(Date.now() - 6 * 60 * 1000) },
+    });
+    await request(app.getHttpServer()).post("/auth/heartbeat").set("Cookie", cookies1).expect(401);
+
+    // ── With a pending photo upload: the same 6-minute-stale gap must NOT
+    // revoke the session, on both server-side enforcement points.
+    // POST /photo-upload-sessions requires an active company, which this
+    // registered-but-companyless user doesn't have yet — create one and
+    // re-login to pick up the scoped token, same as setupUserWithCompany.
+    const preCompanyLogin = await request(app.getHttpServer()).post("/auth/login").send({ email, password }).expect(201);
+    await request(app.getHttpServer())
+      .post("/companies")
+      .set("Authorization", `Bearer ${preCompanyLogin.body.accessToken}`)
+      .send({ code: uniqueCode("CO"), legalName: "Idle Grace Co", countryCode: "SA", baseCurrency: "SAR" })
+      .expect(201);
+
+    const login2 = await request(app.getHttpServer()).post("/auth/login").send({ email, password }).expect(201);
+    const cookies2 = login2.headers["set-cookie"];
+    const accessToken2 = login2.body.accessToken;
+
+    await request(app.getHttpServer())
+      .post("/photo-upload-sessions")
+      .set("Authorization", `Bearer ${accessToken2}`)
+      .expect(201);
+
+    await prisma.refreshToken.updateMany({
+      where: { userId: user.id, revokedAt: null },
+      data: { lastActivityAt: new Date(Date.now() - 6 * 60 * 1000) },
+    });
+
+    // POST /auth/heartbeat (what the old client-side fix relied on)
+    await request(app.getHttpServer()).post("/auth/heartbeat").set("Cookie", cookies2).expect(201);
+
+    // POST /auth/refresh (what actually fires when the access token itself
+    // expired while the tab was away and the interceptor silently retries)
+    await request(app.getHttpServer()).post("/auth/refresh").set("Cookie", cookies2).expect(201);
   });
 });
