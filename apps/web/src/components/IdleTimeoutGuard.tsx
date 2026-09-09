@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { apiClient } from "../api/client";
+import { isIdleTimeoutPaused } from "../utils/idleActivityPause";
 
 // Mirrors IDLE_TIMEOUT_MS/IDLE_WARNING_MS in @erp/shared-constants (kept as
 // the source-of-truth comment on the backend side, in auth.service.ts) —
@@ -13,12 +14,6 @@ const IDLE_TIMEOUT_MS = 3 * 60 * 1000;
 const IDLE_WARNING_MS = 2 * 60 * 1000;
 const IDLE_TOTAL_MS = IDLE_TIMEOUT_MS + IDLE_WARNING_MS;
 const ACTIVITY_EVENTS = ["mousemove", "mousedown", "keydown", "wheel", "touchstart", "scroll"] as const;
-// Dispatched by AttachButton while its "Use phone camera" QR modal is open
-// and polling — the whole point of that flow is stepping away from the
-// desktop to use the phone, which otherwise looks exactly like idle
-// abandonment and would log the user out (and lose the in-progress
-// invoice) mid-wait. See app:activity dispatch in AttachButton.tsx.
-const SYNTHETIC_ACTIVITY_EVENT = "app:activity";
 // How often a real activity event is allowed to re-hit the backend — no
 // need to heartbeat on every single mousemove.
 const HEARTBEAT_MIN_INTERVAL_MS = 20 * 1000;
@@ -96,21 +91,24 @@ export function IdleTimeoutGuard() {
     for (const evt of ACTIVITY_EVENTS) {
       window.addEventListener(evt, markActivity, { passive: true });
     }
-    // Unlike the real DOM events above, a pending phone-camera upload should
-    // override the "Stay signed in?" warning too — the user is mid-task on
-    // their phone and has no way to see or dismiss a warning dialog on the
-    // desktop tab they've stepped away from.
-    function onSyntheticActivity() {
-      lastActivityRef.current = Date.now();
-      warningActiveRef.current = false;
-      setSecondsLeft(null);
-      heartbeat();
-    }
-    window.addEventListener(SYNTHETIC_ACTIVITY_EVENT, onSyntheticActivity);
     heartbeat();
 
     intervalRef.current = setInterval(() => {
       if (loggedOutRef.current) return;
+      // A pending phone-camera upload (see AttachButton's "Use phone
+      // camera") is checked on *this* component's own independent tick
+      // rather than relying on some other component's timer to fire
+      // activity events at just the right cadence — as long as this
+      // interval runs at all, it self-corrects every second, unconditionally
+      // overriding even an already-showing "Stay signed in?" warning, since
+      // the user has no way to see or dismiss that dialog from their phone.
+      if (isIdleTimeoutPaused()) {
+        lastActivityRef.current = Date.now();
+        warningActiveRef.current = false;
+        setSecondsLeft(null);
+        heartbeat();
+        return;
+      }
       const elapsed = Date.now() - lastActivityRef.current;
       if (elapsed >= IDLE_TOTAL_MS) {
         void doLogout();
@@ -126,7 +124,6 @@ export function IdleTimeoutGuard() {
       for (const evt of ACTIVITY_EVENTS) {
         window.removeEventListener(evt, markActivity);
       }
-      window.removeEventListener(SYNTHETIC_ACTIVITY_EVENT, onSyntheticActivity);
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

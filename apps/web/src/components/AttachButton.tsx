@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { apiClient } from "../api/client";
+import { pauseIdleTimeout, resumeIdleTimeout } from "../utils/idleActivityPause";
 
 const MAX_DIMENSION = 1600;
 const JPEG_QUALITY = 0.82;
@@ -67,6 +68,7 @@ export function AttachButton({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<number | null>(null);
+  const idlePausedRef = useRef(false);
 
   useEffect(() => {
     if (!open) return;
@@ -85,6 +87,15 @@ export function AttachButton({
     if (pollRef.current !== null) {
       window.clearInterval(pollRef.current);
       pollRef.current = null;
+    }
+    // Balances every pauseIdleTimeout() call below exactly once, on every
+    // exit path — success, cancel, expiry, or this component unmounting
+    // (e.g. the user navigates away) mid-wait. Never leave the whole app's
+    // idle timeout stuck paused because one of those paths forgot to
+    // release it.
+    if (idlePausedRef.current) {
+      idlePausedRef.current = false;
+      resumeIdleTimeout();
     }
   }
 
@@ -113,10 +124,12 @@ export function AttachButton({
       setQrDataUrl(dataUrl);
       // The whole point of this flow is stepping away from the desktop to
       // use the phone — that must not read as idle abandonment (see
-      // IdleTimeoutGuard's SYNTHETIC_ACTIVITY_EVENT) or the session (and
+      // isIdleTimeoutPaused() in IdleTimeoutGuard) or the session (and
       // whatever the user was filling in) gets logged out from under them
-      // mid-wait, before they ever get a chance to save.
-      window.dispatchEvent(new Event("app:activity"));
+      // mid-wait, before they ever get a chance to save. Balanced by
+      // stopPolling(), whichever way this ends.
+      idlePausedRef.current = true;
+      pauseIdleTimeout();
       pollRef.current = window.setInterval(() => checkSession(token), POLL_INTERVAL_MS);
     } catch {
       setQrError("Couldn't start — try again");
@@ -124,7 +137,6 @@ export function AttachButton({
   }
 
   async function checkSession(token: string) {
-    window.dispatchEvent(new Event("app:activity"));
     try {
       const res = await apiClient.get<{ status: "PENDING" | "UPLOADED" }>(`/photo-upload-sessions/${token}/status`);
       if (res.data.status === "UPLOADED") {
