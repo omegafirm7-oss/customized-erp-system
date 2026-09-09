@@ -236,17 +236,31 @@ export class AuthService {
   }
 
   /**
-   * True while this user has a not-yet-expired, not-yet-uploaded
+   * True while this user has a not-yet-expired, not-yet-collected
    * phone-camera session outstanding (see PhotoUploadService) — the only
    * server-side-provable signal that a desktop tab with no recent
    * heartbeat is legitimately mid-task rather than actually abandoned.
    * Deliberately checked from real DB state, not a client-reported
    * timestamp, so it survives the desktop tab being backgrounded or
    * suspended entirely while the user is away using their phone.
+   *
+   * Covers both PENDING (still waiting on the phone) and UPLOADED (the
+   * phone already sent the photo, the desktop hasn't fetched it yet) —
+   * the first version of this check only matched PENDING, which meant the
+   * grace switched off at exactly the moment it mattered most: the
+   * desktop's very next authenticated call is the /file fetch that runs
+   * right after the phone finishes, by which point the session's status
+   * has already flipped to UPLOADED. `collectResult()` deletes the row
+   * the instant the desktop successfully pulls the file, so its mere
+   * existence — in either status — means the flow is still in flight.
    */
   private async hasPendingPhotoUpload(userId: string): Promise<boolean> {
     const session = await this.prisma.photoUploadSession.findFirst({
-      where: { createdByUserId: userId, status: PhotoUploadSessionStatus.PENDING, expiresAt: { gt: new Date() } },
+      where: {
+        createdByUserId: userId,
+        status: { in: [PhotoUploadSessionStatus.PENDING, PhotoUploadSessionStatus.UPLOADED] },
+        expiresAt: { gt: new Date() },
+      },
       select: { id: true },
     });
     return session !== null;

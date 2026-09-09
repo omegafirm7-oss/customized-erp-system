@@ -178,4 +178,53 @@ describe("Photo upload sessions — phone-to-desktop camera bridge (e2e)", () =>
     // expired while the tab was away and the interceptor silently retries)
     await request(app.getHttpServer()).post("/auth/refresh").set("Cookie", cookies2).expect(201);
   });
+
+  /**
+   * The first version of hasPendingPhotoUpload() only matched status
+   * PENDING — which meant the grace switched off at exactly the moment it
+   * mattered most. The real sequence is: phone uploads (session flips to
+   * UPLOADED) → desktop's next poll notices → desktop makes its first
+   * authenticated call in a while to fetch the file → THAT's when a stale
+   * access token gets silently refreshed, and by then the session is no
+   * longer PENDING. This reproduces that exact ordering.
+   */
+  it("keeps the grace alive through the UPLOADED-but-not-yet-collected window, not just PENDING", async () => {
+    const email = uniqueEmail("idle-grace-uploaded");
+    const password = "SuperSecret123!";
+    await request(app.getHttpServer()).post("/auth/register").send({ email, password, fullName: "Idle Grace Uploaded Test" }).expect(201);
+    const prisma = getPrisma(app);
+    const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+
+    const preCompanyLogin = await request(app.getHttpServer()).post("/auth/login").send({ email, password }).expect(201);
+    await request(app.getHttpServer())
+      .post("/companies")
+      .set("Authorization", `Bearer ${preCompanyLogin.body.accessToken}`)
+      .send({ code: uniqueCode("CO"), legalName: "Idle Grace Uploaded Co", countryCode: "SA", baseCurrency: "SAR" })
+      .expect(201);
+
+    const login = await request(app.getHttpServer()).post("/auth/login").send({ email, password }).expect(201);
+    const cookies = login.headers["set-cookie"];
+    const accessToken = login.body.accessToken;
+
+    const session = await request(app.getHttpServer())
+      .post("/photo-upload-sessions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .expect(201);
+
+    // The phone finishes — the session is now UPLOADED, not PENDING, and
+    // the desktop hasn't collected it yet.
+    await request(app.getHttpServer())
+      .post(`/photo-upload-sessions/${session.body.token}/upload`)
+      .attach("file", Buffer.from([1, 2, 3]), { filename: "receipt.png", contentType: "image/png" })
+      .expect(201);
+
+    await prisma.refreshToken.updateMany({
+      where: { userId: user.id, revokedAt: null },
+      data: { lastActivityAt: new Date(Date.now() - 6 * 60 * 1000) },
+    });
+
+    // This is the desktop's first authenticated call since going stale —
+    // exactly what fires right after noticing UPLOADED. Must not revoke.
+    await request(app.getHttpServer()).post("/auth/refresh").set("Cookie", cookies).expect(201);
+  });
 });

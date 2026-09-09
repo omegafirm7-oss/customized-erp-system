@@ -83,20 +83,27 @@ export function AttachButton({
 
   useEffect(() => stopPolling, []);
 
-  function stopPolling() {
+  function clearPollInterval() {
     if (pollRef.current !== null) {
       window.clearInterval(pollRef.current);
       pollRef.current = null;
     }
-    // Balances every pauseIdleTimeout() call below exactly once, on every
-    // exit path — success, cancel, expiry, or this component unmounting
-    // (e.g. the user navigates away) mid-wait. Never leave the whole app's
-    // idle timeout stuck paused because one of those paths forgot to
-    // release it.
+  }
+
+  // Balances every pauseIdleTimeout() call exactly once, on every exit
+  // path — success, cancel, expiry, or this component unmounting (e.g.
+  // the user navigates away) mid-wait. Never leave the whole app's idle
+  // timeout stuck paused because one of those paths forgot to release it.
+  function releaseIdlePause() {
     if (idlePausedRef.current) {
       idlePausedRef.current = false;
       resumeIdleTimeout();
     }
+  }
+
+  function stopPolling() {
+    clearPollInterval();
+    releaseIdlePause();
   }
 
   async function pick(file: File | undefined) {
@@ -140,12 +147,21 @@ export function AttachButton({
     try {
       const res = await apiClient.get<{ status: "PENDING" | "UPLOADED" }>(`/photo-upload-sessions/${token}/status`);
       if (res.data.status === "UPLOADED") {
-        stopPolling();
-        const fileRes = await apiClient.get(`/photo-upload-sessions/${token}/file`, { responseType: "blob" });
-        const mimeType = (fileRes.headers["content-type"] as string) ?? "image/jpeg";
-        const file = new File([fileRes.data], "phone-photo.jpg", { type: mimeType });
-        setQrDataUrl(null);
-        pick(file);
+        // Stop polling now (no need to keep hitting /status once we know
+        // it's ready) but keep the idle-timeout pause held until the file
+        // fetch below actually finishes — the server's own grace also
+        // covers this UPLOADED window, but there's no reason to drop the
+        // client-side pause a beat early either.
+        clearPollInterval();
+        try {
+          const fileRes = await apiClient.get(`/photo-upload-sessions/${token}/file`, { responseType: "blob" });
+          const mimeType = (fileRes.headers["content-type"] as string) ?? "image/jpeg";
+          const file = new File([fileRes.data], "phone-photo.jpg", { type: mimeType });
+          setQrDataUrl(null);
+          pick(file);
+        } finally {
+          releaseIdlePause();
+        }
       }
     } catch (err: any) {
       if (err?.response?.status === 410) {
