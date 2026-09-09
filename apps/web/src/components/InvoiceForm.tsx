@@ -65,6 +65,41 @@ interface LineForm {
 
 const VAT_RATE: Record<string, number> = { STANDARD_15: 15, ZERO_RATED: 0, EXEMPT: 0 };
 
+// Most purchase invoices at this company are the same recurring vendor,
+// account, description, and memo (site fuel, consumables, etc.) — only the
+// amount, qty, vendor invoice number, and receipt photo actually change
+// invoice to invoice. Remembering the last-used values here (client-side,
+// per browser — not synced across devices) means opening a new invoice
+// starts pre-filled with everything except what genuinely varies, so the
+// user only has to fill those in and attach the receipt before posting.
+const AP_LAST_DEFAULTS_KEY = "ap-invoice-last-defaults";
+
+interface ApLastDefaults {
+  partnerId: string;
+  memo: string;
+  accountId: string;
+  description: string;
+  vatCategory: LineForm["vatCategory"];
+  taxMode: TaxMode;
+}
+
+function loadApLastDefaults(): ApLastDefaults | null {
+  try {
+    const raw = localStorage.getItem(AP_LAST_DEFAULTS_KEY);
+    return raw ? (JSON.parse(raw) as ApLastDefaults) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveApLastDefaults(defaults: ApLastDefaults) {
+  try {
+    localStorage.setItem(AP_LAST_DEFAULTS_KEY, JSON.stringify(defaults));
+  } catch {
+    // private-browsing/storage-full — the prefill is a convenience, not required
+  }
+}
+
 // Purchase invoice amounts are entered as what the vendor actually charged
 // (VAT-inclusive) — default AP drafts to inclusive so VAT is backed out of
 // the typed total rather than added on top. Sales quotes are typically net,
@@ -101,9 +136,10 @@ function lineAmounts(line: LineForm) {
 
 export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
   const navigate = useNavigate();
+  const apDefaults = side === "ap" ? loadApLastDefaults() : null;
   const [partners, setPartners] = useState<Partner[]>([]);
   const [items, setItems] = useState<Item[]>([]);
-  const [partnerId, setPartnerId] = useState("");
+  const [partnerId, setPartnerId] = useState(apDefaults?.partnerId ?? "");
   const [vendorInvoiceNumber, setVendorInvoiceNumber] = useState("");
   const today = new Date().toISOString().slice(0, 10);
   const [postingDate, setPostingDate] = useState(today);
@@ -116,8 +152,18 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
     if (side !== "ap") return;
     setDueDate(new Date(new Date(postingDate).getTime() + 30 * 24 * 3600 * 1000).toISOString().slice(0, 10));
   }, [side, postingDate]);
-  const [memo, setMemo] = useState("");
-  const [lines, setLines] = useState<LineForm[]>([emptyLine(side)]);
+  const [memo, setMemo] = useState(apDefaults?.memo ?? "");
+  const [lines, setLines] = useState<LineForm[]>([
+    apDefaults
+      ? {
+          ...emptyLine(side),
+          accountId: apDefaults.accountId,
+          description: apDefaults.description,
+          vatCategory: apDefaults.vatCategory,
+          taxMode: apDefaults.taxMode,
+        }
+      : emptyLine(side),
+  ]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -208,6 +254,16 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
         payload.vendorInvoiceNumber = vendorInvoiceNumber;
       }
       const created = await apiClient.post(`/${side}/invoices`, payload);
+      if (side === "ap") {
+        saveApLastDefaults({
+          partnerId,
+          memo,
+          accountId: lines[0].accountId,
+          description: lines[0].description,
+          vatCategory: lines[0].vatCategory,
+          taxMode: lines[0].taxMode,
+        });
+      }
       // Once the invoice itself is created, a failed attachment upload
       // shouldn't block navigation or be reported as "invoice creation
       // failed" — the invoice is real; only the evidence needs a retry

@@ -6,6 +6,7 @@ import { RegisterPage } from "./pages/RegisterPage";
 import { AuthCallbackPage } from "./pages/AuthCallbackPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
+import { PhotoUploadMobilePage } from "./pages/PhotoUploadMobilePage";
 import { CompaniesPage } from "./pages/CompaniesPage";
 import { CoaPage } from "./pages/CoaPage";
 import { JournalEntriesPage } from "./pages/JournalEntriesPage";
@@ -194,6 +195,7 @@ export default function App() {
       <Route path="/auth/callback" element={<AuthCallbackPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/mobile-upload/:token" element={<PhotoUploadMobilePage />} />
       <Route
         element={
           <RequireAuth>

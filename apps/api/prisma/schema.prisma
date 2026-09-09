@@ -482,6 +482,7 @@ model Company {
   employeePaymentRecoveries         EmployeePaymentRecovery[]
   employeePaymentAttachments        EmployeePaymentAttachment[]
   purchaseInvoiceLineAttachments    PurchaseInvoiceLineAttachment[]
+  photoUploadSessions               PhotoUploadSession[]
   timesheetPeriodAttachments        TimesheetPeriodAttachment[]
   usageLogEntryAttachments          UsageLogEntryAttachment[]
   projectEquipmentAssignments       ProjectEquipmentAssignment[]
@@ -1295,6 +1296,35 @@ model PurchaseInvoiceLineAttachment {
   createdAt             DateTime            @default(now())
 
   @@map("purchase_invoice_line_attachments")
+}
+
+enum PhotoUploadSessionStatus {
+  PENDING
+  UPLOADED
+}
+
+// Lets a desktop user attach a photo taken on their phone without pairing
+// devices through the OS — the desktop shows a QR code encoding a public,
+// single-use link; the phone (no login needed) opens that link, takes a
+// photo with its own camera, and posts it here; the desktop polls this same
+// session and pulls the photo in once it arrives. Short-lived by design
+// (expiresAt) and deleted the moment the desktop side has collected the
+// result — this table is a courier, not a photo archive.
+model PhotoUploadSession {
+  id              String                   @id @default(uuid())
+  token           String                   @unique
+  companyId       String
+  company         Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdByUserId String
+  status          PhotoUploadSessionStatus @default(PENDING)
+  filename        String?
+  mimeType        String?
+  size            Int?
+  data            Bytes?
+  createdAt       DateTime                 @default(now())
+  expiresAt       DateTime
+
+  @@map("photo_upload_sessions")
 }
 
 // ─────────────────────────────────────────────────────────────────────────

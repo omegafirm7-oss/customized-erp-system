@@ -30,6 +30,7 @@ import { PlatformModule } from "./platform/platform.module";
 import { CrmModule } from "./crm/crm.module";
 import { SettingsModule } from "./settings/settings.module";
 import { ProcurementModule } from "./procurement/procurement.module";
+import { PhotoUploadModule } from "./photo-upload/photo-upload.module";
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { ProcurementModule } from "./procurement/procurement.module";
     CrmModule,
     SettingsModule,
     ProcurementModule,
+    PhotoUploadModule,
   ],
   providers: [
     // Global by default — every route requires a valid JWT unless explicitly
