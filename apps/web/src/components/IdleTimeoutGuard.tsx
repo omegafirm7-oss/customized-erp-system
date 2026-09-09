@@ -13,6 +13,12 @@ const IDLE_TIMEOUT_MS = 3 * 60 * 1000;
 const IDLE_WARNING_MS = 2 * 60 * 1000;
 const IDLE_TOTAL_MS = IDLE_TIMEOUT_MS + IDLE_WARNING_MS;
 const ACTIVITY_EVENTS = ["mousemove", "mousedown", "keydown", "wheel", "touchstart", "scroll"] as const;
+// Dispatched by AttachButton while its "Use phone camera" QR modal is open
+// and polling — the whole point of that flow is stepping away from the
+// desktop to use the phone, which otherwise looks exactly like idle
+// abandonment and would log the user out (and lose the in-progress
+// invoice) mid-wait. See app:activity dispatch in AttachButton.tsx.
+const SYNTHETIC_ACTIVITY_EVENT = "app:activity";
 // How often a real activity event is allowed to re-hit the backend — no
 // need to heartbeat on every single mousemove.
 const HEARTBEAT_MIN_INTERVAL_MS = 20 * 1000;
@@ -90,6 +96,17 @@ export function IdleTimeoutGuard() {
     for (const evt of ACTIVITY_EVENTS) {
       window.addEventListener(evt, markActivity, { passive: true });
     }
+    // Unlike the real DOM events above, a pending phone-camera upload should
+    // override the "Stay signed in?" warning too — the user is mid-task on
+    // their phone and has no way to see or dismiss a warning dialog on the
+    // desktop tab they've stepped away from.
+    function onSyntheticActivity() {
+      lastActivityRef.current = Date.now();
+      warningActiveRef.current = false;
+      setSecondsLeft(null);
+      heartbeat();
+    }
+    window.addEventListener(SYNTHETIC_ACTIVITY_EVENT, onSyntheticActivity);
     heartbeat();
 
     intervalRef.current = setInterval(() => {
@@ -109,6 +126,7 @@ export function IdleTimeoutGuard() {
       for (const evt of ACTIVITY_EVENTS) {
         window.removeEventListener(evt, markActivity);
       }
+      window.removeEventListener(SYNTHETIC_ACTIVITY_EVENT, onSyntheticActivity);
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

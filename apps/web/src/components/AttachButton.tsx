@@ -111,6 +111,12 @@ export function AttachButton({
       const url = `${window.location.origin}/mobile-upload/${token}`;
       const dataUrl = await QRCode.toDataURL(url, { width: 220, margin: 1 });
       setQrDataUrl(dataUrl);
+      // The whole point of this flow is stepping away from the desktop to
+      // use the phone — that must not read as idle abandonment (see
+      // IdleTimeoutGuard's SYNTHETIC_ACTIVITY_EVENT) or the session (and
+      // whatever the user was filling in) gets logged out from under them
+      // mid-wait, before they ever get a chance to save.
+      window.dispatchEvent(new Event("app:activity"));
       pollRef.current = window.setInterval(() => checkSession(token), POLL_INTERVAL_MS);
     } catch {
       setQrError("Couldn't start — try again");
@@ -118,6 +124,7 @@ export function AttachButton({
   }
 
   async function checkSession(token: string) {
+    window.dispatchEvent(new Event("app:activity"));
     try {
       const res = await apiClient.get<{ status: "PENDING" | "UPLOADED" }>(`/photo-upload-sessions/${token}/status`);
       if (res.data.status === "UPLOADED") {
