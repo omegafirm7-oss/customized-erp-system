@@ -37,6 +37,8 @@ import { SalesQuotationsPage } from "./pages/SalesQuotationsPage";
 import { SalesOrdersPage } from "./pages/SalesOrdersPage";
 import { LeadsPage } from "./pages/crm/LeadsPage";
 import { OpportunitiesPage } from "./pages/crm/OpportunitiesPage";
+import { LeadResearchPage } from "./pages/crm/LeadResearchPage";
+import { OutreachPage } from "./pages/crm/OutreachPage";
 import { PaymentsPage } from "./pages/PaymentsPage";
 import { NewPaymentPage } from "./pages/NewPaymentPage";
 import { ArAgingPage, ApAgingPage } from "./pages/AgingPage";
@@ -123,6 +125,8 @@ const companyRoutes: Array<{ path: string; element: JSX.Element }> = [
   { path: "/ar/orders", element: <SalesOrdersPage /> },
   { path: "/crm/leads", element: <LeadsPage /> },
   { path: "/crm/opportunities", element: <OpportunitiesPage /> },
+  { path: "/crm/lead-research", element: <LeadResearchPage /> },
+  { path: "/crm/outreach", element: <OutreachPage /> },
   { path: "/payments", element: <PaymentsPage /> },
   { path: "/payments/new", element: <NewPaymentPage /> },
   { path: "/trial-balance", element: <TrialBalancePage /> },

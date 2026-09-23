@@ -1499,3 +1499,202 @@ button.danger:hover:not(:disabled) {
     width: 20px;
   }
 }
+
+/* ── CRM sales agent ─────────────────────────────────────────────────── */
+.outreach-composer {
+  border: 1px solid #c7d7f5;
+  background: #f7faff;
+  border-radius: 8px;
+  padding: 14px;
+}
+.outreach-composer-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  gap: 8px;
+}
+.outreach-body {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  margin: 6px 0;
+  resize: vertical;
+}
+.outreach-hint {
+  color: #667085;
+  font-size: 13px;
+  margin: 6px 0 10px;
+}
+.outreach-notice {
+  background: #ecfdf3;
+  color: #067647;
+  border: 1px solid #abefc6;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.outreach-check {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 13px;
+  color: #344054;
+}
+.inline-label {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #667085;
+}
+.block-label {
+  display: block;
+  font-size: 12px;
+  color: #667085;
+}
+.lead-sub {
+  color: #667085;
+  font-size: 12px;
+  margin-top: 2px;
+}
+.priority-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.priority-pill.hot { background: #fee4e2; color: #b42318; }
+.priority-pill.warm { background: #fef0c7; color: #93370d; }
+.priority-pill.cold { background: #eaecf0; color: #475467; }
+.followup-due {
+  color: #b42318;
+  font-weight: 600;
+}
+.chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0;
+}
+.chip-label {
+  font-size: 12px;
+  color: #667085;
+  min-width: 90px;
+}
+button.chip {
+  background: #fff;
+  color: #475467;
+  border: 1px solid #d0d5dd;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  box-shadow: none;
+}
+button.chip.on {
+  background: #eaf1fd;
+  color: #1e4fa3;
+  border-color: #1e4fa3;
+}
+button.link-button {
+  background: none;
+  border: none;
+  box-shadow: none;
+  color: #1e4fa3;
+  padding: 0;
+  font-size: 12px;
+  text-decoration: underline;
+}
+button.link-button:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+}
+.message-preview {
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 13px;
+  background: #f9fafb;
+  border: 1px solid #eaecf0;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin: 6px 0;
+}
+.activity-list li {
+  margin-bottom: 8px;
+}
+.lead-details {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+.lead-details dt {
+  color: #667085;
+}
+.lead-details dd {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.agent-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: 12px;
+}
+.agent-status span {
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+.status-ok { background: #ecfdf3; color: #067647; }
+.status-off { background: #fef3f2; color: #b42318; }
+.research-card {
+  border: 1px solid #e4e7ec;
+  border-left: 4px solid #98a2b3;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-top: 12px;
+}
+.research-card.conf-high { border-left-color: #12b76a; }
+.research-card.conf-med { border-left-color: #f79009; }
+.research-card.conf-low { border-left-color: #f04438; }
+.research-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  cursor: pointer;
+}
+.conf-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eaecf0;
+}
+.conf-pill.conf-high { background: #d1fadf; color: #067647; }
+.conf-pill.conf-med { background: #fef0c7; color: #93370d; }
+.conf-pill.conf-low { background: #fee4e2; color: #b42318; }
+.research-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 4px 14px;
+  font-size: 13px;
+  color: #475467;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.research-why {
+  background: #ecfdf3;
+  color: #05603a;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+}

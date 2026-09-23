@@ -127,6 +127,8 @@ const CRM_SECTION: NavSection = {
   items: [
     { to: "/crm/leads", label: "Leads" },
     { to: "/crm/opportunities", label: "Opportunities" },
+    { to: "/crm/lead-research", label: "Find Leads (AI)" },
+    { to: "/crm/outreach", label: "Outreach & Follow-ups" },
   ],
 };
 

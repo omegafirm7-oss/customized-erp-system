@@ -8,10 +8,12 @@ export class MailService {
   private readonly logger = new Logger(MailService.name);
   private readonly transporter: Transporter | null;
   private readonly fromAddress: string;
+  private readonly smtpUser: string;
 
   constructor(configService: ConfigService<AppConfig, true>) {
     const mail = configService.get("mail", { infer: true });
     this.fromAddress = mail.fromAddress;
+    this.smtpUser = mail.smtpUser;
     this.transporter = mail.smtpHost
       ? createTransport({
           host: mail.smtpHost,
@@ -20,6 +22,42 @@ export class MailService {
           auth: mail.smtpUser ? { user: mail.smtpUser, pass: mail.smtpPass } : undefined,
         })
       : null;
+  }
+
+  isConfigured(): boolean {
+    return this.transporter !== null;
+  }
+
+  /**
+   * CRM outreach email. Unlike the password-reset path this THROWS on
+   * failure — the caller records the error on the activity and shows it to
+   * the user, since a silently-dropped sales email is worse than a visible
+   * one. Sent from the authenticated SMTP mailbox itself (Microsoft 365
+   * rejects any From address the mailbox has no send-as right for), with
+   * the company name as display name.
+   */
+  async sendOutreachEmail(params: {
+    to: string;
+    subject: string;
+    text: string;
+    senderName: string;
+    replyTo?: string | null;
+  }): Promise<void> {
+    if (!this.transporter) {
+      throw new Error("Outgoing email is not configured on the server (SMTP settings missing)");
+    }
+    const html = params.text
+      .split(/\n{2,}/)
+      .map((p) => `<p>${escapeHtml(p).replace(/\n/g, "<br>")}</p>`)
+      .join("");
+    await this.transporter.sendMail({
+      from: this.smtpUser ? { name: params.senderName, address: this.smtpUser } : this.fromAddress,
+      to: params.to,
+      replyTo: params.replyTo || undefined,
+      subject: params.subject,
+      text: params.text,
+      html,
+    });
   }
 
   /**
@@ -45,4 +83,8 @@ export class MailService {
       this.logger.error(`Failed to send password reset email to ${to}`, err as Error);
     }
   }
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

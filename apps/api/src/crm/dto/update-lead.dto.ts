@@ -1,8 +1,9 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { LeadSource, LeadStatus } from "@prisma/client";
+import { LeadSalesFieldsDto } from "./lead-sales-fields.dto";
 import { IsEmail, IsEnum, IsOptional, IsString, IsUUID } from "class-validator";
 
-export class UpdateLeadDto {
+export class UpdateLeadDto extends LeadSalesFieldsDto {
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()

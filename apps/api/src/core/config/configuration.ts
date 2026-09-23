@@ -27,6 +27,13 @@ export interface AppConfig {
     host: string;
     timeoutMs: number;
   };
+  /** Anthropic API for the CRM sales agent (lead research + message
+   * drafting). Empty key = not configured; the agent endpoints return a
+   * clear "not configured" error and the UI hides the AI buttons. */
+  ai: {
+    anthropicApiKey: string;
+    model: string;
+  };
   port: number;
 }
 
@@ -57,13 +64,17 @@ export default (): AppConfig => ({
     smtpPort: process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : 587,
     smtpUser: process.env.SMTP_USER ?? "",
     smtpPass: process.env.SMTP_PASS ?? "",
-    fromAddress: process.env.MAIL_FROM ?? "Universa Centrix <no-reply@universa.omegaprofessionals.com>",
+    fromAddress: process.env.MAIL_FROM || "Universa Centrix <no-reply@universa.omegaprofessionals.com>",
     appUrl: process.env.APP_URL ?? "http://localhost:5173",
   },
   zatca: {
     encryptionKey: process.env.ZATCA_KEY_ENCRYPTION_KEY ?? "",
     host: process.env.ZATCA_HOST ?? "https://gw-fatoora.zatca.gov.sa/e-invoicing",
     timeoutMs: process.env.ZATCA_TIMEOUT_MS ? Number(process.env.ZATCA_TIMEOUT_MS) : 30000,
+  },
+  ai: {
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
+    model: process.env.ANTHROPIC_MODEL || "claude-opus-5",
   },
   port: process.env.PORT ? Number(process.env.PORT) : 3000,
 });

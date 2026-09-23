@@ -4,6 +4,7 @@ import { PrismaService } from "../common/prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { CreateLeadDto } from "./dto/create-lead.dto";
 import { UpdateLeadDto } from "./dto/update-lead.dto";
+import { LeadSalesFieldsDto } from "./dto/lead-sales-fields.dto";
 
 /**
  * Leads are the top of the CRM funnel — unqualified inbound/outbound
@@ -38,6 +39,7 @@ export class LeadsService {
         phone: dto.phone,
         source: dto.source,
         notes: dto.notes,
+        ...salesFields(dto),
         ownerUserId: dto.ownerUserId ?? userId,
         createdByUserId: userId,
       },
@@ -68,6 +70,7 @@ export class LeadsService {
         source: dto.source,
         status: dto.status,
         notes: dto.notes,
+        ...salesFields(dto),
         ownerUserId: dto.ownerUserId,
       },
     });
@@ -109,4 +112,18 @@ export class LeadsService {
     }
     return lead;
   }
+}
+
+function salesFields(dto: LeadSalesFieldsDto) {
+  return {
+    priority: dto.priority,
+    businessLines: dto.businessLines,
+    safetyCertsRequired: dto.safetyCertsRequired,
+    contractorGrade: dto.contractorGrade,
+    companyWebsite: dto.companyWebsite,
+    projectName: dto.projectName,
+    city: dto.city,
+    estimatedValue: dto.estimatedValue === undefined ? undefined : dto.estimatedValue === "" ? null : dto.estimatedValue,
+    followUpDate: dto.followUpDate === undefined ? undefined : new Date(dto.followUpDate),
+  };
 }

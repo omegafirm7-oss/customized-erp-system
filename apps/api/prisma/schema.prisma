@@ -505,6 +505,7 @@ model Company {
   opportunities                     Opportunity[]
   contacts                          Contact[]
   crmActivities                     CrmActivity[]
+  crmAgentSettings                  CrmAgentSettings?
 
   @@map("companies")
 }
@@ -2908,6 +2909,13 @@ enum LeadSource {
   COLD_CALL
   EVENT
   OTHER
+  AI_RESEARCH
+}
+
+enum LeadPriority {
+  HOT
+  WARM
+  COLD
 }
 
 enum LeadStatus {
@@ -2930,6 +2938,21 @@ model Lead {
   status                 LeadStatus   @default(NEW)
   ownerUserId            String?
   notes                  String?
+  // Sales-agent fields (TUV card / safety-training outreach). All optional —
+  // a plain lead still works with none of them set.
+  priority               LeadPriority @default(WARM)
+  businessLines          String[]     @default([])
+  safetyCertsRequired    String[]     @default([])
+  contractorGrade        String?
+  companyWebsite         String?
+  projectName            String?
+  city                   String?
+  estimatedValue         Decimal?     @db.Decimal(18, 4)
+  followUpDate           DateTime?
+  // Filled by the AI lead-research agent: why this company needs the
+  // service, and how confident its web sources were (HIGH/MED/LOW).
+  aiRationale            String?
+  aiConfidence           String?
   // Set once QUALIFIED and converted into an Opportunity — after that, the
   // lead itself becomes read-only history (service-enforced).
   convertedOpportunityId String?      @unique
@@ -3010,6 +3033,7 @@ enum CrmActivityType {
   EMAIL
   NOTE
   TASK
+  WHATSAPP
 }
 
 model CrmActivity {
@@ -3029,13 +3053,43 @@ model CrmActivity {
   opportunity       Opportunity?     @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
   businessPartnerId String?
   businessPartner   BusinessPartner? @relation(fields: [businessPartnerId], references: [id], onDelete: Cascade)
+  // Outreach messages (EMAIL/WHATSAPP): the exact text sent or scheduled.
+  // sentAt set = delivered (email) or opened in WhatsApp by the user.
+  // autoSend = a scheduled EMAIL follow-up the background sender delivers
+  // at dueDate unless the lead has moved on (see OutreachService).
+  messageSubject    String?
+  messageBody       String?
+  recipient         String?
+  sentAt            DateTime?
+  autoSend          Boolean          @default(false)
+  sendError         String?
   createdByUserId   String
   createdAt         DateTime         @default(now())
 
   @@index([companyId, leadId])
   @@index([companyId, opportunityId])
   @@index([companyId, businessPartnerId])
+  @@index([autoSend, sentAt, dueDate])
   @@map("crm_activities")
+}
+
+// Per-company configuration for the CRM sales agent: the company profile
+// the AI pitches from, email signature, and follow-up cadence.
+model CrmAgentSettings {
+  id                     String   @id @default(uuid())
+  companyId              String   @unique
+  company                Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyProfile         String
+  emailSignature         String?
+  replyToEmail           String?
+  whatsappNumber         String?
+  defaultLanguage        String   @default("en")
+  // Comma-separated day offsets after first contact, e.g. "3,7".
+  followUpDays           String   @default("3,7")
+  autoSendEmailFollowUps Boolean  @default(false)
+  updatedAt              DateTime @updatedAt
+
+  @@map("crm_agent_settings")
 }
 
 // ─────────────────────────────────────────────────────────────────────────
