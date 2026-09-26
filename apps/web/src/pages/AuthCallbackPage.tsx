@@ -22,7 +22,7 @@ export function AuthCallbackPage() {
     const token = params.get("at");
     if (token) {
       restoreFromToken(token);
-      navigate("/companies", { replace: true });
+      navigate("/", { replace: true }); // HomeRedirect picks the landing page
     } else {
       // No token in the URL — not the expected path, but fall back to the
       // cookie-based bootstrap a normal page load would do.

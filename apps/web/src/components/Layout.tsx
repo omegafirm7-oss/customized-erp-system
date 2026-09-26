@@ -136,6 +136,7 @@ const CRM_SECTION: NavSection = {
 const FBR_SECTION: NavSection = {
   label: "FBR (Pakistan)",
   items: [
+    { to: "/pos/dashboard", label: "Dashboard" },
     { to: "/pos/counter", label: "POS Counter" },
     { to: "/fbr/submissions", label: "FBR Submissions" },
     { to: "/fbr/pos-terminals", label: "POS Terminals" },

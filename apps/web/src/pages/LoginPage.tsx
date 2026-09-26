@@ -26,7 +26,7 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       await login(email, password);
-      navigate("/companies");
+      navigate("/"); // HomeRedirect picks the landing page
     } catch {
       setError("Invalid email or password");
     } finally {

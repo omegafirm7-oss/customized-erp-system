@@ -11,6 +11,7 @@ import { JwtPayload } from "../auth/types/jwt-payload.type";
 import { PosApiKeyGuard } from "./pos-api-key.guard";
 import { PosSalesService } from "./pos-sales.service";
 import { PosTerminalsService } from "./pos-terminals.service";
+import { PosDashboardService } from "./pos-dashboard.service";
 import { CreatePosReturnDto, CreatePosSaleDto, CreatePosTerminalDto, UpdatePosTerminalDto } from "./dto/pos.dto";
 
 /**
@@ -100,6 +101,21 @@ export class PosCounterController {
     @Body() dto: CreatePosReturnDto,
   ) {
     return this.salesService.recordReturn(await this.terminalsService.getActive(companyId, terminalId), clientSaleId, dto);
+  }
+}
+
+/** Owner dashboard (Pakistan retail / clinic): sales, FBR status, tax. */
+@ApiTags("pos")
+@ApiBearerAuth()
+@RequiresModule(MODULE_KEYS.FBR)
+@Controller("pos/dashboard")
+export class PosDashboardController {
+  constructor(private readonly dashboardService: PosDashboardService) {}
+
+  @Get()
+  @Permissions(PERMISSIONS.FBR_SUBMISSION_VIEW)
+  async summary(@CurrentCompanyId() companyId: string) {
+    return this.dashboardService.summary(companyId);
   }
 }
 

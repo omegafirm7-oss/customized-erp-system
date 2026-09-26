@@ -48,6 +48,7 @@ import { FbrSettingsPage } from "./pages/FbrSettingsPage";
 import { FbrSubmissionsPage } from "./pages/FbrSubmissionsPage";
 import { PosTerminalsPage } from "./pages/PosTerminalsPage";
 import { PosCounterPage } from "./pages/PosCounterPage";
+import { ClinicDashboardPage } from "./pages/ClinicDashboardPage";
 import { TemplateSettingsPage } from "./pages/TemplateSettingsPage";
 import { ActivityLogPage } from "./pages/ActivityLogPage";
 import { StockSummaryPage } from "./pages/StockSummaryPage";
@@ -107,6 +108,14 @@ function RequireCompany({ children }: { children: JSX.Element }) {
   return children;
 }
 
+// Pakistan clinics/retailers on FBR land on their owner dashboard; everyone
+// else keeps the existing Companies landing page.
+function HomeRedirect() {
+  const { user } = useAuth();
+  const toDashboard = !!user?.activeCompanyId && user.countryCode === "PK" && !!user.enabledModules?.includes("fbr");
+  return <Navigate to={toDashboard ? "/pos/dashboard" : "/companies"} replace />;
+}
+
 const companyRoutes: Array<{ path: string; element: JSX.Element }> = [
   { path: "/coa", element: <CoaPage /> },
   { path: "/journal-entries", element: <JournalEntriesPage /> },
@@ -151,6 +160,7 @@ const companyRoutes: Array<{ path: string; element: JSX.Element }> = [
   { path: "/fbr/submissions", element: <FbrSubmissionsPage /> },
   { path: "/fbr/pos-terminals", element: <PosTerminalsPage /> },
   { path: "/pos/counter", element: <PosCounterPage /> },
+  { path: "/pos/dashboard", element: <ClinicDashboardPage /> },
   { path: "/settings/templates", element: <TemplateSettingsPage /> },
   { path: "/settings/activity-log", element: <ActivityLogPage /> },
   { path: "/inventory/stock", element: <StockSummaryPage /> },
@@ -219,7 +229,7 @@ export default function App() {
         {companyRoutes.map(({ path, element }) => (
           <Route key={path} path={path} element={<RequireCompany>{element}</RequireCompany>} />
         ))}
-        <Route path="/" element={<Navigate to="/companies" replace />} />
+        <Route path="/" element={<HomeRedirect />} />
       </Route>
     </Routes>
   );

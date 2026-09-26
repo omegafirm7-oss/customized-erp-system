@@ -10,6 +10,8 @@ const MODULE_LABELS = {
   purchase: "Purchase",
   crm: "CRM",
   sales: "Sales & Marketing",
+  // Pakistan clients only — the FBR menu appears for PK companies.
+  fbr: "FBR (Pakistan)",
 } as const;
 const ALL_MODULES = Object.keys(MODULE_LABELS) as (keyof typeof MODULE_LABELS)[];
 

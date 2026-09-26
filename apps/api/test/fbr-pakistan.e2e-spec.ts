@@ -451,6 +451,38 @@ describe("Pakistan / FBR (e2e)", () => {
     expect(list.body[0].buyer.name).toBe("Sara Khan");
   });
 
+  it("owner dashboard: revenue, treatments vs products, FBR status, month tax, top treatments", async () => {
+    const ctx = await setupPos();
+    const treatment = (
+      await request(server)
+        .post("/items")
+        .set(auth(ctx.token))
+        .send({ code: uniqueCode("HYD"), name: "HydraFacial", itemType: "SERVICE", baseUoMId: ctx.uom.id, vatCategory: "PK_SERVICES", hsCode: "9819.9000", defaultSalesAccountId: ctx.acct("4100").id })
+        .expect(201)
+    ).body;
+    const counter = (body: Record<string, unknown>) => request(server).post(`/pos/counter/${ctx.terminal.id}/sales`).set(auth(ctx.token)).send(body).expect(200);
+    await counter({ clientSaleId: "D-1", paymentMode: 1, buyer: { name: "Nida" }, lines: [{ itemCode: treatment.code, quantity: "2", unitPrice: "8050" }] }); // 16,100 (14,000 + 2,100 ICT)
+    await counter({ clientSaleId: "D-2", paymentMode: 2, lines: [{ itemCode: ctx.item.code, quantity: "1", unitPrice: "1180" }] }); // 1,180 (1,000 + 180)
+    await request(server)
+      .post(`/pos/counter/${ctx.terminal.id}/sales/D-1/returns`)
+      .set(auth(ctx.token))
+      .send({ clientSaleId: "D-R1", lines: [{ itemCode: treatment.code, quantity: "1" }] })
+      .expect(200); // −8,050
+
+    const res = await request(server).get("/pos/dashboard").set(auth(ctx.token)).expect(200);
+    const d = res.body;
+    expect(d.kpis).toMatchObject({ revenueToday: "9230", billsToday: 2, returnsToday: 1, averageBill: "8640", cashToday: "8050", cardToday: "1180" });
+    const todayRow = d.days[d.days.length - 1];
+    expect(d.days).toHaveLength(14);
+    expect(todayRow).toMatchObject({ date: d.today, treatments: "8050", products: "1180" });
+    expect(d.fbr.today).toMatchObject({ total: 3, accepted: 3, pending: 0, rejected: 0 });
+    expect(d.fbr.enabled).toBe(true);
+    expect(d.monthTax).toMatchObject({ services: "1050", goods: "180", posFees: "2" });
+    expect(d.topTreatments[0]).toMatchObject({ name: "HydraFacial", quantity: "1", amount: "8050" });
+    expect(d.recentSales[0]).toMatchObject({ isReturn: true, amount: "-8050" });
+    expect(d.recentSales.find((s: any) => s.patient === "Nida").amount).toBe("16101");
+  });
+
   it("rejects bad keys, rotated keys and unknown items (leaving nothing behind)", async () => {
     const ctx = await setupPos();
     const body = { clientSaleId: "S-5001", paymentMode: 1, lines: [{ itemCode: ctx.item.code, quantity: "1", unitPrice: "118" }] };
