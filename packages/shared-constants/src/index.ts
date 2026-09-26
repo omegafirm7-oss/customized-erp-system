@@ -226,6 +226,11 @@ export enum VatCategory {
   STANDARD_15 = "STANDARD_15",
   ZERO_RATED = "ZERO_RATED",
   EXEMPT = "EXEMPT",
+  // Pakistan (FBR) — valid only for countryCode "PK" companies.
+  PK_STANDARD = "PK_STANDARD",
+  PK_REDUCED = "PK_REDUCED",
+  PK_THIRD_SCHEDULE = "PK_THIRD_SCHEDULE",
+  PK_SERVICES = "PK_SERVICES",
 }
 
 /**
@@ -237,6 +242,13 @@ export const VAT_RATES: Record<VatCategory, number> = {
   [VatCategory.STANDARD_15]: 15,
   [VatCategory.ZERO_RATED]: 0,
   [VatCategory.EXEMPT]: 0,
+  [VatCategory.PK_STANDARD]: 18,
+  // Item-specific (8th Schedule / SRO) — the line uses the item's reducedRate.
+  [VatCategory.PK_REDUCED]: 0,
+  // 18% of the printed retail price, not of the sale price.
+  [VatCategory.PK_THIRD_SCHEDULE]: 18,
+  // Company-configured services sales tax rate (e.g. Islamabad Capital Territory).
+  [VatCategory.PK_SERVICES]: 0,
 };
 
 /** ZATCA invoice type codes (UBL InvoiceTypeCode). DEBIT_NOTE is used only
@@ -373,6 +385,11 @@ export const PERMISSIONS = {
   ZATCA_DEVICE_MANAGE: "zatca.device.manage",
   ZATCA_SUBMISSION_VIEW: "zatca.submission.view",
   ZATCA_SUBMISSION_RETRY: "zatca.submission.retry",
+  FBR_SETTINGS_MANAGE: "fbr.settings.manage",
+  FBR_SUBMISSION_VIEW: "fbr.submission.view",
+  FBR_SUBMISSION_RETRY: "fbr.submission.retry",
+  POS_TERMINAL_MANAGE: "fbr.pos-terminal.manage",
+  POS_SELL: "fbr.pos.sell",
   INVENTORY_STOCK_VIEW: "inventory.stock.view",
   INVENTORY_TRANSFER_CREATE: "inventory.transfer.create",
   INVENTORY_ADJUSTMENT_CREATE: "inventory.adjustment.create",
@@ -415,6 +432,8 @@ export const MODULE_KEYS = {
   PURCHASE: "purchase",
   CRM: "crm",
   SALES: "sales",
+  // Pakistan FBR Digital Invoicing + POS Integration.
+  FBR: "fbr",
 } as const;
 
 export type ModuleKey = (typeof MODULE_KEYS)[keyof typeof MODULE_KEYS];

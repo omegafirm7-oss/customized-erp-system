@@ -3,6 +3,7 @@ import { NumberingModule } from "../numbering/numbering.module";
 import { GlModule } from "../gl/gl.module";
 import { AuditModule } from "../audit/audit.module";
 import { ZatcaModule } from "../zatca/zatca.module";
+import { FbrModule } from "../fbr/fbr.module";
 import { InventoryModule } from "../inventory/inventory.module";
 import { AccountResolutionService } from "./account-resolution.service";
 import { LineBuilderService } from "./line-builder.service";
@@ -22,7 +23,7 @@ import { SalesOrdersService } from "./sales-orders.service";
 import { SalesOrdersController } from "./sales-orders.controller";
 
 @Module({
-  imports: [NumberingModule, GlModule, AuditModule, ZatcaModule, InventoryModule],
+  imports: [NumberingModule, GlModule, AuditModule, ZatcaModule, FbrModule, InventoryModule],
   controllers: [
     ArController,
     ApController,
@@ -44,6 +45,7 @@ import { SalesOrdersController } from "./sales-orders.controller";
     SalesOrdersService,
   ],
   exports: [
+    AccountResolutionService,
     ArService,
     ApService,
     PaymentsService,

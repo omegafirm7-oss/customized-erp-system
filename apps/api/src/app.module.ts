@@ -20,6 +20,8 @@ import { ItemsModule } from "./items/items.module";
 import { ReportsModule } from "./reports/reports.module";
 import { FinanceModule } from "./finance/finance.module";
 import { ZatcaModule } from "./zatca/zatca.module";
+import { FbrModule } from "./fbr/fbr.module";
+import { PosModule } from "./pos/pos.module";
 import { InventoryModule } from "./inventory/inventory.module";
 import { ProjectsModule } from "./projects/projects.module";
 import { HrModule } from "./hr/hr.module";
@@ -48,6 +50,8 @@ import { PhotoUploadModule } from "./photo-upload/photo-upload.module";
     ReportsModule,
     FinanceModule,
     ZatcaModule,
+    FbrModule,
+    PosModule,
     InventoryModule,
     ProjectsModule,
     HrModule,

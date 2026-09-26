@@ -1,10 +1,10 @@
-import { Body, Controller, Delete, Get, Param, Post } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { PERMISSIONS } from "@erp/shared-constants";
 import { Permissions } from "../common/decorators/permissions.decorator";
 import { CurrentCompanyId } from "../common/decorators/current-company-id.decorator";
 import { ItemsService } from "./items.service";
-import { CreateItemDto } from "./dto/create-item.dto";
+import { CreateItemDto, UpdateItemDto } from "./dto/create-item.dto";
 import { CreateUomDto } from "./dto/create-uom.dto";
 import { CreateWarehouseDto } from "./dto/create-warehouse.dto";
 
@@ -31,6 +31,12 @@ export class ItemsController {
   @Permissions(PERMISSIONS.ITEM_MANAGE)
   async createItem(@CurrentCompanyId() companyId: string, @Body() dto: CreateItemDto) {
     return this.itemsService.createItem(companyId, dto);
+  }
+
+  @Patch("items/:id")
+  @Permissions(PERMISSIONS.ITEM_MANAGE)
+  async updateItem(@CurrentCompanyId() companyId: string, @Param("id") id: string, @Body() dto: UpdateItemDto) {
+    return this.itemsService.updateItem(companyId, id, dto);
   }
 
   @Delete("items/:id")

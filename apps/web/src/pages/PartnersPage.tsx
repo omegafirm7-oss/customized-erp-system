@@ -1,6 +1,8 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
+import { NTN_CNIC_PATTERN, PK_PROVINCES } from "../utils/taxLocale";
 
 interface Partner {
   id: string;
@@ -9,11 +11,53 @@ interface Partner {
   partnerType: "CUSTOMER" | "VENDOR" | "BOTH";
   taxRegistrationNumber: string | null;
   isActive: boolean;
+  ntnCnic: string | null;
+  province: string | null;
+  fbrRegistrationType: "REGISTERED" | "UNREGISTERED" | null;
 }
 
-const emptyForm = { code: "", name: "", partnerType: "CUSTOMER", taxRegistrationNumber: "" };
+const emptyForm = { code: "", name: "", partnerType: "CUSTOMER", taxRegistrationNumber: "", ntnCnic: "", province: "", fbrRegistrationType: "" };
+type PartnerForm = typeof emptyForm;
+
+/** Pakistan buyer identity fields — sent only when filled in. */
+function pkFields(form: PartnerForm) {
+  return {
+    ...(form.ntnCnic ? { ntnCnic: form.ntnCnic } : {}),
+    ...(form.province ? { province: form.province } : {}),
+    ...(form.fbrRegistrationType ? { fbrRegistrationType: form.fbrRegistrationType } : {}),
+  };
+}
+
+function PkPartnerInputs({ form, onChange }: { form: PartnerForm; onChange: (f: PartnerForm) => void }) {
+  return (
+    <>
+      <input
+        placeholder="NTN (7) / CNIC (13)"
+        pattern={NTN_CNIC_PATTERN}
+        title="7-digit NTN or 13-digit CNIC, digits only"
+        value={form.ntnCnic}
+        onChange={(e) => onChange({ ...form, ntnCnic: e.target.value.replace(/\D/g, "") })}
+        style={{ width: 150 }}
+      />
+      <select value={form.province} onChange={(e) => onChange({ ...form, province: e.target.value })}>
+        <option value="">Province…</option>
+        {PK_PROVINCES.map((p) => (
+          <option key={p} value={p}>{p}</option>
+        ))}
+      </select>
+      <select value={form.fbrRegistrationType} onChange={(e) => onChange({ ...form, fbrRegistrationType: e.target.value })} title="Unregistered buyers are charged further tax">
+        <option value="">Sales-tax status…</option>
+        <option value="REGISTERED">Registered</option>
+        <option value="UNREGISTERED">Unregistered (further tax)</option>
+      </select>
+    </>
+  );
+}
 
 export function PartnersPage() {
+  const { user } = useAuth();
+  const isPakistan = user?.countryCode === "PK";
+  const canCheckFbr = isPakistan && (!!user?.isPlatformAdmin || !!user?.enabledModules?.includes("fbr"));
   const [partners, setPartners] = useState<Partner[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +98,7 @@ export function PartnersPage() {
         name: form.name,
         partnerType: form.partnerType,
         taxRegistrationNumber: form.taxRegistrationNumber || undefined,
+        ...(isPakistan ? pkFields(form) : {}),
       });
       setForm(emptyForm);
       setShowAddForm(false);
@@ -67,7 +112,15 @@ export function PartnersPage() {
 
   function startEdit(p: Partner) {
     setEditingId(p.id);
-    setEditForm({ code: p.code, name: p.name, partnerType: p.partnerType, taxRegistrationNumber: p.taxRegistrationNumber ?? "" });
+    setEditForm({
+      code: p.code,
+      name: p.name,
+      partnerType: p.partnerType,
+      taxRegistrationNumber: p.taxRegistrationNumber ?? "",
+      ntnCnic: p.ntnCnic ?? "",
+      province: p.province ?? "",
+      fbrRegistrationType: p.fbrRegistrationType ?? "",
+    });
   }
 
   async function saveEdit(e: FormEvent) {
@@ -81,11 +134,25 @@ export function PartnersPage() {
         name: editForm.name,
         partnerType: editForm.partnerType,
         taxRegistrationNumber: editForm.taxRegistrationNumber || undefined,
+        ...(isPakistan ? pkFields(editForm) : {}),
       });
       setEditingId(null);
       await load();
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "Failed to update partner");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function checkWithFbr(p: Partner) {
+    setError(null);
+    setBusyId(p.id);
+    try {
+      await apiClient.post(`/fbr/partners/${p.id}/check-registration`);
+      await load();
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "FBR registration check failed");
     } finally {
       setBusyId(null);
     }
@@ -171,11 +238,15 @@ export function PartnersPage() {
               <option value="VENDOR">Vendor</option>
               <option value="BOTH">Both</option>
             </select>
-            <input
-              placeholder="VAT/TRN (optional)"
-              value={form.taxRegistrationNumber}
-              onChange={(e) => setForm({ ...form, taxRegistrationNumber: e.target.value })}
-            />
+            {isPakistan ? (
+              <PkPartnerInputs form={form} onChange={setForm} />
+            ) : (
+              <input
+                placeholder="VAT/TRN (optional)"
+                value={form.taxRegistrationNumber}
+                onChange={(e) => setForm({ ...form, taxRegistrationNumber: e.target.value })}
+              />
+            )}
             <button type="submit" disabled={submitting}>
               {submitting ? "Creating…" : "Create"}
             </button>
@@ -200,7 +271,7 @@ export function PartnersPage() {
                 <th>Code</th>
                 <th>Name</th>
                 <th>Type</th>
-                <th>VAT/TRN</th>
+                <th>{isPakistan ? "NTN/CNIC · province · status" : "VAT/TRN"}</th>
                 <th>Status</th>
                 <th></th>
               </tr>
@@ -223,11 +294,15 @@ export function PartnersPage() {
                           <option value="VENDOR">Vendor</option>
                           <option value="BOTH">Both</option>
                         </select>
-                        <input
-                          placeholder="VAT/TRN"
-                          value={editForm.taxRegistrationNumber}
-                          onChange={(e) => setEditForm({ ...editForm, taxRegistrationNumber: e.target.value })}
-                        />
+                        {isPakistan ? (
+                          <PkPartnerInputs form={editForm} onChange={setEditForm} />
+                        ) : (
+                          <input
+                            placeholder="VAT/TRN"
+                            value={editForm.taxRegistrationNumber}
+                            onChange={(e) => setEditForm({ ...editForm, taxRegistrationNumber: e.target.value })}
+                          />
+                        )}
                         <button type="submit" disabled={busyId === p.id}>
                           Save
                         </button>
@@ -244,7 +319,16 @@ export function PartnersPage() {
                     </td>
                     <td>{p.name}</td>
                     <td>{p.partnerType}</td>
-                    <td>{p.taxRegistrationNumber ?? "—"}</td>
+                    <td>
+                      {isPakistan ? (
+                        <>
+                          {p.ntnCnic ?? "—"} · {p.province ?? "no province"} ·{" "}
+                          {p.fbrRegistrationType === "REGISTERED" ? "Registered" : p.fbrRegistrationType === "UNREGISTERED" ? "Unregistered" : "status unknown"}
+                        </>
+                      ) : (
+                        p.taxRegistrationNumber ?? "—"
+                      )}
+                    </td>
                     <td>
                       <span className={`badge ${p.isActive ? "posted" : "reversed"}`}>{p.isActive ? "Active" : "Inactive"}</span>
                     </td>
@@ -252,6 +336,13 @@ export function PartnersPage() {
                       <button type="button" className="secondary" disabled={busyId === p.id} onClick={() => startEdit(p)}>
                         Edit
                       </button>{" "}
+                      {canCheckFbr && p.ntnCnic && (
+                        <>
+                          <button type="button" className="secondary" disabled={busyId === p.id} onClick={() => checkWithFbr(p)} title="Look up sales-tax registration status with FBR">
+                            Check with FBR
+                          </button>{" "}
+                        </>
+                      )}
                       {p.isActive && (
                         <button type="button" className="danger" disabled={busyId === p.id} onClick={() => handleDelete(p)}>
                           Delete

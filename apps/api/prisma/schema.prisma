@@ -336,6 +336,38 @@ enum VatCategory {
   STANDARD_15
   ZERO_RATED
   EXEMPT
+  // Pakistan (FBR) categories — only valid for companies with countryCode
+  // "PK" (service-enforced). PK zero-rated/exempt reuse ZERO_RATED/EXEMPT.
+  PK_STANDARD
+  PK_REDUCED
+  PK_THIRD_SCHEDULE
+  // Sales tax on services (e.g. Islamabad Capital Territory services,
+  // administered by FBR): rate = item reducedRate, else the company rate in
+  // FbrSettings.servicesTaxRatePercent.
+  PK_SERVICES
+}
+
+enum FbrRegistrationType {
+  REGISTERED
+  UNREGISTERED
+}
+
+enum FbrEnvironment {
+  MOCK
+  SANDBOX
+  PRODUCTION
+}
+
+enum FbrChannel {
+  DI
+  POS
+}
+
+enum FbrSubmissionStatus {
+  PENDING
+  VALID
+  INVALID
+  FAILED
 }
 
 enum CompanyUserStatus {
@@ -445,6 +477,14 @@ model Company {
   additionalNumber      String?
   city                  String?
   postalCode            String?
+  // Pakistan (FBR) seller identity — used only when countryCode = "PK".
+  ntn                   String?
+  strn                  String?
+  province              String?
+  // Drives which FBR DI sandbox scenarios apply (spec v1.12 §9), e.g.
+  // "Manufacturer" / "All Other Sectors".
+  fbrBusinessActivity   String?
+  fbrSector             String?
   isActive              Boolean  @default(true)
   // Premium modules this client is entitled to (e.g. "purchase", "crm", "sales").
   // Platform admins bypass this check entirely; see ModuleEntitlementGuard.
@@ -507,6 +547,10 @@ model Company {
   crmActivities                     CrmActivity[]
   crmAgentSettings                  CrmAgentSettings?
   crmMarketingAssets                CrmMarketingAsset[]
+  fbrSettings                       FbrSettings?
+  fbrSubmissions                    FbrSubmission[]
+  posTerminals                      PosTerminal[]
+  posSales                          PosSale[]
 
   @@map("companies")
 }
@@ -877,9 +921,9 @@ model JournalEntryLine {
 // ─────────────────────────────────────────────────────────────────────────
 
 model BusinessPartner {
-  id                           String      @id @default(uuid())
+  id                           String               @id @default(uuid())
   companyId                    String
-  company                      Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company                      Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
   code                         String
   name                         String
   nameAr                       String?
@@ -890,10 +934,18 @@ model BusinessPartner {
   // registration (schemeID: CRN|MOM|MLS|700|SAG|NAT|GCC|IQA|OTH)
   additionalIdScheme           String?
   additionalIdNumber           String?
+  // Pakistan (FBR): buyer NTN (7 digits) or CNIC (13 digits), province name
+  // as returned by FBR's provinces reference API, and sales-tax registration
+  // status (drives further tax + DI buyerRegistrationType).
+  ntnCnic                      String?
+  strn                         String?
+  province                     String?
+  fbrRegistrationType          FbrRegistrationType?
+  fbrRegistrationCheckedAt     DateTime?
   currencyCode                 String?
-  isActive                     Boolean     @default(true)
-  createdAt                    DateTime    @default(now())
-  updatedAt                    DateTime    @updatedAt
+  isActive                     Boolean              @default(true)
+  createdAt                    DateTime             @default(now())
+  updatedAt                    DateTime             @updatedAt
 
   addresses                PartnerAddress[]
   journalEntryLines        JournalEntryLine[]
@@ -988,6 +1040,20 @@ model Item {
   defaultPurchaseAccountId  String?
   defaultInventoryAccountId String?
   vatCategory               VatCategory    @default(STANDARD_15)
+  // Pakistan (FBR) item master: HS code "####.####" (POS PCTCode is the same
+  // without the dot), FBR UoM description, DI saleType text, reduced rate
+  // (PK_REDUCED), printed retail price per base unit (PK_THIRD_SCHEDULE),
+  // and SRO references for reduced/exempt items.
+  hsCode                    String?
+  fbrUom                    String?
+  fbrSaleType               String?
+  reducedRate               Decimal?       @db.Decimal(5, 2)
+  retailPrice               Decimal?       @db.Decimal(18, 4)
+  sroScheduleNo             String?
+  sroItemSerialNo           String?
+  // Default selling price (tax-inclusive) — prefilled on the POS counter
+  // screen; invoices still take the price per line.
+  defaultSalesPrice         Decimal?       @db.Decimal(18, 4)
   isActive                  Boolean        @default(true)
   createdAt                 DateTime       @default(now())
   updatedAt                 DateTime       @updatedAt
@@ -1082,31 +1148,31 @@ model AuditLog {
 // ─────────────────────────────────────────────────────────────────────────
 
 model SalesInvoice {
-  id                       String            @id @default(uuid())
+  id                       String               @id @default(uuid())
   companyId                String
-  company                  Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company                  Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
   // Null while Draft — allocated gaplessly at posting time, same pattern as
   // JournalEntry.entryNumber. ZATCA Phase 2 requires a gapless sequence here.
   invoiceNumber            String?
-  documentKind             SalesDocumentKind @default(INVOICE)
+  documentKind             SalesDocumentKind    @default(INVOICE)
   businessPartnerId        String
-  businessPartner          BusinessPartner   @relation(fields: [businessPartnerId], references: [id])
+  businessPartner          BusinessPartner      @relation(fields: [businessPartnerId], references: [id])
   // Required (service-enforced) when documentKind = CREDIT_NOTE; becomes the
   // ZATCA billing reference in the e-invoicing phase.
   originalInvoiceId        String?
-  originalInvoice          SalesInvoice?     @relation("CreditNoteOriginal", fields: [originalInvoiceId], references: [id])
-  creditNotes              SalesInvoice[]    @relation("CreditNoteOriginal")
+  originalInvoice          SalesInvoice?        @relation("CreditNoteOriginal", fields: [originalInvoiceId], references: [id])
+  creditNotes              SalesInvoice[]       @relation("CreditNoteOriginal")
   // Set when this invoice was generated from a Sales Order (see
   // SalesOrder.generateInvoice); null for a directly-created invoice (the
   // pre-existing, non-order sales path — unchanged).
   sourceSalesOrderId       String?
-  sourceSalesOrder         SalesOrder?       @relation(fields: [sourceSalesOrderId], references: [id])
-  status                   InvoiceStatus     @default(DRAFT)
+  sourceSalesOrder         SalesOrder?          @relation(fields: [sourceSalesOrderId], references: [id])
+  status                   InvoiceStatus        @default(DRAFT)
   issueDateTime            DateTime
   postingDate              DateTime
   dueDate                  DateTime
   currencyCode             String
-  exchangeRateToFunctional Decimal           @default(1) @db.Decimal(18, 8)
+  exchangeRateToFunctional Decimal              @default(1) @db.Decimal(18, 8)
   // ZATCA-ready snapshots, captured at posting time so later partner edits
   // never change what was legally invoiced.
   buyerNameSnapshot        String?
@@ -1118,16 +1184,22 @@ model SalesInvoice {
   deliveryDate             DateTime?
   paymentMeansCode         String?
   creditNoteReason         String?
-  netTotal                 Decimal           @default(0) @db.Decimal(18, 4)
-  vatTotal                 Decimal           @default(0) @db.Decimal(18, 4)
-  grossTotal               Decimal           @default(0) @db.Decimal(18, 4)
-  netTotalFunctional       Decimal           @default(0) @db.Decimal(18, 4)
-  vatTotalFunctional       Decimal           @default(0) @db.Decimal(18, 4)
-  grossTotalFunctional     Decimal           @default(0) @db.Decimal(18, 4)
-  paidAmount               Decimal           @default(0) @db.Decimal(18, 4)
-  openAmount               Decimal           @default(0) @db.Decimal(18, 4)
-  journalEntryId           String?           @unique
-  journalEntry             JournalEntry?     @relation(fields: [journalEntryId], references: [id])
+  netTotal                 Decimal              @default(0) @db.Decimal(18, 4)
+  vatTotal                 Decimal              @default(0) @db.Decimal(18, 4)
+  // Pakistan: portion of vatTotal that is further tax (unregistered buyers).
+  furtherTaxTotal          Decimal              @default(0) @db.Decimal(18, 4)
+  grossTotal               Decimal              @default(0) @db.Decimal(18, 4)
+  // Pakistan: buyer identity snapshots for the FBR DI payload.
+  buyerNtnCnicSnapshot     String?
+  buyerProvinceSnapshot    String?
+  buyerRegTypeSnapshot     FbrRegistrationType?
+  netTotalFunctional       Decimal              @default(0) @db.Decimal(18, 4)
+  vatTotalFunctional       Decimal              @default(0) @db.Decimal(18, 4)
+  grossTotalFunctional     Decimal              @default(0) @db.Decimal(18, 4)
+  paidAmount               Decimal              @default(0) @db.Decimal(18, 4)
+  openAmount               Decimal              @default(0) @db.Decimal(18, 4)
+  journalEntryId           String?              @unique
+  journalEntry             JournalEntry?        @relation(fields: [journalEntryId], references: [id])
   timesheet                Timesheet?
   usageLog                 UsageLog?
   memo                     String?
@@ -1136,12 +1208,14 @@ model SalesInvoice {
   postedAt                 DateTime?
   cancelledByUserId        String?
   cancelledAt              DateTime?
-  createdAt                DateTime          @default(now())
-  updatedAt                DateTime          @updatedAt
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
 
   lines              SalesInvoiceLine[]
   paymentAllocations PaymentAllocation[]
   zatcaSubmission    ZatcaSubmission?
+  fbrSubmission      FbrSubmission?
+  posSale            PosSale?
 
   @@unique([companyId, invoiceNumber])
   @@index([companyId, status])
@@ -1170,8 +1244,14 @@ model SalesInvoiceLine {
   // Snapshot of the rate applied — historical documents must not change if
   // VAT_RATES changes in a future fiscal reform.
   vatRate                Decimal        @db.Decimal(5, 2)
+  // vatAmount is TOTAL tax charged on the line; for Pakistan it includes
+  // furtherTaxAmount (sales tax = vatAmount - furtherTaxAmount).
   vatAmount              Decimal        @db.Decimal(18, 4)
   grossAmount            Decimal        @db.Decimal(18, 4)
+  furtherTaxRate         Decimal        @default(0) @db.Decimal(5, 2)
+  furtherTaxAmount       Decimal        @default(0) @db.Decimal(18, 4)
+  // Pakistan Third Schedule: total printed retail value (retailPrice * qty).
+  retailValue            Decimal?       @db.Decimal(18, 4)
   // ZATCA: mandatory for ZERO_RATED/EXEMPT lines (VATEX-SA-* catalog)
   vatExemptionReasonCode String?
   vatExemptionReasonText String?
@@ -2163,31 +2243,31 @@ model RevenueRecognitionRun {
 // Per-company statutory configuration. Rates are configurable because GOSI
 // reform changes contribution rates over time — never hardcode them.
 model HrSettings {
-  id                     String    @id @default(uuid())
-  companyId              String    @unique
-  company                Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  saudiEmployeeRatePct   Decimal   @default(9.75) @db.Decimal(7, 4)
-  saudiEmployerRatePct   Decimal   @default(11.75) @db.Decimal(7, 4)
-  expatEmployerRatePct   Decimal   @default(2) @db.Decimal(7, 4)
-  gosiWageFloor          Decimal   @default(1500) @db.Decimal(18, 4)
-  gosiWageCap            Decimal   @default(45000) @db.Decimal(18, 4)
-  overtimeMultiplier     Decimal   @default(1.5) @db.Decimal(7, 4)
-  hoursPerDay            Decimal   @default(8) @db.Decimal(7, 2)
-  daysPerMonth           Decimal   @default(30) @db.Decimal(7, 2)
-  defaultAnnualLeaveDays Decimal   @default(21) @db.Decimal(7, 2)
-  eosbBasis              EosbBasis @default(FULL_GROSS)
+  id                             String    @id @default(uuid())
+  companyId                      String    @unique
+  company                        Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  saudiEmployeeRatePct           Decimal   @default(9.75) @db.Decimal(7, 4)
+  saudiEmployerRatePct           Decimal   @default(11.75) @db.Decimal(7, 4)
+  expatEmployerRatePct           Decimal   @default(2) @db.Decimal(7, 4)
+  gosiWageFloor                  Decimal   @default(1500) @db.Decimal(18, 4)
+  gosiWageCap                    Decimal   @default(45000) @db.Decimal(18, 4)
+  overtimeMultiplier             Decimal   @default(1.5) @db.Decimal(7, 4)
+  hoursPerDay                    Decimal   @default(8) @db.Decimal(7, 2)
+  daysPerMonth                   Decimal   @default(30) @db.Decimal(7, 2)
+  defaultAnnualLeaveDays         Decimal   @default(21) @db.Decimal(7, 2)
+  eosbBasis                      EosbBasis @default(FULL_GROSS)
   // When true, final settlements skip EOSB and leave payout entirely and the
   // net amount is just the employee's accrued-but-unpaid timesheet wages
   // (minus loan recovery) — a company-specific policy override, not the
   // statutory default.
-  settlementExcludesEosbAndLeave Boolean @default(false)
+  settlementExcludesEosbAndLeave Boolean   @default(false)
   // WPS SIF employer identifiers
-  molEstablishmentId     String?
-  employerBankCode       String?
-  employerIban           String?
-  updatedByUserId        String?
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  molEstablishmentId             String?
+  employerBankCode               String?
+  employerIban                   String?
+  updatedByUserId                String?
+  createdAt                      DateTime  @default(now())
+  updatedAt                      DateTime  @updatedAt
 
   @@map("hr_settings")
 }
@@ -3232,4 +3312,111 @@ model HiredEquipmentTimesheetEntry {
   @@unique([timesheetId, assignmentId, date])
   @@index([companyId, date])
   @@map("hired_equipment_timesheet_entries")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Pakistan — FBR Digital Invoicing (DI) + POS Integration (IMS)
+// ─────────────────────────────────────────────────────────────────────────
+
+model FbrSettings {
+  id                     String         @id @default(uuid())
+  companyId              String         @unique
+  company                Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  enabled                Boolean        @default(false)
+  environment            FbrEnvironment @default(MOCK)
+  // PRAL-issued bearer tokens (5-year validity), AES-256-GCM encrypted at
+  // rest with the same key as ZATCA secrets; never returned by the API.
+  diTokenEnc             String?
+  posTokenEnc            String?
+  // Further tax on supplies to unregistered persons — editable because the
+  // Finance Act changes it.
+  furtherTaxRatePercent  Decimal        @default(4) @db.Decimal(5, 2)
+  // Tier-1 retail POS service fee per invoice, collected from the customer
+  // and payable to FBR.
+  posFeeAmount           Decimal        @default(1) @db.Decimal(18, 4)
+  posFeeAccountId        String?
+  // Sales tax rate on services in the company's jurisdiction (ICT for
+  // Islamabad). Confirm the current rate with the client's tax advisor.
+  servicesTaxRatePercent Decimal        @default(15) @db.Decimal(5, 2)
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+
+  @@map("fbr_settings")
+}
+
+model FbrSubmission {
+  id               String              @id @default(uuid())
+  companyId        String
+  company          Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  channel          FbrChannel
+  environment      FbrEnvironment
+  salesInvoiceId   String              @unique
+  salesInvoice     SalesInvoice        @relation(fields: [salesInvoiceId], references: [id])
+  status           FbrSubmissionStatus @default(PENDING)
+  fbrInvoiceNumber String?
+  requestJson      Json
+  responseJson     Json?
+  errors           Json?
+  retryCount       Int                 @default(0)
+  lastAttemptAt    DateTime?
+  acknowledgedAt   DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@index([companyId, status])
+  @@index([companyId, channel])
+  @@map("fbr_submissions")
+}
+
+model PosTerminal {
+  id              String    @id @default(uuid())
+  companyId       String
+  company         Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  code            String
+  name            String
+  // POSID issued by FBR when the POS is registered on IRIS.
+  fbrPosId        Int
+  warehouseId     String?
+  costCenterId    String?
+  walkInPartnerId String
+  cashAccountId   String
+  cardAccountId   String?
+  // sha256 (hex) of the terminal's API key; plaintext shown once at issue.
+  apiKeyHash      String    @unique
+  apiKeyPrefix    String
+  isActive        Boolean   @default(true)
+  lastUsedAt      DateTime?
+  createdByUserId String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  sales PosSale[]
+
+  @@unique([companyId, code])
+  @@map("pos_terminals")
+}
+
+model PosSale {
+  id             String       @id @default(uuid())
+  companyId      String
+  company        Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  terminalId     String
+  terminal       PosTerminal  @relation(fields: [terminalId], references: [id])
+  // The POS's own id for the sale — idempotency key per terminal.
+  clientSaleId   String
+  // FBR IMS InvoiceType: 1 = sale, 3 = return.
+  invoiceType    Int
+  refPosSaleId   String?
+  // FBR PaymentMode: 1 cash, 2 card, 3 gift voucher, 4 loyalty, 5 mixed, 6 cheque.
+  paymentMode    Int
+  posFee         Decimal      @default(0) @db.Decimal(18, 4)
+  salesInvoiceId String       @unique
+  salesInvoice   SalesInvoice @relation(fields: [salesInvoiceId], references: [id])
+  paymentId      String?
+  rawPayload     Json
+  createdAt      DateTime     @default(now())
+
+  @@unique([terminalId, clientSaleId])
+  @@index([companyId, createdAt])
+  @@map("pos_sales")
 }

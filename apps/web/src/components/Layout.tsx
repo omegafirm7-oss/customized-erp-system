@@ -132,6 +132,17 @@ const CRM_SECTION: NavSection = {
   ],
 };
 
+// Pakistan only (active company countryCode "PK"), entitlement key "fbr".
+const FBR_SECTION: NavSection = {
+  label: "FBR (Pakistan)",
+  items: [
+    { to: "/pos/counter", label: "POS Counter" },
+    { to: "/fbr/submissions", label: "FBR Submissions" },
+    { to: "/fbr/pos-terminals", label: "POS Terminals" },
+    { to: "/fbr/settings", label: "FBR Settings" },
+  ],
+};
+
 function loadExpandedSections(): Set<string> {
   const stored = localStorage.getItem("sidebarExpandedSections");
   if (stored) {
@@ -162,15 +173,22 @@ export function Layout() {
   const isEntitled = (moduleKey: string) => !!user?.isPlatformAdmin || !!user?.enabledModules?.includes(moduleKey);
 
   const workingCapitalIndex = NAV_SECTIONS.findIndex((s) => s.label === "Working Capital");
+  // Pakistan companies report to FBR, never ZATCA — swap the tax-authority
+  // screens by the active company's country.
+  const isPakistan = user?.countryCode === "PK";
   const gatedSections: NavSection[] = [
     ...(isEntitled("purchase") ? [PURCHASE_SECTION] : []),
     ...(isEntitled("sales") ? [SALES_SECTION] : []),
     ...(isEntitled("crm") ? [CRM_SECTION] : []),
+    ...(isPakistan && isEntitled("fbr") ? [FBR_SECTION] : []),
   ];
+  const baseSections = isPakistan
+    ? NAV_SECTIONS.map((s) => (s.label === "Settings" ? { ...s, items: s.items.filter((i) => i.to !== "/settings/zatca") } : s))
+    : NAV_SECTIONS;
   const sectionsWithModules =
     gatedSections.length > 0
-      ? [...NAV_SECTIONS.slice(0, workingCapitalIndex + 1), ...gatedSections, ...NAV_SECTIONS.slice(workingCapitalIndex + 1)]
-      : NAV_SECTIONS;
+      ? [...baseSections.slice(0, workingCapitalIndex + 1), ...gatedSections, ...baseSections.slice(workingCapitalIndex + 1)]
+      : baseSections;
 
   // Activity Log is restricted to the platform-admin identity (see
   // AuditController's PlatformAdminGuard) — hidden from the nav entirely for

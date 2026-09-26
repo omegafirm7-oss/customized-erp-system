@@ -18,6 +18,10 @@ export class IamController {
       companyId: m.companyId,
       companyCode: m.company.code,
       companyName: m.company.legalName,
+      // Drives country-specific UI (tax categories, FBR vs ZATCA screens).
+      countryCode: m.company.countryCode,
+      baseCurrencyCode: m.company.baseCurrencyCode,
+      enabledModules: m.company.enabledModules,
       roleName: m.role.name,
       isDefault: m.isDefault,
     }));

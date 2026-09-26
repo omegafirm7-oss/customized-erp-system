@@ -1,6 +1,12 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
-import { ControlAccountType, Prisma, ProjectStatus, RecognitionMethod, VatCategory } from "@prisma/client";
-import { computeLineAmounts, sumDocumentTotals, DocumentTotals } from "./invoice-math";
+import { ControlAccountType, FbrRegistrationType, Prisma, ProjectStatus, RecognitionMethod, VatCategory } from "@prisma/client";
+import {
+  computeLineAmounts,
+  defaultCategoryForCountry,
+  isCategoryAllowedForCountry,
+  sumDocumentTotals,
+  DocumentTotals,
+} from "./invoice-math";
 import { AccountResolutionService } from "./account-resolution.service";
 import { InvoiceLineDto } from "./dto/invoice-line.dto";
 
@@ -19,6 +25,9 @@ export interface BuiltInvoiceLine {
   vatRate: Prisma.Decimal;
   vatAmount: Prisma.Decimal;
   grossAmount: Prisma.Decimal;
+  furtherTaxRate: Prisma.Decimal;
+  furtherTaxAmount: Prisma.Decimal;
+  retailValue: Prisma.Decimal | null;
   accountId: string;
   warehouseId: string | null;
   projectId: string | null;
@@ -34,7 +43,8 @@ export interface BuiltInvoiceLines {
 /**
  * Turns invoice-line DTOs into fully resolved, computed line data shared by
  * AR and AP: item lookups, VAT category defaulting (explicit → item →
- * STANDARD_15), account resolution (explicit → item default per side →
+ * country default: STANDARD_15 for SA, PK_STANDARD for PK) with a country
+ * check, Pakistan further tax (SALES to UNREGISTERED buyers only), account resolution (explicit → item default per side →
  * error; PURCHASE-side inventory items resolve to the INVENTORY asset
  * account instead of an expense), warehouse resolution for inventory items
  * (explicit → company default → error), and amount computation.
@@ -48,7 +58,26 @@ export class LineBuilderService {
     companyId: string,
     side: "SALES" | "PURCHASE",
     lineDtos: InvoiceLineDto[],
+    opts: { partnerId?: string } = {},
   ): Promise<BuiltInvoiceLines> {
+    const company = await tx.company.findUniqueOrThrow({
+      where: { id: companyId },
+      select: { countryCode: true, fbrSettings: { select: { furtherTaxRatePercent: true, servicesTaxRatePercent: true } } },
+    });
+    const countryCode = company.countryCode;
+    // Further tax (Sales Tax Act s.3(1A)) is charged on sales to buyers
+    // explicitly marked UNREGISTERED; walk-in/unknown buyers (null) are not.
+    let furtherTaxRate: Prisma.Decimal | null = null;
+    if (countryCode === "PK" && side === "SALES" && opts.partnerId) {
+      const partner = await tx.businessPartner.findFirst({
+        where: { id: opts.partnerId, companyId },
+        select: { fbrRegistrationType: true },
+      });
+      if (partner?.fbrRegistrationType === FbrRegistrationType.UNREGISTERED) {
+        furtherTaxRate = company.fbrSettings?.furtherTaxRatePercent ?? new Prisma.Decimal(4);
+      }
+    }
+
     const itemIds = [...new Set(lineDtos.map((l) => l.itemId).filter((id): id is string => !!id))];
     const items = await tx.item.findMany({ where: { id: { in: itemIds }, companyId } });
     const itemById = new Map(items.map((item) => [item.id, item]));
@@ -134,7 +163,13 @@ export class LineBuilderService {
       const item = dto.itemId ? itemById.get(dto.itemId) : undefined;
       const isInventoryLine = !!item?.isInventoryItem;
 
-      const vatCategory = dto.vatCategory ?? item?.vatCategory ?? VatCategory.STANDARD_15;
+      const vatCategory: VatCategory = dto.vatCategory ?? item?.vatCategory ?? defaultCategoryForCountry(countryCode);
+      if (!isCategoryAllowedForCountry(vatCategory, countryCode)) {
+        throw new BadRequestException(
+          `Line ${index + 1}: tax category ${vatCategory} is not valid for a ${countryCode} company` +
+            (item ? ` — update item ${item.code}'s tax category` : ""),
+        );
+      }
 
       if (dto.costCenterId && dto.projectId) {
         throw new BadRequestException(
@@ -187,7 +222,20 @@ export class LineBuilderService {
       const quantity = new Prisma.Decimal(dto.quantity);
       const unitPrice = new Prisma.Decimal(dto.unitPrice);
       const discountAmount = new Prisma.Decimal(dto.discountAmount ?? "0");
-      const amounts = computeLineAmounts({ quantity, unitPrice, discountAmount, vatCategory, taxMode: dto.taxMode });
+      const amounts = computeLineAmounts({
+        quantity,
+        unitPrice,
+        discountAmount,
+        vatCategory,
+        taxMode: dto.taxMode,
+        // Services: item-specific rate if set, else the company services rate.
+        rate:
+          vatCategory === VatCategory.PK_SERVICES
+            ? item?.reducedRate ?? company.fbrSettings?.servicesTaxRatePercent ?? new Prisma.Decimal(15)
+            : item?.reducedRate,
+        retailPrice: item?.retailPrice,
+        furtherTaxRate,
+      });
 
       return {
         lineNumber: index + 1,
@@ -202,6 +250,9 @@ export class LineBuilderService {
         vatRate: amounts.vatRate,
         vatAmount: amounts.vatAmount,
         grossAmount: amounts.grossAmount,
+        furtherTaxRate: amounts.furtherTaxRate,
+        furtherTaxAmount: amounts.furtherTaxAmount,
+        retailValue: amounts.retailValue,
         accountId,
         warehouseId,
         projectId: dto.projectId ?? null,

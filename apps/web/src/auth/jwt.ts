@@ -7,6 +7,8 @@ export interface DecodedAccessToken {
   permissions: string[];
   isPlatformAdmin: boolean;
   enabledModules: string[];
+  /** Active company country (ISO alpha-2); absent on tokens issued before it existed. */
+  countryCode?: string | null;
   exp: number;
 }
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "../api/client";
 import { useTemplateSettings } from "./useTemplateSettings";
-import { downloadCommercialDocumentPdf, CommercialDocumentLine } from "../utils/documentPdf";
+import { downloadCommercialDocumentPdf, CommercialDocumentLine, FiscalBlock } from "../utils/documentPdf";
 
 interface CurrentCompany {
   legalName: string;
@@ -9,6 +9,8 @@ interface CurrentCompany {
   addressLine2: string | null;
   city: string | null;
   taxRegistrationNumber: string | null;
+  countryCode?: string;
+  ntn?: string | null;
 }
 
 /** Shared by every Sales/Purchase list page's "PDF" button — bundles the
@@ -29,13 +31,18 @@ export function useDocumentPdfDownload(cycle: "sales" | "purchase") {
       partnerLabel: string;
       partner: { name: string; code: string; taxRegistrationNumber?: string | null };
       lines: CommercialDocumentLine[];
+      fiscal?: FiscalBlock | null;
     }) => {
+      // Pakistan: "Sales Tax" + seller NTN instead of VAT / VAT number.
+      const isPakistan = company?.countryCode === "PK";
       const address = company ? [company.addressLine1, company.addressLine2, company.city].filter(Boolean).join(", ") : "";
       downloadCommercialDocumentPdf({
         cycle,
         companyName: company?.legalName ?? "",
         companyAddress: address || null,
-        companyTaxNumber: company?.taxRegistrationNumber ?? null,
+        companyTaxNumber: (isPakistan ? company?.ntn : company?.taxRegistrationNumber) ?? null,
+        taxLabel: isPakistan ? "Sales Tax" : "VAT",
+        taxNumberLabel: isPakistan ? "NTN" : "VAT Reg. No",
         ...params,
         branding: settings
           ? {

@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { AttachButton } from "./AttachButton";
 import { SearchableSelect } from "./SearchableSelect";
+import { useAuth } from "../auth/AuthContext";
+import { defaultTaxCategory, previewRate, TaxCategory, taxOptionsFor } from "../utils/taxLocale";
 
 interface Partner {
   id: string;
@@ -15,8 +17,10 @@ interface Item {
   id: string;
   code: string;
   name: string;
-  vatCategory: "STANDARD_15" | "ZERO_RATED" | "EXEMPT";
+  vatCategory: TaxCategory;
   isInventoryItem?: boolean;
+  reducedRate?: string | null;
+  retailPrice?: string | null;
 }
 
 interface Account {
@@ -54,7 +58,7 @@ interface LineForm {
   quantity: string;
   unitPrice: string;
   discountAmount: string;
-  vatCategory: "STANDARD_15" | "ZERO_RATED" | "EXEMPT";
+  vatCategory: TaxCategory;
   taxMode: TaxMode;
   accountId: string;
   warehouseId: string;
@@ -63,7 +67,6 @@ interface LineForm {
   attachmentFile: File | null;
 }
 
-const VAT_RATE: Record<string, number> = { STANDARD_15: 15, ZERO_RATED: 0, EXEMPT: 0 };
 
 // Most purchase invoices at this company are the same recurring vendor,
 // account, description, and memo (site fuel, consumables, etc.) — only the
@@ -104,14 +107,14 @@ function saveApLastDefaults(defaults: ApLastDefaults) {
 // (VAT-inclusive) — default AP drafts to inclusive so VAT is backed out of
 // the typed total rather than added on top. Sales quotes are typically net,
 // so AR keeps the exclusive default.
-function emptyLine(side: "ar" | "ap"): LineForm {
+function emptyLine(side: "ar" | "ap", countryCode?: string | null): LineForm {
   return {
     itemId: "",
     description: "",
     quantity: "1",
     unitPrice: "0",
     discountAmount: "0",
-    vatCategory: "STANDARD_15",
+    vatCategory: defaultTaxCategory(countryCode),
     taxMode: side === "ap" ? "INCLUSIVE" : "EXCLUSIVE",
     accountId: "",
     warehouseId: "",
@@ -121,10 +124,18 @@ function emptyLine(side: "ar" | "ap"): LineForm {
   };
 }
 
-function lineAmounts(line: LineForm) {
+// Indicative preview only — the server is authoritative (and adds Pakistan
+// further tax for unregistered buyers, which depends on the customer).
+function lineAmounts(line: LineForm, item?: Item) {
   const rawAmount = Math.max(0, (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0) - (Number(line.discountAmount) || 0));
   const rawRounded = Math.round(rawAmount * 100) / 100;
-  const rate = VAT_RATE[line.vatCategory];
+  const rate = previewRate(line.vatCategory, item?.reducedRate);
+  if (line.vatCategory === "PK_THIRD_SCHEDULE") {
+    // Third Schedule: 18% of the printed retail price, not of the sale price.
+    const vat = Math.round((Number(item?.retailPrice ?? 0) * (Number(line.quantity) || 0) * rate) / 100 * 100) / 100;
+    const net = line.taxMode === "INCLUSIVE" ? rawRounded - vat : rawRounded;
+    return { net, vat, gross: net + vat };
+  }
   if (line.taxMode === "INCLUSIVE") {
     const net = Math.round((rawRounded / (1 + rate / 100)) * 100) / 100;
     const vat = rawRounded - net;
@@ -136,7 +147,16 @@ function lineAmounts(line: LineForm) {
 
 export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
   const navigate = useNavigate();
-  const apDefaults = side === "ap" ? loadApLastDefaults() : null;
+  const { user } = useAuth();
+  const countryCode = user?.countryCode ?? null;
+  const taxOptions = taxOptionsFor(countryCode);
+  const storedApDefaults = side === "ap" ? loadApLastDefaults() : null;
+  // A remembered category from another country (e.g. switching companies)
+  // would be rejected by the server — fall back to this country's default.
+  const apDefaults =
+    storedApDefaults && !taxOptions.some((o) => o.value === storedApDefaults.vatCategory)
+      ? { ...storedApDefaults, vatCategory: defaultTaxCategory(countryCode) }
+      : storedApDefaults;
   const [partners, setPartners] = useState<Partner[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [partnerId, setPartnerId] = useState(apDefaults?.partnerId ?? "");
@@ -156,13 +176,13 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
   const [lines, setLines] = useState<LineForm[]>([
     apDefaults
       ? {
-          ...emptyLine(side),
+          ...emptyLine(side, countryCode),
           accountId: apDefaults.accountId,
           description: apDefaults.description,
           vatCategory: apDefaults.vatCategory,
           taxMode: apDefaults.taxMode,
         }
-      : emptyLine(side),
+      : emptyLine(side, countryCode),
   ]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -198,12 +218,12 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
   const totals = useMemo(() => {
     return lines.reduce(
       (acc, line) => {
-        const amounts = lineAmounts(line);
+        const amounts = lineAmounts(line, items.find((i) => i.id === line.itemId));
         return { net: acc.net + amounts.net, vat: acc.vat + amounts.vat, gross: acc.gross + amounts.gross };
       },
       { net: 0, vat: 0, gross: 0 },
     );
-  }, [lines]);
+  }, [lines, items]);
 
   function updateLine(index: number, patch: Partial<LineForm>) {
     setLines((prev) => prev.map((line, i) => (i === index ? { ...line, ...patch } : line)));
@@ -215,7 +235,7 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
     updateLine(index, {
       itemId,
       description: item ? item.name : "",
-      vatCategory: item?.vatCategory ?? "STANDARD_15",
+      vatCategory: item?.vatCategory ?? defaultTaxCategory(countryCode),
       warehouseId: item?.isInventoryItem ? defaultWarehouse?.id ?? "" : "",
     });
   }
@@ -347,7 +367,7 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
               <th>Qty</th>
               <th>Unit Price</th>
               <th>Discount</th>
-              <th>VAT</th>
+              <th>{countryCode === "PK" ? "Sales tax" : "VAT"}</th>
               {side === "ap" && <th>VAT mode</th>}
               <th>WH</th>
               <th>Project</th>
@@ -360,7 +380,7 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
           </thead>
           <tbody>
             {lines.map((line, index) => {
-              const amounts = lineAmounts(line);
+              const amounts = lineAmounts(line, items.find((i) => i.id === line.itemId));
               return (
                 <tr key={index}>
                   <td>
@@ -398,9 +418,9 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
                   </td>
                   <td>
                     <select value={line.vatCategory} onChange={(e) => updateLine(index, { vatCategory: e.target.value as LineForm["vatCategory"] })}>
-                      <option value="STANDARD_15">15%</option>
-                      <option value="ZERO_RATED">0% (zero-rated)</option>
-                      <option value="EXEMPT">Exempt</option>
+                      {taxOptions.map((o) => (
+                        <option key={o.value} value={o.value}>{o.short}</option>
+                      ))}
                     </select>
                   </td>
                   {side === "ap" && (
@@ -486,11 +506,12 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
         </table>
 
         <div className="form-row" style={{ justifyContent: "space-between", marginTop: 10 }}>
-          <button type="button" className="secondary" onClick={() => setLines((prev) => [...prev, emptyLine(side)])}>
+          <button type="button" className="secondary" onClick={() => setLines((prev) => [...prev, emptyLine(side, countryCode)])}>
             Add line
           </button>
           <strong>
-            Net {totals.net.toFixed(2)} + VAT {totals.vat.toFixed(2)} = Gross {totals.gross.toFixed(2)}
+            Net {totals.net.toFixed(2)} + {countryCode === "PK" ? "Sales tax" : "VAT"} {totals.vat.toFixed(2)} = Gross {totals.gross.toFixed(2)}
+            {countryCode === "PK" && side === "ar" && <span className="muted"> (+ further tax for unregistered buyers, added on save)</span>}
           </strong>
         </div>
 

@@ -1,5 +1,6 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { IsOptional, IsString } from "class-validator";
+import { IsIn, IsOptional, IsString, Matches } from "class-validator";
+import { FBR_BUSINESS_ACTIVITIES, FBR_SECTORS, NTN_CNIC_REGEX, PK_PROVINCES } from "../../fbr/fbr-constants";
 
 export class UpdateCompanyDto {
   @ApiProperty({ required: false })
@@ -56,4 +57,30 @@ export class UpdateCompanyDto {
   @IsOptional()
   @IsString()
   postalCode?: string;
+
+  // ── Pakistan (FBR) seller identity ────────────────────────────────
+  @ApiProperty({ required: false, description: "Seller NTN (7 digits) or CNIC (13 digits) — FBR DI sellerNTNCNIC" })
+  @IsOptional()
+  @Matches(NTN_CNIC_REGEX, { message: "NTN must be 7 digits (or CNIC 13 digits), numbers only" })
+  ntn?: string;
+
+  @ApiProperty({ required: false, description: "Sales Tax Registration Number" })
+  @IsOptional()
+  @IsString()
+  strn?: string;
+
+  @ApiProperty({ required: false, enum: PK_PROVINCES })
+  @IsOptional()
+  @IsIn(PK_PROVINCES)
+  province?: string;
+
+  @ApiProperty({ required: false, enum: FBR_BUSINESS_ACTIVITIES })
+  @IsOptional()
+  @IsIn(FBR_BUSINESS_ACTIVITIES)
+  fbrBusinessActivity?: string;
+
+  @ApiProperty({ required: false, enum: FBR_SECTORS })
+  @IsOptional()
+  @IsIn(FBR_SECTORS)
+  fbrSector?: string;
 }

@@ -20,6 +20,7 @@ import { NumberingService } from "../numbering/numbering.service";
 import { GlPostingService, PostedEntryLineInput } from "../gl/gl-posting.service";
 import { AuditService } from "../audit/audit.service";
 import { ZatcaSubmissionService } from "../zatca/zatca-submission.service";
+import { FbrSubmissionService } from "../fbr/fbr-submission.service";
 import { InventoryService } from "../inventory/inventory.service";
 import { AccountResolutionService } from "./account-resolution.service";
 import { LineBuilderService } from "./line-builder.service";
@@ -35,6 +36,7 @@ export class ArService {
     private readonly glPostingService: GlPostingService,
     private readonly auditService: AuditService,
     private readonly zatcaSubmissionService: ZatcaSubmissionService,
+    private readonly fbrSubmissionService: FbrSubmissionService,
     private readonly inventoryService: InventoryService,
     private readonly accountResolution: AccountResolutionService,
     private readonly lineBuilder: LineBuilderService,
@@ -65,7 +67,7 @@ export class ArService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const built = await this.lineBuilder.buildLines(tx, companyId, "SALES", dto.lines);
+      const built = await this.lineBuilder.buildLines(tx, companyId, "SALES", dto.lines, { partnerId: partner.id });
 
       return tx.salesInvoice.create({
         data: {
@@ -80,6 +82,7 @@ export class ArService {
           currencyCode,
           netTotal: built.totals.netTotal,
           vatTotal: built.totals.vatTotal,
+          furtherTaxTotal: built.totals.furtherTaxTotal,
           grossTotal: built.totals.grossTotal,
           memo: dto.memo,
           createdByUserId: userId,
@@ -98,6 +101,9 @@ export class ArService {
               vatRate: line.vatRate,
               vatAmount: line.vatAmount,
               grossAmount: line.grossAmount,
+              furtherTaxRate: line.furtherTaxRate,
+              furtherTaxAmount: line.furtherTaxAmount,
+              retailValue: line.retailValue,
               revenueAccountId: line.accountId,
               warehouseId: line.warehouseId,
               projectId: line.projectId,
@@ -123,7 +129,7 @@ export class ArService {
     const currencyCode = (dto.currencyCode ?? company.baseCurrencyCode).toUpperCase();
 
     return this.prisma.$transaction(async (tx) => {
-      const built = await this.lineBuilder.buildLines(tx, companyId, "SALES", dto.lines);
+      const built = await this.lineBuilder.buildLines(tx, companyId, "SALES", dto.lines, { partnerId: partner.id });
       await tx.salesInvoiceLine.deleteMany({ where: { salesInvoiceId: invoiceId } });
       return tx.salesInvoice.update({
         where: { id: invoiceId },
@@ -135,6 +141,7 @@ export class ArService {
           currencyCode,
           netTotal: built.totals.netTotal,
           vatTotal: built.totals.vatTotal,
+          furtherTaxTotal: built.totals.furtherTaxTotal,
           grossTotal: built.totals.grossTotal,
           memo: dto.memo,
           lines: {
@@ -152,6 +159,9 @@ export class ArService {
               vatRate: line.vatRate,
               vatAmount: line.vatAmount,
               grossAmount: line.grossAmount,
+              furtherTaxRate: line.furtherTaxRate,
+              furtherTaxAmount: line.furtherTaxAmount,
+              retailValue: line.retailValue,
               revenueAccountId: line.accountId,
               warehouseId: line.warehouseId,
               projectId: line.projectId,
@@ -176,7 +186,19 @@ export class ArService {
 
   // ── Posting ─────────────────────────────────────────────────────────
 
-  async postInvoice(companyId: string, invoiceId: string, userId: string, allowSoftClosedOverride: boolean) {
+  /**
+   * @param opts.cashRefundAccountId  POS returns only: the credit note is a
+   *   till refund — credit this cash/bank account instead of AR and leave the
+   *   (already paid) original invoice untouched. The original must be a
+   *   posted/paid invoice and the return may not exceed its gross total.
+   */
+  async postInvoice(
+    companyId: string,
+    invoiceId: string,
+    userId: string,
+    allowSoftClosedOverride: boolean,
+    opts: { cashRefundAccountId?: string } = {},
+  ) {
     const before = await this.getOwnedInvoice(companyId, invoiceId);
     if (before.status !== InvoiceStatus.DRAFT) {
       throw new ConflictException("Only draft invoices can be posted");
@@ -207,15 +229,35 @@ export class ArService {
         const original = await tx.salesInvoice.findFirst({
           where: { id: invoice.originalInvoiceId, companyId },
         });
-        if (!original || !OPEN_STATUSES.includes(original.status)) {
-          throw new ConflictException("The original invoice is not open (posted/partially paid)");
+        if (opts.cashRefundAccountId) {
+          if (!original || (!OPEN_STATUSES.includes(original.status) && original.status !== InvoiceStatus.PAID)) {
+            throw new ConflictException("The original sale is not a posted invoice");
+          }
+          // Cap at the original sale less anything already returned.
+          const priorReturns = await tx.salesInvoice.aggregate({
+            where: {
+              companyId,
+              originalInvoiceId: original.id,
+              documentKind: SalesDocumentKind.CREDIT_NOTE,
+              status: { in: [InvoiceStatus.POSTED, InvoiceStatus.PAID] },
+            },
+            _sum: { grossTotal: true },
+          });
+          const returnable = original.grossTotal.sub(priorReturns._sum.grossTotal ?? 0);
+          if (invoice.grossTotal.gt(returnable)) {
+            throw new BadRequestException(`Return total (${invoice.grossTotal}) exceeds what is still returnable on the original sale (${returnable})`);
+          }
+        } else {
+          if (!original || !OPEN_STATUSES.includes(original.status)) {
+            throw new ConflictException("The original invoice is not open (posted/partially paid)");
+          }
+          if (invoice.grossTotal.gt(original.openAmount)) {
+            throw new BadRequestException(
+              `Credit note total (${invoice.grossTotal}) exceeds the original invoice's open amount (${original.openAmount})`,
+            );
+          }
+          originalInvoice = original;
         }
-        if (invoice.grossTotal.gt(original.openAmount)) {
-          throw new BadRequestException(
-            `Credit note total (${invoice.grossTotal}) exceeds the original invoice's open amount (${original.openAmount})`,
-          );
-        }
-        originalInvoice = original;
       }
 
       const exchangeRate = await this.resolveExchangeRate(
@@ -231,14 +273,19 @@ export class ArService {
       const grossFunctional = invoice.grossTotal.mul(exchangeRate).toDecimalPlaces(4);
       const vatFunctional = invoice.vatTotal.mul(exchangeRate).toDecimalPlaces(4);
 
-      // AR control line (gross, partner-tagged)
+      const refundAccount = opts.cashRefundAccountId
+        ? await this.accountResolution.getBankOrCashAccount(tx, companyId, opts.cashRefundAccountId)
+        : null;
+
+      // AR control line (gross, partner-tagged) — or the till cash account
+      // for a POS refund.
       glLines.push({
-        accountId: arAccount.id,
+        accountId: refundAccount?.id ?? arAccount.id,
         debit: isCreditNote ? zero : grossFunctional,
         credit: isCreditNote ? grossFunctional : zero,
         amountInTransactionCurrency: invoice.grossTotal,
-        businessPartnerId: invoice.businessPartnerId,
-        description: isCreditNote ? "Credit note" : "Sales invoice",
+        businessPartnerId: refundAccount ? null : invoice.businessPartnerId,
+        description: refundAccount ? "POS cash refund" : isCreditNote ? "Credit note" : "Sales invoice",
       });
 
       // Revenue per line (net) — job-costing dims on revenue legs only.
@@ -453,6 +500,9 @@ export class ArService {
           openAmount: isCreditNote ? zero : invoice.grossTotal,
           buyerNameSnapshot: invoice.businessPartner.name,
           buyerTrnSnapshot: invoice.businessPartner.taxRegistrationNumber,
+          buyerNtnCnicSnapshot: invoice.businessPartner.ntnCnic,
+          buyerProvinceSnapshot: invoice.businessPartner.province,
+          buyerRegTypeSnapshot: invoice.businessPartner.fbrRegistrationType,
           invoiceTypeCode: isCreditNote ? ZATCA_INVOICE_TYPE_CODES.CREDIT_NOTE : ZATCA_INVOICE_TYPE_CODES.INVOICE,
           deliveryDate: invoice.deliveryDate ?? invoice.postingDate,
           postedByUserId: userId,
@@ -464,8 +514,11 @@ export class ArService {
       // ZATCA: reserve ICV/PIH + persist the signed XML atomically with the
       // posting. Returns null when the company has no ACTIVE device.
       const zatcaSubmissionId = await this.zatcaSubmissionService.prepareInTx(tx, invoiceId);
+      // FBR (Pakistan): validates master data (throws → posting rolls back)
+      // and records the DI/POS payload. Null unless PK + FBR enabled.
+      const fbrSubmissionId = await this.fbrSubmissionService.prepareInTx(tx, invoiceId);
 
-      return { updatedInvoice, zatcaSubmissionId };
+      return { updatedInvoice, zatcaSubmissionId, fbrSubmissionId };
       // Generous timeout: ZATCA signing is CPU-bound (~1s of EC key parsing)
       // and concurrent posts serialize on the device-row lock for the
       // ICV/PIH chain, so queue depth adds up under parallel posting.
@@ -475,6 +528,9 @@ export class ArService {
     // never roll back or block the accounting posting.
     if (posted.zatcaSubmissionId) {
       await this.zatcaSubmissionService.submitAfterPost(companyId, posted.zatcaSubmissionId, userId);
+    }
+    if (posted.fbrSubmissionId) {
+      await this.fbrSubmissionService.submitAfterPost(companyId, posted.fbrSubmissionId, userId);
     }
 
     await this.auditService.log({
@@ -585,6 +641,7 @@ export class ArService {
         lines: true,
         businessPartner: { select: { code: true, name: true } },
         zatcaSubmission: { select: { id: true, status: true, invoiceKind: true, errors: true } },
+        fbrSubmission: { select: { id: true, channel: true, environment: true, status: true, fbrInvoiceNumber: true, errors: true } },
       },
     });
   }
@@ -616,6 +673,9 @@ export class ArService {
         businessPartner: true,
         zatcaSubmission: {
           select: { id: true, status: true, icv: true, uuid: true, invoiceKind: true, qrCode: true, warnings: true, errors: true },
+        },
+        fbrSubmission: {
+          select: { id: true, channel: true, environment: true, status: true, fbrInvoiceNumber: true, errors: true, acknowledgedAt: true },
         },
       },
     });

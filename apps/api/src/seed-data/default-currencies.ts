@@ -4,4 +4,5 @@ export const DEFAULT_CURRENCIES = [
   { code: "EUR", name: "Euro", decimalPlaces: 2 },
   { code: "AED", name: "UAE Dirham", decimalPlaces: 2 },
   { code: "GBP", name: "British Pound", decimalPlaces: 2 },
+  { code: "PKR", name: "Pakistani Rupee", decimalPlaces: 2 },
 ];

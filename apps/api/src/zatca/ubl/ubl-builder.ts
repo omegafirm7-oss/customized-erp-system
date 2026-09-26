@@ -17,6 +17,12 @@ const UN_ECE_5305_BY_CATEGORY: Record<VatCategory, string> = {
   STANDARD_15: "S",
   ZERO_RATED: "Z",
   EXEMPT: "E",
+  // Pakistan categories are never valid on a ZATCA invoice (line builder
+  // rejects them for SA companies); "O" = outside the scope of VAT.
+  PK_STANDARD: "O",
+  PK_REDUCED: "O",
+  PK_THIRD_SCHEDULE: "O",
+  PK_SERVICES: "O",
 };
 
 const TRANSACTION_CODE_BY_KIND: Record<ZatcaInvoiceKind, string> = {

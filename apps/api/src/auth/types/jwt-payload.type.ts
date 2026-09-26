@@ -7,4 +7,6 @@ export interface JwtPayload {
   permissions: string[];
   isPlatformAdmin: boolean;
   enabledModules: string[];
+  /** Active company country (ISO alpha-2) — drives country-specific UI (SA/ZATCA vs PK/FBR). */
+  countryCode?: string | null;
 }

@@ -2,7 +2,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { DocumentBranding, logoFormatFromDataUrl } from "./attendancePdf";
 
-const VAT_RATE: Record<string, number> = { STANDARD_15: 15, ZERO_RATED: 0, EXEMPT: 0 };
+const VAT_RATE: Record<string, number> = { STANDARD_15: 15, ZERO_RATED: 0, EXEMPT: 0, PK_STANDARD: 18, PK_THIRD_SCHEDULE: 18, PK_REDUCED: 0 };
 
 function hexToRgb(hex: string): [number, number, number] {
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -20,6 +20,23 @@ export interface CommercialDocumentLine {
   quantity: string | number;
   unitPrice: string | number;
   vatCategory?: string | null;
+  /** Server-computed amounts (posted invoices). When present they are used
+   * verbatim instead of the client-side estimate — required for Pakistan
+   * (reduced rates, Third Schedule, further tax) and for discounts. */
+  amounts?: { net: string | number; tax: string | number; rate: string | number; gross: string | number; furtherTax?: string | number };
+}
+
+/**
+ * Tax-authority fiscal block (Pakistan FBR Digital Invoicing): FBR invoice
+ * number + 1"×1" QR + the FBR DI logo, as required by PRAL DI spec §6.
+ */
+export interface FiscalBlock {
+  authority: "FBR";
+  invoiceNumber: string | null;
+  qrDataUrl: string | null;
+  logoDataUrl: string | null;
+  /** Non-production reporting environment → printed as a warning. */
+  testEnvironment: string | null;
 }
 
 /**
@@ -39,6 +56,11 @@ export function downloadCommercialDocumentPdf(params: {
   partnerLabel: string;
   partner: { name: string; code: string; taxRegistrationNumber?: string | null };
   lines: CommercialDocumentLine[];
+  /** "VAT" (default) or "Sales Tax" (Pakistan). */
+  taxLabel?: string;
+  /** Header label for the seller tax id, e.g. "VAT Reg. No" or "NTN". */
+  taxNumberLabel?: string;
+  fiscal?: FiscalBlock | null;
   branding?: DocumentBranding & {
     showAddress?: boolean;
     showTaxNumber?: boolean;
@@ -48,6 +70,7 @@ export function downloadCommercialDocumentPdf(params: {
   };
 }) {
   const { companyName, companyAddress, companyTaxNumber, docTypeLabel, documentNumber, documentDate, partnerLabel, partner, lines, branding } = params;
+  const taxLabel = params.taxLabel ?? "VAT";
   const showItemCode = branding?.showItemCode ?? true;
   const showVatBreakdown = branding?.showVatBreakdown ?? true;
   const accentRgb = hexToRgb(branding?.accentColor ?? "#101828");
@@ -55,13 +78,18 @@ export function downloadCommercialDocumentPdf(params: {
   const computedLines = lines.map((line) => {
     const quantity = Number(line.quantity);
     const unitPrice = Number(line.unitPrice);
+    if (line.amounts) {
+      const a = line.amounts;
+      return { ...line, quantity, unitPrice, net: Number(a.net), rate: Number(a.rate), vat: Number(a.tax), gross: Number(a.gross), furtherTax: Number(a.furtherTax ?? 0) };
+    }
     const net = quantity * unitPrice;
     const rate = VAT_RATE[line.vatCategory ?? "STANDARD_15"] ?? 15;
     const vat = net * (rate / 100);
-    return { ...line, quantity, unitPrice, net, rate, vat, gross: net + vat };
+    return { ...line, quantity, unitPrice, net, rate, vat, gross: net + vat, furtherTax: 0 };
   });
   const totalNet = computedLines.reduce((s, l) => s + l.net, 0);
   const totalVat = computedLines.reduce((s, l) => s + l.vat, 0);
+  const totalFurtherTax = computedLines.reduce((s, l) => s + l.furtherTax, 0);
   const totalGross = totalNet + totalVat;
 
   const doc = new jsPDF();
@@ -87,7 +115,7 @@ export function downloadCommercialDocumentPdf(params: {
     headerY += 5;
   }
   if ((branding?.showTaxNumber ?? true) && companyTaxNumber) {
-    doc.text(`VAT Reg. No: ${companyTaxNumber}`, pageWidth - 14, headerY, { align: "right" });
+    doc.text(`${params.taxNumberLabel ?? "VAT Reg. No"}: ${companyTaxNumber}`, pageWidth - 14, headerY, { align: "right" });
     headerY += 5;
   }
   y = Math.max(y + 24, headerY + 4);
@@ -116,8 +144,8 @@ export function downloadCommercialDocumentPdf(params: {
   y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
 
   const head = showItemCode
-    ? ["Code", "Description", "Qty", "Unit Price", ...(showVatBreakdown ? ["VAT %", "VAT"] : []), "Line Total"]
-    : ["Description", "Qty", "Unit Price", ...(showVatBreakdown ? ["VAT %", "VAT"] : []), "Line Total"];
+    ? ["Code", "Description", "Qty", "Unit Price", ...(showVatBreakdown ? [`${taxLabel} %`, taxLabel] : []), "Line Total"]
+    : ["Description", "Qty", "Unit Price", ...(showVatBreakdown ? [`${taxLabel} %`, taxLabel] : []), "Line Total"];
   const body = computedLines.map((l) => {
     const row: string[] = [];
     if (showItemCode) row.push(l.itemCode ?? "");
@@ -141,7 +169,12 @@ export function downloadCommercialDocumentPdf(params: {
   const totalsBody = showVatBreakdown
     ? [
         ["Net Total", money(totalNet)],
-        ["VAT Total", money(totalVat)],
+        ...(totalFurtherTax > 0
+          ? [
+              [`${taxLabel} Total`, money(totalVat - totalFurtherTax)],
+              ["Further Tax", money(totalFurtherTax)],
+            ]
+          : [[`${taxLabel} Total`, money(totalVat)]]),
         ["Grand Total", money(totalGross)],
       ]
     : [["Grand Total", money(totalGross)]];
@@ -155,6 +188,10 @@ export function downloadCommercialDocumentPdf(params: {
     margin: { left: pageWidth - 14 - 80, right: 14 },
   });
   y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+
+  if (params.fiscal) {
+    y = drawFiscalBlock(doc, params.fiscal, y, pageWidth);
+  }
 
   if (branding?.termsText) {
     doc.setFontSize(9);
@@ -172,4 +209,44 @@ export function downloadCommercialDocumentPdf(params: {
   }
 
   doc.save(`${documentNumber.replace(/\s+/g, "-")}.pdf`);
+}
+
+/** 1 inch = 25.4 mm (jsPDF default unit is mm) — FBR mandates a 1"×1" QR. */
+const INCH = 25.4;
+
+function drawFiscalBlock(doc: jsPDF, fiscal: FiscalBlock, y: number, pageWidth: number): number {
+  const top = y;
+  let x = 14;
+  if (fiscal.logoDataUrl) {
+    try {
+      doc.addImage(fiscal.logoDataUrl, logoFormatFromDataUrl(fiscal.logoDataUrl), x, top, INCH, INCH, undefined, "FAST");
+      x += INCH + 4;
+    } catch {
+      // print without the logo rather than fail the whole PDF
+    }
+  }
+  if (fiscal.qrDataUrl) {
+    doc.addImage(fiscal.qrDataUrl, "PNG", x, top, INCH, INCH, undefined, "FAST");
+    x += INCH + 5;
+  }
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "bold");
+  doc.text("FBR Digital Invoicing", x, top + 5);
+  doc.setFont("helvetica", "normal");
+  if (fiscal.invoiceNumber) {
+    doc.text(`FBR Invoice No: ${fiscal.invoiceNumber}`, x, top + 11);
+    doc.text("Scan the QR code to verify this invoice with FBR.", x, top + 16, { maxWidth: pageWidth - x - 14 });
+  } else {
+    doc.setTextColor(180, 35, 24);
+    doc.text("NOT YET REPORTED TO FBR — no FBR invoice number issued.", x, top + 11, { maxWidth: pageWidth - x - 14 });
+    doc.setTextColor(0, 0, 0);
+  }
+  if (fiscal.testEnvironment) {
+    doc.setTextColor(180, 35, 24);
+    doc.setFont("helvetica", "bold");
+    doc.text(`TEST (${fiscal.testEnvironment}) — NOT A VALID TAX INVOICE`, x, top + 22, { maxWidth: pageWidth - x - 14 });
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(0, 0, 0);
+  }
+  return top + INCH + 8;
 }

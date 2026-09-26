@@ -1,6 +1,7 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { PartnerType } from "@prisma/client";
-import { IsEnum, IsOptional, IsString, MinLength } from "class-validator";
+import { FbrRegistrationType, PartnerType } from "@prisma/client";
+import { IsEnum, IsIn, IsOptional, IsString, Matches, MinLength } from "class-validator";
+import { NTN_CNIC_REGEX, PK_PROVINCES } from "../../fbr/fbr-constants";
 
 export class CreateBusinessPartnerDto {
   @ApiProperty()
@@ -34,6 +35,27 @@ export class CreateBusinessPartnerDto {
   @IsOptional()
   @IsString()
   currencyCode?: string;
+
+  // ── Pakistan (FBR) buyer identity ─────────────────────────────────
+  @ApiProperty({ required: false, description: "Buyer NTN (7 digits) or CNIC (13 digits)" })
+  @IsOptional()
+  @Matches(NTN_CNIC_REGEX, { message: "NTN must be 7 digits (or CNIC 13 digits), numbers only" })
+  ntnCnic?: string;
+
+  @ApiProperty({ required: false, description: "Sales Tax Registration Number" })
+  @IsOptional()
+  @IsString()
+  strn?: string;
+
+  @ApiProperty({ required: false, enum: PK_PROVINCES })
+  @IsOptional()
+  @IsIn(PK_PROVINCES)
+  province?: string;
+
+  @ApiProperty({ required: false, enum: FbrRegistrationType, description: "UNREGISTERED buyers attract further tax" })
+  @IsOptional()
+  @IsEnum(FbrRegistrationType)
+  fbrRegistrationType?: FbrRegistrationType;
 }
 
 export class UpdateBusinessPartnerDto {
@@ -71,6 +93,27 @@ export class UpdateBusinessPartnerDto {
   @IsOptional()
   @IsString()
   currencyCode?: string;
+
+  // ── Pakistan (FBR) buyer identity ─────────────────────────────────
+  @ApiProperty({ required: false, description: "Buyer NTN (7 digits) or CNIC (13 digits)" })
+  @IsOptional()
+  @Matches(NTN_CNIC_REGEX, { message: "NTN must be 7 digits (or CNIC 13 digits), numbers only" })
+  ntnCnic?: string;
+
+  @ApiProperty({ required: false, description: "Sales Tax Registration Number" })
+  @IsOptional()
+  @IsString()
+  strn?: string;
+
+  @ApiProperty({ required: false, enum: PK_PROVINCES })
+  @IsOptional()
+  @IsIn(PK_PROVINCES)
+  province?: string;
+
+  @ApiProperty({ required: false, enum: FbrRegistrationType, description: "UNREGISTERED buyers attract further tax" })
+  @IsOptional()
+  @IsEnum(FbrRegistrationType)
+  fbrRegistrationType?: FbrRegistrationType;
 }
 
 export class ImportPartnersDto {

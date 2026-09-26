@@ -43,25 +43,30 @@ export class CompaniesService {
 
       await this.coaService.cloneDefaultCoaForCompany(tx, created.id);
 
+      // Pakistan's statutory tax year runs July–June (Income Tax Ordinance
+      // s.74); everyone else gets the calendar year.
       const now = new Date();
-      const yearStart = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
-      const yearEnd = new Date(Date.UTC(now.getUTCFullYear(), 11, 31, 23, 59, 59));
+      const isPakistan = created.countryCode === "PK";
+      const startYear = isPakistan && now.getUTCMonth() < 6 ? now.getUTCFullYear() - 1 : now.getUTCFullYear();
+      const startMonth = isPakistan ? 6 : 0;
+      const yearStart = new Date(Date.UTC(startYear, startMonth, 1));
+      const yearEnd = new Date(Date.UTC(startYear, startMonth + 12, 0, 23, 59, 59));
       const fiscalYear = await tx.fiscalYear.create({
         data: {
           companyId: created.id,
-          code: `FY${now.getUTCFullYear()}`,
+          code: isPakistan ? `FY${startYear}-${String(startYear + 1).slice(-2)}` : `FY${startYear}`,
           startDate: yearStart,
           endDate: yearEnd,
         },
       });
 
       await tx.fiscalPeriod.createMany({
-        data: Array.from({ length: 12 }, (_, month) => ({
+        data: Array.from({ length: 12 }, (_, offset) => ({
           fiscalYearId: fiscalYear.id,
           companyId: created.id,
-          periodNumber: month + 1,
-          startDate: new Date(Date.UTC(now.getUTCFullYear(), month, 1)),
-          endDate: new Date(Date.UTC(now.getUTCFullYear(), month + 1, 0, 23, 59, 59)),
+          periodNumber: offset + 1,
+          startDate: new Date(Date.UTC(startYear, startMonth + offset, 1)),
+          endDate: new Date(Date.UTC(startYear, startMonth + offset + 1, 0, 23, 59, 59)),
           status: FiscalPeriodStatus.OPEN,
         })),
       });

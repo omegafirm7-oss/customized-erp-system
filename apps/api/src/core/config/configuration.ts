@@ -27,6 +27,16 @@ export interface AppConfig {
     host: string;
     timeoutMs: number;
   };
+  /** Pakistan FBR (Digital Invoicing + POS). Tokens are per company in the
+   * DB (encrypted with zatca.encryptionKey); these are transport knobs. */
+  fbr: {
+    diTimeoutMs: number;
+    /** POS sales answer the till synchronously — keep this short. */
+    posTimeoutMs: number;
+    /** Background re-submission of PENDING/FAILED submissions; 0 disables. */
+    retryIntervalMs: number;
+    maxRetries: number;
+  };
   /** Anthropic API for the CRM sales agent (lead research + message
    * drafting). Empty key = not configured; the agent endpoints return a
    * clear "not configured" error and the UI hides the AI buttons. */
@@ -71,6 +81,12 @@ export default (): AppConfig => ({
     encryptionKey: process.env.ZATCA_KEY_ENCRYPTION_KEY ?? "",
     host: process.env.ZATCA_HOST ?? "https://gw-fatoora.zatca.gov.sa/e-invoicing",
     timeoutMs: process.env.ZATCA_TIMEOUT_MS ? Number(process.env.ZATCA_TIMEOUT_MS) : 30000,
+  },
+  fbr: {
+    diTimeoutMs: process.env.FBR_DI_TIMEOUT_MS ? Number(process.env.FBR_DI_TIMEOUT_MS) : 30000,
+    posTimeoutMs: process.env.FBR_POS_TIMEOUT_MS ? Number(process.env.FBR_POS_TIMEOUT_MS) : 5000,
+    retryIntervalMs: process.env.FBR_RETRY_INTERVAL_MS ? Number(process.env.FBR_RETRY_INTERVAL_MS) : 5 * 60 * 1000,
+    maxRetries: process.env.FBR_MAX_RETRIES ? Number(process.env.FBR_MAX_RETRIES) : 20,
   },
   ai: {
     anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",

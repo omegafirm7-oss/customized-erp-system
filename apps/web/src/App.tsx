@@ -44,6 +44,10 @@ import { NewPaymentPage } from "./pages/NewPaymentPage";
 import { ArAgingPage, ApAgingPage } from "./pages/AgingPage";
 import { VatReturnPage } from "./pages/VatReturnPage";
 import { ZatcaSettingsPage } from "./pages/ZatcaSettingsPage";
+import { FbrSettingsPage } from "./pages/FbrSettingsPage";
+import { FbrSubmissionsPage } from "./pages/FbrSubmissionsPage";
+import { PosTerminalsPage } from "./pages/PosTerminalsPage";
+import { PosCounterPage } from "./pages/PosCounterPage";
 import { TemplateSettingsPage } from "./pages/TemplateSettingsPage";
 import { ActivityLogPage } from "./pages/ActivityLogPage";
 import { StockSummaryPage } from "./pages/StockSummaryPage";
@@ -143,6 +147,10 @@ const companyRoutes: Array<{ path: string; element: JSX.Element }> = [
   { path: "/reports/ap-aging", element: <ApAgingPage /> },
   { path: "/reports/vat-return", element: <VatReturnPage /> },
   { path: "/settings/zatca", element: <ZatcaSettingsPage /> },
+  { path: "/fbr/settings", element: <FbrSettingsPage /> },
+  { path: "/fbr/submissions", element: <FbrSubmissionsPage /> },
+  { path: "/fbr/pos-terminals", element: <PosTerminalsPage /> },
+  { path: "/pos/counter", element: <PosCounterPage /> },
   { path: "/settings/templates", element: <TemplateSettingsPage /> },
   { path: "/settings/activity-log", element: <ActivityLogPage /> },
   { path: "/inventory/stock", element: <StockSummaryPage /> },
