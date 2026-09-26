@@ -4,6 +4,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { useCompanies } from "../../hooks/useCompanies";
 import { OutreachComposer, OutreachLead } from "./OutreachComposer";
 import { AgentStatus, TUV_PROFILE_TEMPLATE } from "./salesAgentConstants";
+import { FlyerLibrary } from "./flyers";
 
 interface FollowUp {
   id: string;
@@ -196,6 +197,8 @@ export function OutreachPage() {
           </>
         )}
       </div>
+
+      <FlyerLibrary />
 
       {settings && (
         <div className="card">

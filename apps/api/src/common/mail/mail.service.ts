@@ -42,14 +42,25 @@ export class MailService {
     text: string;
     senderName: string;
     replyTo?: string | null;
+    /** Images are embedded under the text (cid:), anything else is attached. */
+    files?: { fileName: string; mimeType: string; data: Buffer }[];
   }): Promise<void> {
     if (!this.transporter) {
       throw new Error("Outgoing email is not configured on the server (SMTP settings missing)");
     }
-    const html = params.text
-      .split(/\n{2,}/)
-      .map((p) => `<p>${escapeHtml(p).replace(/\n/g, "<br>")}</p>`)
-      .join("");
+    const files = params.files ?? [];
+    const images = files.map((f, i) => ({ ...f, cid: `flyer${i}@outreach` })).filter((f) => f.mimeType.startsWith("image/"));
+    const html =
+      params.text
+        .split(/\n{2,}/)
+        .map((p) => `<p>${escapeHtml(p).replace(/\n/g, "<br>")}</p>`)
+        .join("") +
+      images
+        .map(
+          (img) =>
+            `<p><img src="cid:${img.cid}" alt="${escapeHtml(img.fileName)}" width="600" style="max-width:100%;height:auto;display:block;border:0"></p>`,
+        )
+        .join("");
     await this.transporter.sendMail({
       from: this.smtpUser ? { name: params.senderName, address: this.smtpUser } : this.fromAddress,
       to: params.to,
@@ -57,6 +68,12 @@ export class MailService {
       subject: params.subject,
       text: params.text,
       html,
+      attachments: files.map((f, i) => ({
+        filename: f.fileName,
+        content: f.data,
+        contentType: f.mimeType,
+        ...(f.mimeType.startsWith("image/") ? { cid: `flyer${i}@outreach`, contentDisposition: "inline" as const } : {}),
+      })),
     });
   }
 

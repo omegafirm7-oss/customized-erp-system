@@ -1,5 +1,5 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { IsBoolean, IsEmail, IsOptional, IsString, IsUUID, MaxLength, MinLength } from "class-validator";
+import { ArrayMaxSize, IsArray, IsBoolean, IsEmail, IsOptional, IsString, IsUUID, MaxLength, MinLength } from "class-validator";
 
 class OutreachBaseDto {
   @ApiProperty()
@@ -34,6 +34,13 @@ export class SendEmailDto extends OutreachBaseDto {
   @IsOptional()
   @IsEmail()
   to?: string;
+
+  @ApiProperty({ required: false, type: [String], description: "Marketing flyers to include (images embedded, PDFs attached)" })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @IsUUID("4", { each: true })
+  assetIds?: string[];
 }
 
 export class LogWhatsAppDto extends OutreachBaseDto {

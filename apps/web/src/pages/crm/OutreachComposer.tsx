@@ -2,6 +2,7 @@ import { useState } from "react";
 import { apiClient } from "../../api/client";
 import { AgentStatus } from "./salesAgentConstants";
 import { toWhatsAppNumber, whatsAppLink } from "./whatsapp";
+import { FlyerThumb, useFlyers } from "./flyers";
 
 export interface OutreachLead {
   id: string;
@@ -38,6 +39,8 @@ export function OutreachComposer({ lead, status, followUpActivityId, initialChan
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const { flyers } = useFlyers();
+  const [flyerIds, setFlyerIds] = useState<string[]>([]);
 
   const canSend =
     body.trim().length > 0 &&
@@ -77,11 +80,19 @@ export function OutreachComposer({ lead, status, followUpActivityId, initialChan
         await apiClient.post("/crm/agent/log-whatsapp", { leadId: lead.id, body, followUpActivityId, scheduleFollowUps });
         setNotice("WhatsApp opened with your message — press send there. Logged on the lead.");
       } else {
-        await apiClient.post("/crm/agent/send-email", { leadId: lead.id, subject, body, followUpActivityId, scheduleFollowUps });
+        await apiClient.post("/crm/agent/send-email", {
+          leadId: lead.id,
+          subject,
+          body,
+          followUpActivityId,
+          scheduleFollowUps,
+          assetIds: flyerIds.length ? flyerIds : undefined,
+        });
         setNotice(`Email sent to ${lead.email}.`);
       }
       setBody("");
       setSubject("");
+      setFlyerIds([]);
       onSent();
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "Failed to send");
@@ -153,6 +164,31 @@ export function OutreachComposer({ lead, status, followUpActivityId, initialChan
         onChange={(e) => setBody(e.target.value)}
         dir="auto"
       />
+
+      {channel === "EMAIL" && flyers.length > 0 && (
+        <div className="flyer-pick">
+          <span className="chip-label">Include flyers (up to 5)</span>
+          <div className="flyer-grid">
+            {flyers.map((f) => {
+              const on = flyerIds.includes(f.id);
+              return (
+                <label key={f.id} className={`flyer-card ${on ? "on" : ""}`} title={f.fileName}>
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    disabled={!on && flyerIds.length >= 5}
+                    onChange={() => setFlyerIds(on ? flyerIds.filter((id) => id !== f.id) : [...flyerIds, f.id])}
+                  />
+                  <FlyerThumb flyer={f} />
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {channel === "WHATSAPP" && flyers.length > 0 && (
+        <p className="outreach-hint">WhatsApp links can only carry text. To send a flyer on WhatsApp, attach the image in WhatsApp after it opens.</p>
+      )}
 
       <div className="form-row" style={{ alignItems: "center" }}>
         {!followUpActivityId && (

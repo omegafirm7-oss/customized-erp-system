@@ -22,6 +22,8 @@ import { ImportLeadsDto } from "./dto/import-leads.dto";
 // follow-ups stop being listed as due and the auto-sender skips them.
 const CHASEABLE_STATUSES: LeadStatus[] = [LeadStatus.NEW, LeadStatus.CONTACTED];
 const AUTO_SEND_INTERVAL_MS = 5 * 60 * 1000;
+const ASSET_MIME_TYPES = ["image/jpeg", "image/png", "image/gif", "application/pdf"];
+const MAX_ASSETS = 20;
 
 @Injectable()
 export class OutreachService implements OnModuleInit, OnModuleDestroy {
@@ -186,6 +188,7 @@ export class OutreachService implements OnModuleInit, OnModuleDestroy {
       this.prisma.company.findUniqueOrThrow({ where: { id: companyId } }),
     ]);
     const text = withSignature(dto.body, settings.emailSignature);
+    const files = await this.loadAssets(companyId, dto.assetIds ?? []);
     try {
       await this.mail.sendOutreachEmail({
         to,
@@ -193,6 +196,7 @@ export class OutreachService implements OnModuleInit, OnModuleDestroy {
         text,
         senderName: companyDisplayName(company),
         replyTo: settings.replyToEmail,
+        files,
       });
     } catch (err) {
       this.logger.warn(`Outreach email to ${to} failed: ${(err as Error).message}`);
@@ -203,11 +207,81 @@ export class OutreachService implements OnModuleInit, OnModuleDestroy {
       subject: dto.subject,
       body: text,
       recipient: to,
+      attachmentNames: files.map((f) => f.fileName),
       followUpActivityId: dto.followUpActivityId,
       scheduleFollowUps: dto.scheduleFollowUps,
       followUpDays: settings.followUpDays,
       autoSend: settings.autoSendEmailFollowUps,
     });
+  }
+
+  // ── Marketing flyers ──────────────────────────────────────────────────
+
+  listAssets(companyId: string) {
+    return this.prisma.crmMarketingAsset.findMany({
+      where: { companyId },
+      select: { id: true, fileName: true, mimeType: true, size: true, createdAt: true },
+      orderBy: { createdAt: "asc" },
+    });
+  }
+
+  async uploadAsset(companyId: string, userId: string, file: { originalname: string; mimetype: string; buffer: Buffer }) {
+    if (!ASSET_MIME_TYPES.includes(file.mimetype)) {
+      throw new BadRequestException("Flyers must be JPEG, PNG, GIF or PDF");
+    }
+    const count = await this.prisma.crmMarketingAsset.count({ where: { companyId } });
+    if (count >= MAX_ASSETS) throw new BadRequestException(`You can keep up to ${MAX_ASSETS} flyers — delete one first`);
+    const asset = await this.prisma.crmMarketingAsset.create({
+      data: {
+        companyId,
+        fileName: file.originalname.slice(0, 200),
+        mimeType: file.mimetype,
+        size: file.buffer.length,
+        data: file.buffer,
+        createdByUserId: userId,
+      },
+      select: { id: true, fileName: true, mimeType: true, size: true, createdAt: true },
+    });
+    await this.auditService.log({
+      companyId,
+      entityName: "CrmMarketingAsset",
+      entityId: asset.id,
+      action: "CREATE",
+      changedByUserId: userId,
+      afterSnapshot: asset,
+    });
+    return asset;
+  }
+
+  async getAssetFile(companyId: string, id: string) {
+    const asset = await this.prisma.crmMarketingAsset.findFirst({ where: { id, companyId } });
+    if (!asset) throw new NotFoundException("Flyer not found");
+    return asset;
+  }
+
+  async deleteAsset(companyId: string, userId: string, id: string) {
+    const asset = await this.prisma.crmMarketingAsset.findFirst({
+      where: { id, companyId },
+      select: { id: true, fileName: true, mimeType: true, size: true },
+    });
+    if (!asset) throw new NotFoundException("Flyer not found");
+    await this.prisma.crmMarketingAsset.delete({ where: { id } });
+    await this.auditService.log({
+      companyId,
+      entityName: "CrmMarketingAsset",
+      entityId: id,
+      action: "DELETE",
+      changedByUserId: userId,
+      beforeSnapshot: asset,
+    });
+  }
+
+  private async loadAssets(companyId: string, ids: string[]) {
+    if (ids.length === 0) return [];
+    const assets = await this.prisma.crmMarketingAsset.findMany({ where: { companyId, id: { in: ids } } });
+    if (assets.length !== new Set(ids).size) throw new BadRequestException("One of the selected flyers no longer exists");
+    // Keep the order the user picked them in.
+    return ids.map((id) => assets.find((a) => a.id === id)!).map((a) => ({ fileName: a.fileName, mimeType: a.mimeType, data: Buffer.from(a.data) }));
   }
 
   /** WhatsApp is click-to-send: the browser opened wa.me with the text; this records it. */
@@ -347,6 +421,7 @@ export class OutreachService implements OnModuleInit, OnModuleDestroy {
       subject: string;
       body: string;
       recipient: string;
+      attachmentNames?: string[];
       followUpActivityId?: string;
       scheduleFollowUps?: boolean;
       followUpDays: string;
@@ -369,6 +444,7 @@ export class OutreachService implements OnModuleInit, OnModuleDestroy {
             messageSubject: p.subject,
             messageBody: p.body,
             recipient: p.recipient,
+            attachmentNames: p.attachmentNames ?? [],
             sentAt: now,
             completedAt: now,
             autoSend: false,
@@ -385,6 +461,7 @@ export class OutreachService implements OnModuleInit, OnModuleDestroy {
             messageSubject: p.type === CrmActivityType.EMAIL ? p.subject : null,
             messageBody: p.body,
             recipient: p.recipient,
+            attachmentNames: p.attachmentNames ?? [],
             sentAt: now,
             completedAt: now,
             ownerUserId: userId,

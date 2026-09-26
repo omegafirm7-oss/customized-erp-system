@@ -40,6 +40,7 @@ interface Activity {
   recipient: string | null;
   autoSend: boolean;
   sendError: string | null;
+  attachmentNames: string[];
   createdAt: string;
 }
 
@@ -605,6 +606,7 @@ function ActivityItem({ a }: { a: Activity }) {
       {!pending && !a.sentAt && a.dueDate && ` (due ${new Date(a.dueDate).toLocaleDateString()})`}
       {!a.sentAt && a.completedAt && " ✓ done"}
       {a.sendError && <div className="followup-due">Auto-send failed: {a.sendError}</div>}
+      {a.attachmentNames?.length > 0 && <div className="lead-sub">Flyers: {a.attachmentNames.join(", ")}</div>}
       {a.messageBody && (
         <>
           {" "}

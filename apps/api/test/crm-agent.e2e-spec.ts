@@ -241,6 +241,59 @@ describe("CRM sales agent — outreach, follow-ups, AI endpoints (e2e)", () => {
     expect(b.businessLines).toEqual(["training"]);
   });
 
+  it("embeds uploaded flyers in outreach email and keeps them company-scoped", async () => {
+    const ctx = await setupContext();
+    const other = await setupContext();
+    const png = Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a4a60000000049454e44ae426082", "hex");
+
+    await request(app.getHttpServer())
+      .post("/crm/agent/assets")
+      .set(auth(ctx.accessToken))
+      .attach("file", Buffer.from("RIFF....WEBP"), { filename: "flyer.webp", contentType: "image/webp" })
+      .expect(400);
+    const flyer = (
+      await request(app.getHttpServer())
+        .post("/crm/agent/assets")
+        .set(auth(ctx.accessToken))
+        .attach("file", png, { filename: "tuv-offer.png", contentType: "image/png" })
+        .expect(201)
+    ).body;
+    expect(flyer.fileName).toBe("tuv-offer.png");
+    expect(flyer.data).toBeUndefined();
+
+    const list = (await request(app.getHttpServer()).get("/crm/agent/assets").set(auth(ctx.accessToken)).expect(200)).body;
+    expect(list).toHaveLength(1);
+    const file = await request(app.getHttpServer()).get(`/crm/agent/assets/${flyer.id}/file`).set(auth(ctx.accessToken)).expect(200);
+    expect(file.headers["content-type"]).toBe("image/png");
+
+    // Another company can neither see nor use it
+    expect((await request(app.getHttpServer()).get("/crm/agent/assets").set(auth(other.accessToken)).expect(200)).body).toHaveLength(0);
+    await request(app.getHttpServer()).get(`/crm/agent/assets/${flyer.id}/file`).set(auth(other.accessToken)).expect(404);
+    const otherLead = await createLead(other.accessToken);
+    await request(app.getHttpServer())
+      .post("/crm/agent/send-email")
+      .set(auth(other.accessToken))
+      .send({ leadId: otherLead.id, subject: "x", body: "y", assetIds: [flyer.id] })
+      .expect(400);
+
+    const lead = await createLead(ctx.accessToken);
+    const sent = (
+      await request(app.getHttpServer())
+        .post("/crm/agent/send-email")
+        .set(auth(ctx.accessToken))
+        .send({ leadId: lead.id, subject: "30% off TUV cards", body: "See our offer below.", assetIds: [flyer.id] })
+        .expect(201)
+    ).body;
+    expect(sent.attachmentNames).toEqual(["tuv-offer.png"]);
+    const call = sendSpy.mock.calls.at(-1)[0];
+    expect(call.files).toHaveLength(1);
+    expect(call.files[0].mimeType).toBe("image/png");
+    expect(Buffer.compare(call.files[0].data, png)).toBe(0);
+
+    await request(app.getHttpServer()).delete(`/crm/agent/assets/${flyer.id}`).set(auth(ctx.accessToken)).expect(200);
+    expect((await request(app.getHttpServer()).get("/crm/agent/assets").set(auth(ctx.accessToken)).expect(200)).body).toHaveLength(0);
+  });
+
   it("isolates outreach between companies", async () => {
     const a = await setupContext();
     const b = await setupContext();

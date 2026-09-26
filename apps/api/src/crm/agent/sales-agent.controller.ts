@@ -1,5 +1,22 @@
-import { Body, Controller, Get, Post, Put } from "@nestjs/common";
-import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Put,
+  Res,
+  StreamableFile,
+  UploadedFile,
+  UseInterceptors,
+} from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { memoryStorage } from "multer";
+import { Response } from "express";
+import { ApiBearerAuth, ApiConsumes, ApiTags } from "@nestjs/swagger";
 import { MODULE_KEYS, PERMISSIONS } from "@erp/shared-constants";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import { RequiresModule } from "../../common/decorators/requires-module.decorator";
@@ -75,5 +92,39 @@ export class SalesAgentController {
   @Permissions(PERMISSIONS.CRM_LEAD_VIEW)
   followUps(@CurrentCompanyId() companyId: string) {
     return this.outreach.listFollowUps(companyId);
+  }
+
+  @Get("assets")
+  @Permissions(PERMISSIONS.CRM_LEAD_VIEW)
+  listAssets(@CurrentCompanyId() companyId: string) {
+    return this.outreach.listAssets(companyId);
+  }
+
+  @Post("assets")
+  @Permissions(PERMISSIONS.CRM_LEAD_MANAGE)
+  @ApiConsumes("multipart/form-data")
+  @UseInterceptors(FileInterceptor("file", { storage: memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }))
+  uploadAsset(@CurrentCompanyId() companyId: string, @CurrentUser() user: JwtPayload, @UploadedFile() file?: Express.Multer.File) {
+    if (!file) throw new BadRequestException("No file uploaded");
+    return this.outreach.uploadAsset(companyId, user.sub, file);
+  }
+
+  @Get("assets/:id/file")
+  @Permissions(PERMISSIONS.CRM_LEAD_VIEW)
+  async getAssetFile(
+    @CurrentCompanyId() companyId: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const asset = await this.outreach.getAssetFile(companyId, id);
+    res.set({ "Content-Type": asset.mimeType, "Cache-Control": "private, max-age=3600" });
+    return new StreamableFile(Buffer.from(asset.data));
+  }
+
+  @Delete("assets/:id")
+  @Permissions(PERMISSIONS.CRM_LEAD_MANAGE)
+  async deleteAsset(@CurrentCompanyId() companyId: string, @CurrentUser() user: JwtPayload, @Param("id", ParseUUIDPipe) id: string) {
+    await this.outreach.deleteAsset(companyId, user.sub, id);
+    return { success: true };
   }
 }
