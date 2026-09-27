@@ -301,9 +301,10 @@ describe("CRM sales agent — outreach, follow-ups, AI endpoints (e2e)", () => {
       await request(app.getHttpServer())
         .put("/crm/agent/settings")
         .set(auth(ctx.accessToken))
-        .send({ companyProfile: "Profile", defaultEmailSubject: " TUV cards for {company} ", defaultMessage: message })
+        .send({ companyProfile: "Profile", defaultEmailSubject: " TUV cards for {company} ", defaultMessage: message, defaultWhatsappMessage: "Salam {name}!" })
         .expect(200)
     ).body;
+    expect(saved.defaultWhatsappMessage).toBe("Salam {name}!");
     expect(saved.defaultEmailSubject).toBe("TUV cards for {company}");
     expect(saved.defaultMessage).toBe(message);
     const got = (await request(app.getHttpServer()).get("/crm/agent/settings").set(auth(ctx.accessToken)).expect(200)).body;

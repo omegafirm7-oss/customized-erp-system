@@ -26,6 +26,7 @@ interface Settings {
   autoSendEmailFollowUps: boolean;
   defaultEmailSubject: string | null;
   defaultMessage: string | null;
+  defaultWhatsappMessage: string | null;
   updatedAt: string | null;
 }
 
@@ -91,6 +92,7 @@ export function OutreachPage() {
         autoSendEmailFollowUps: settings.autoSendEmailFollowUps,
         defaultEmailSubject: settings.defaultEmailSubject ?? "",
         defaultMessage: settings.defaultMessage ?? "",
+        defaultWhatsappMessage: settings.defaultWhatsappMessage ?? "",
       });
       setSettings(res.data);
       setNotice("Agent settings saved.");
@@ -242,6 +244,17 @@ export function OutreachPage() {
                 value={settings.defaultMessage ?? ""}
                 onChange={(e) => setSettings({ ...settings, defaultMessage: e.target.value })}
                 placeholder={"Dear {name},\n\n…"}
+                dir="auto"
+              />
+            </label>
+            <label className="block-label" style={{ marginTop: 8 }}>
+              Default WhatsApp message (short version used on the WhatsApp tab; leave empty to use the message above)
+              <textarea
+                rows={6}
+                className="outreach-body"
+                value={settings.defaultWhatsappMessage ?? ""}
+                onChange={(e) => setSettings({ ...settings, defaultWhatsappMessage: e.target.value })}
+                placeholder={"Salam {name}, …"}
                 dir="auto"
               />
             </label>

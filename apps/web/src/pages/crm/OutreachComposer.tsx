@@ -43,18 +43,26 @@ export function OutreachComposer({ lead, status, followUpActivityId, initialChan
   const [flyerIds, setFlyerIds] = useState<string[]>([]);
   const flyersTouched = useRef(false);
 
-  // Open with the company's default message (Agent settings) already filled
-  // in — falling back to the company profile — so a typical outreach is
-  // review-and-send. {name} / {company} are swapped for this lead.
+  // Open with the company's default messages (Agent settings) already
+  // filled in — a short one for WhatsApp, the full one for email, falling
+  // back to the company profile — so a typical outreach is review-and-send.
+  // {name} / {company} are swapped for this lead. Switching tabs swaps the
+  // text too, unless the user has already edited it.
+  const [templates, setTemplates] = useState<{ EMAIL: string; WHATSAPP: string } | null>(null);
   useEffect(() => {
     let cancelled = false;
     apiClient
-      .get<{ companyProfile: string; defaultMessage: string | null; defaultEmailSubject: string | null }>("/crm/agent/settings")
+      .get<{
+        companyProfile: string;
+        defaultMessage: string | null;
+        defaultWhatsappMessage: string | null;
+        defaultEmailSubject: string | null;
+      }>("/crm/agent/settings")
       .then((res) => {
         if (cancelled) return;
         const fill = (t: string) => t.split("{name}").join(lead.name).split("{company}").join(lead.companyName ?? lead.name);
-        const template = res.data.defaultMessage || res.data.companyProfile;
-        setBody((b) => b || fill(template ?? ""));
+        const email = fill(res.data.defaultMessage || res.data.companyProfile || "");
+        setTemplates({ EMAIL: email, WHATSAPP: res.data.defaultWhatsappMessage ? fill(res.data.defaultWhatsappMessage) : email });
         setSubject((s) => s || fill(res.data.defaultEmailSubject ?? ""));
       })
       .catch(() => undefined);
@@ -62,6 +70,11 @@ export function OutreachComposer({ lead, status, followUpActivityId, initialChan
       cancelled = true;
     };
   }, [lead.id]);
+
+  useEffect(() => {
+    if (!templates) return;
+    setBody((b) => (b === "" || b === templates.EMAIL || b === templates.WHATSAPP ? templates[channel] : b));
+  }, [templates, channel]);
 
   // All flyers ticked by default (max 5) until the user changes the selection.
   useEffect(() => {

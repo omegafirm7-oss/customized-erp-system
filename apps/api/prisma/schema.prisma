@@ -3174,6 +3174,8 @@ model CrmAgentSettings {
   // {name} and {company} are replaced with the lead's details.
   defaultEmailSubject    String?
   defaultMessage         String?
+  // Shorter variant used on the WhatsApp tab (falls back to defaultMessage).
+  defaultWhatsappMessage String?
   updatedAt              DateTime @updatedAt
 
   @@map("crm_agent_settings")

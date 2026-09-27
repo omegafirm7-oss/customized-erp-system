@@ -50,4 +50,10 @@ export class UpdateAgentSettingsDto {
   @IsString()
   @MaxLength(8000)
   defaultMessage?: string;
+
+  @ApiProperty({ required: false, description: "Shorter pre-filled message for the WhatsApp tab" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  defaultWhatsappMessage?: string;
 }

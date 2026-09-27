@@ -71,6 +71,7 @@ export class OutreachService implements OnModuleInit, OnModuleDestroy {
       autoSendEmailFollowUps: false,
       defaultEmailSubject: null,
       defaultMessage: null,
+      defaultWhatsappMessage: null,
       updatedAt: null,
     };
   }
@@ -87,6 +88,7 @@ export class OutreachService implements OnModuleInit, OnModuleDestroy {
       autoSendEmailFollowUps: dto.autoSendEmailFollowUps,
       defaultEmailSubject: dto.defaultEmailSubject === undefined ? undefined : dto.defaultEmailSubject.trim() || null,
       defaultMessage: dto.defaultMessage === undefined ? undefined : dto.defaultMessage.trim() || null,
+      defaultWhatsappMessage: dto.defaultWhatsappMessage === undefined ? undefined : dto.defaultWhatsappMessage.trim() || null,
     };
     const saved = await this.prisma.crmAgentSettings.upsert({
       where: { companyId },
