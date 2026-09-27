@@ -1906,3 +1906,10 @@ button.link-button:hover:not(:disabled) {
   .cd-kpis { grid-template-columns: minmax(0, 1fr); }
   .cd-title { font-size: 32px; }
 }
+.flyer-paste {
+  border: 1px dashed #1e4fa3;
+  background: #fff;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 8px 0;
+}

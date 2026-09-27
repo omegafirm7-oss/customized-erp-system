@@ -290,6 +290,21 @@ describe("CRM sales agent — outreach, follow-ups, AI endpoints (e2e)", () => {
     expect(call.files[0].mimeType).toBe("image/png");
     expect(Buffer.compare(call.files[0].data, png)).toBe(0);
 
+    // WhatsApp: flyers go via the user's phone; only their names are recorded
+    const wa = (
+      await request(app.getHttpServer())
+        .post("/crm/agent/log-whatsapp")
+        .set(auth(ctx.accessToken))
+        .send({ leadId: lead.id, body: "Salam, see our flyer", assetIds: [flyer.id] })
+        .expect(201)
+    ).body;
+    expect(wa.attachmentNames).toEqual(["tuv-offer.png"]);
+    await request(app.getHttpServer())
+      .post("/crm/agent/log-whatsapp")
+      .set(auth(other.accessToken))
+      .send({ leadId: otherLead.id, body: "x", assetIds: [flyer.id] })
+      .expect(400);
+
     await request(app.getHttpServer()).delete(`/crm/agent/assets/${flyer.id}`).set(auth(ctx.accessToken)).expect(200);
     expect((await request(app.getHttpServer()).get("/crm/agent/assets").set(auth(ctx.accessToken)).expect(200)).body).toHaveLength(0);
   });

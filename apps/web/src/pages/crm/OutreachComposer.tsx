@@ -2,7 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { apiClient } from "../../api/client";
 import { AgentStatus } from "./salesAgentConstants";
 import { toWhatsAppNumber, whatsAppLink } from "./whatsapp";
-import { FlyerThumb, useFlyers } from "./flyers";
+import { copyFlyerToClipboard, fetchFlyerFile, Flyer, FlyerThumb, isTouchDevice, useFlyers } from "./flyers";
+
+type ShareNavigator = Navigator & {
+  canShare?: (data: { files?: File[]; text?: string }) => boolean;
+  share?: (data: { files?: File[]; text?: string }) => Promise<void>;
+};
 
 export interface OutreachLead {
   id: string;
@@ -81,9 +86,48 @@ export function OutreachComposer({ lead, status, followUpActivityId, initialChan
     if (!flyersTouched.current) setFlyerIds(flyers.slice(0, 5).map((f) => f.id));
   }, [flyers]);
 
+  // WhatsApp can't take files through a link. Flyers are downloaded ahead of
+  // time on the WhatsApp tab so that, on phones, the share sheet can be
+  // opened immediately inside the click (browsers refuse share() after a
+  // slow await); on computers they're offered as copy-and-paste instead.
+  const [flyerFiles, setFlyerFiles] = useState<Record<string, File>>({});
+  const [pasteFlyers, setPasteFlyers] = useState<Flyer[]>([]);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  useEffect(() => {
+    if (channel !== "WHATSAPP") return;
+    for (const f of flyers) {
+      if (flyerFiles[f.id]) continue;
+      fetchFlyerFile(f)
+        .then((file) => setFlyerFiles((prev) => ({ ...prev, [f.id]: file })))
+        .catch(() => undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channel, flyers]);
+
+  const nav = navigator as ShareNavigator;
+  const selectedFiles = flyerIds.map((id) => flyerFiles[id]).filter((f): f is File => !!f);
+  const shareWithFiles =
+    channel === "WHATSAPP" &&
+    flyerIds.length > 0 &&
+    selectedFiles.length === flyerIds.length &&
+    isTouchDevice() &&
+    !!nav.share &&
+    !!nav.canShare?.({ files: selectedFiles, text: body });
+
   const canSend =
     body.trim().length > 0 &&
     (channel === "WHATSAPP" ? !!waNumber : !!lead.email && subject.trim().length > 0 && !!status?.emailConfigured);
+
+  async function copyFlyer(f: Flyer) {
+    setError(null);
+    try {
+      const file = flyerFiles[f.id] ?? (await fetchFlyerFile(f));
+      await copyFlyerToClipboard(file);
+      setCopiedId(f.id);
+    } catch (err: any) {
+      setError(err?.message ?? "Could not copy the flyer");
+    }
+  }
 
   async function draft() {
     setDrafting(true);
@@ -108,16 +152,46 @@ export function OutreachComposer({ lead, status, followUpActivityId, initialChan
   async function send() {
     setError(null);
     setNotice(null);
+    const sentFlyerIds = [...flyerIds];
     if (channel === "WHATSAPP") {
-      // Opened synchronously inside the click so the browser doesn't treat
-      // it as a popup; logging happens right after.
-      window.open(whatsAppLink(waNumber!, body), "_blank", "noopener");
+      if (shareWithFiles) {
+        // Phone: the share sheet sends text + flyer images in one go.
+        try {
+          await nav.share!({ files: selectedFiles, text: body });
+        } catch (err: any) {
+          if (err?.name === "AbortError") return; // user closed the share sheet — nothing was sent
+          setError("Your phone couldn't share the flyers — try again, or turn flyers off to send text only");
+          return;
+        }
+      } else {
+        // Opened synchronously inside the click so the browser doesn't
+        // treat it as a popup; logging happens right after.
+        window.open(whatsAppLink(waNumber!, body), "_blank", "noopener");
+      }
     }
     setSending(true);
     try {
       if (channel === "WHATSAPP") {
-        await apiClient.post("/crm/agent/log-whatsapp", { leadId: lead.id, body, followUpActivityId, scheduleFollowUps });
-        setNotice("WhatsApp opened with your message — press send there. Logged on the lead.");
+        await apiClient.post("/crm/agent/log-whatsapp", {
+          leadId: lead.id,
+          body,
+          followUpActivityId,
+          scheduleFollowUps,
+          assetIds: sentFlyerIds.length ? sentFlyerIds : undefined,
+        });
+        if (shareWithFiles) {
+          setNotice("Shared with flyers. Logged on the lead.");
+        } else if (sentFlyerIds.length > 0) {
+          setPasteFlyers(flyers.filter((f) => sentFlyerIds.includes(f.id)));
+          setCopiedId(null);
+          setNotice("WhatsApp opened with your message. Now copy each flyer below and paste it into the chat (Ctrl+V), then press send.");
+          // Keep this composer open for the copy step; the parent refreshes on Done.
+          setBody("");
+          setSubject("");
+          return;
+        } else {
+          setNotice("WhatsApp opened with your message — press send there. Logged on the lead.");
+        }
       } else {
         await apiClient.post("/crm/agent/send-email", {
           leadId: lead.id,
@@ -204,7 +278,7 @@ export function OutreachComposer({ lead, status, followUpActivityId, initialChan
         dir="auto"
       />
 
-      {channel === "EMAIL" && flyers.length > 0 && (
+      {flyers.length > 0 && (
         <div className="flyer-pick">
           <span className="chip-label">Include flyers (up to 5)</span>
           <div className="flyer-grid">
@@ -228,8 +302,40 @@ export function OutreachComposer({ lead, status, followUpActivityId, initialChan
           </div>
         </div>
       )}
-      {channel === "WHATSAPP" && flyers.length > 0 && (
-        <p className="outreach-hint">WhatsApp links can only carry text. To send a flyer on WhatsApp, attach the image in WhatsApp after it opens.</p>
+      {channel === "WHATSAPP" && flyerIds.length > 0 && (
+        <p className="outreach-hint">
+          {shareWithFiles
+            ? `Your phone's share menu will open with the message and flyers — choose WhatsApp, then +${waNumber}.`
+            : isTouchDevice() && selectedFiles.length < flyerIds.length
+              ? "Preparing flyers…"
+              : "WhatsApp Web opens with the message; then copy each flyer here and paste it into the chat (Ctrl+V)."}
+        </p>
+      )}
+
+      {channel === "WHATSAPP" && pasteFlyers.length > 0 && (
+        <div className="flyer-paste">
+          <strong>Paste these into the WhatsApp chat:</strong>
+          <div className="flyer-grid">
+            {pasteFlyers.map((f) => (
+              <div key={f.id} className="flyer-card">
+                <FlyerThumb flyer={f} />
+                <button type="button" className={copiedId === f.id ? "secondary" : ""} onClick={() => copyFlyer(f)}>
+                  {copiedId === f.id ? "Copied — paste in chat" : "Copy flyer"}
+                </button>
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => {
+              setPasteFlyers([]);
+              onSent();
+            }}
+          >
+            Done
+          </button>
+        </div>
       )}
 
       <div className="form-row" style={{ alignItems: "center" }}>
@@ -241,7 +347,7 @@ export function OutreachComposer({ lead, status, followUpActivityId, initialChan
         )}
         <span style={{ flex: 1 }} />
         <button type="button" onClick={send} disabled={!canSend || sending}>
-          {sending ? "Sending…" : channel === "WHATSAPP" ? "Open in WhatsApp" : "Send email"}
+          {sending ? "Sending…" : channel === "WHATSAPP" ? (shareWithFiles ? "Share on WhatsApp with flyers" : "Open in WhatsApp") : "Send email"}
         </button>
       </div>
     </div>

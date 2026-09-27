@@ -282,6 +282,13 @@ export class OutreachService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  private async assetNames(companyId: string, ids: string[]) {
+    if (ids.length === 0) return [];
+    const assets = await this.prisma.crmMarketingAsset.findMany({ where: { companyId, id: { in: ids } }, select: { id: true, fileName: true } });
+    if (assets.length !== new Set(ids).size) throw new BadRequestException("One of the selected flyers no longer exists");
+    return ids.map((id) => assets.find((a) => a.id === id)!.fileName);
+  }
+
   private async loadAssets(companyId: string, ids: string[]) {
     if (ids.length === 0) return [];
     const assets = await this.prisma.crmMarketingAsset.findMany({ where: { companyId, id: { in: ids } } });
@@ -296,11 +303,15 @@ export class OutreachService implements OnModuleInit, OnModuleDestroy {
     const number = toWhatsAppNumber(dto.to ?? lead.phone);
     if (!number) throw new BadRequestException("This lead has no usable phone number for WhatsApp");
     const settings = await this.getSettings(companyId);
+    // The flyers themselves travel through the user's phone/WhatsApp Web;
+    // only their names are recorded here.
+    const flyerNames = await this.assetNames(companyId, dto.assetIds ?? []);
     return this.recordSent(companyId, userId, lead, {
       type: CrmActivityType.WHATSAPP,
       subject: "WhatsApp message",
       body: dto.body,
       recipient: number,
+      attachmentNames: flyerNames,
       followUpActivityId: dto.followUpActivityId,
       scheduleFollowUps: dto.scheduleFollowUps,
       followUpDays: settings.followUpDays,

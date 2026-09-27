@@ -51,6 +51,42 @@ export function useFlyers() {
   return { flyers, reload };
 }
 
+/** Downloads a flyer as a File (for the phone share sheet / clipboard). */
+export async function fetchFlyerFile(flyer: Flyer): Promise<File> {
+  const res = await apiClient.get<Blob>(`/crm/agent/assets/${flyer.id}/file`, { responseType: "blob" });
+  return new File([res.data], flyer.fileName, { type: flyer.mimeType });
+}
+
+/**
+ * Puts a flyer image on the clipboard so it can be pasted (Ctrl+V) into a
+ * WhatsApp Web chat. Browsers only accept PNG images on the clipboard, so
+ * JPEGs are re-encoded; the Blob is passed as a promise so the write still
+ * counts as part of the click.
+ */
+export async function copyFlyerToClipboard(file: File): Promise<void> {
+  const toPng = async (): Promise<Blob> => {
+    const bitmap = await createImageBitmap(file);
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    canvas.getContext("2d")!.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("Could not prepare the image");
+    return blob;
+  };
+  if (!navigator.clipboard || typeof ClipboardItem === "undefined") {
+    throw new Error("This browser can't copy images — save the flyer and attach it in WhatsApp instead");
+  }
+  await navigator.clipboard.write([new ClipboardItem({ "image/png": toPng() })]);
+}
+
+/** Phones/tablets, where the share sheet can hand files straight to WhatsApp. */
+export function isTouchDevice(): boolean {
+  const ua = navigator.userAgent;
+  return /Android|iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+}
+
 /** Thumbnail loaded with the auth header (a plain <img src> can't send it). */
 export function FlyerThumb({ flyer }: { flyer: Flyer }) {
   const [url, setUrl] = useState<string | null>(null);
