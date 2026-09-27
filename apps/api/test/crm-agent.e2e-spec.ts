@@ -331,6 +331,65 @@ describe("CRM sales agent — outreach, follow-ups, AI endpoints (e2e)", () => {
     expect(cleared.defaultEmailSubject).toBe("TUV cards for {company}");
   });
 
+  it("deletes a lead with its history, but never a converted one", async () => {
+    const ctx = await setupContext();
+    const other = await setupContext();
+    const lead = await createLead(ctx.accessToken);
+    await request(app.getHttpServer())
+      .post("/crm/agent/log-whatsapp")
+      .set(auth(ctx.accessToken))
+      .send({ leadId: lead.id, body: "hi", scheduleFollowUps: true })
+      .expect(201);
+
+    await request(app.getHttpServer()).delete(`/crm/leads/${lead.id}`).set(auth(other.accessToken)).expect(404);
+    await request(app.getHttpServer()).delete(`/crm/leads/${lead.id}`).set(auth(ctx.accessToken)).expect(200);
+    await request(app.getHttpServer()).get(`/crm/leads/${lead.id}`).set(auth(ctx.accessToken)).expect(404);
+    const leftover = await getPrisma(app).crmActivity.count({ where: { leadId: lead.id } });
+    expect(leftover).toBe(0);
+
+    const converted = await createLead(ctx.accessToken, { companyName: "Converted Co" });
+    await request(app.getHttpServer()).patch(`/crm/leads/${converted.id}`).set(auth(ctx.accessToken)).send({ status: "QUALIFIED" }).expect(200);
+    await request(app.getHttpServer())
+      .post(`/crm/opportunities/from-lead/${converted.id}`)
+      .set(auth(ctx.accessToken))
+      .send({ name: "Deal", estimatedValue: "1000" })
+      .expect(201);
+    await request(app.getHttpServer()).delete(`/crm/leads/${converted.id}`).set(auth(ctx.accessToken)).expect(409);
+  });
+
+  it("reports dashboard numbers and last-contacted dates", async () => {
+    const ctx = await setupContext();
+    const a = await createLead(ctx.accessToken, { priority: "HOT", businessLines: ["training"], city: "Jubail", estimatedValue: "10000" });
+    await createLead(ctx.accessToken, { companyName: "B Co", priority: "COLD", businessLines: ["training", "manpower"], city: "Jubail" });
+    const c = await createLead(ctx.accessToken, { companyName: "C Co", city: "Dammam" });
+    await request(app.getHttpServer()).patch(`/crm/leads/${c.id}`).set(auth(ctx.accessToken)).send({ status: "DISQUALIFIED" }).expect(200);
+    await request(app.getHttpServer())
+      .post("/crm/agent/log-whatsapp")
+      .set(auth(ctx.accessToken))
+      .send({ leadId: a.id, body: "hi" })
+      .expect(201);
+
+    const d = (await request(app.getHttpServer()).get("/crm/leads/dashboard").set(auth(ctx.accessToken)).expect(200)).body;
+    expect(d.total).toBe(3);
+    expect(d.open).toBe(2);
+    expect(d.newThisMonth).toBe(3);
+    expect(d.byStatus).toEqual({ CONTACTED: 1, NEW: 1, DISQUALIFIED: 1 });
+    expect(d.byPriority).toEqual({ HOT: 1, COLD: 1 });
+    expect(d.byService).toEqual({ training: 2, manpower: 1 });
+    expect(d.topCities[0]).toEqual({ city: "Jubail", count: 2 });
+    expect(d.pipelineValue).toBe(10000);
+    expect(d.sentLast30Days.WHATSAPP).toBe(1);
+    expect(d.monthly).toHaveLength(6);
+    expect(d.monthly[5].count).toBe(3);
+    expect(d.recentActivity[0].lead.id).toBe(a.id);
+
+    const list = (await request(app.getHttpServer()).get("/crm/leads").set(auth(ctx.accessToken)).expect(200)).body;
+    const la = list.find((l: any) => l.id === a.id);
+    expect(la.lastContactedAt).toBeTruthy();
+    expect(la.messagesSent).toBe(1);
+    expect(list.find((l: any) => l.id === c.id).lastContactedAt).toBeNull();
+  });
+
   it("isolates outreach between companies", async () => {
     const a = await setupContext();
     const b = await setupContext();

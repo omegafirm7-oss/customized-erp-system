@@ -110,7 +110,6 @@ export function OutreachComposer({ lead, status, followUpActivityId, initialChan
     channel === "WHATSAPP" &&
     flyerIds.length > 0 &&
     selectedFiles.length === flyerIds.length &&
-    isTouchDevice() &&
     !!nav.share &&
     !!nav.canShare?.({ files: selectedFiles, text: body });
 
@@ -149,18 +148,22 @@ export function OutreachComposer({ lead, status, followUpActivityId, initialChan
     }
   }
 
-  async function send() {
+  // mode "web" forces WhatsApp Web (text + copy-paste flyers) on a computer
+  // whose share window has no WhatsApp app in it.
+  async function send(mode: "auto" | "web" = "auto") {
     setError(null);
     setNotice(null);
     const sentFlyerIds = [...flyerIds];
+    const viaShare = shareWithFiles && mode === "auto";
     if (channel === "WHATSAPP") {
-      if (shareWithFiles) {
-        // Phone: the share sheet sends text + flyer images in one go.
+      if (viaShare) {
+        // The OS share window (phone, or a PC/Mac with the WhatsApp app)
+        // sends the text + flyer images in one go.
         try {
           await nav.share!({ files: selectedFiles, text: body });
         } catch (err: any) {
-          if (err?.name === "AbortError") return; // user closed the share sheet — nothing was sent
-          setError("Your phone couldn't share the flyers — try again, or turn flyers off to send text only");
+          if (err?.name === "AbortError") return; // share window closed — nothing was sent
+          setError("Sharing failed — try again, or use WhatsApp Web instead");
           return;
         }
       } else {
@@ -179,7 +182,7 @@ export function OutreachComposer({ lead, status, followUpActivityId, initialChan
           scheduleFollowUps,
           assetIds: sentFlyerIds.length ? sentFlyerIds : undefined,
         });
-        if (shareWithFiles) {
+        if (viaShare) {
           setNotice("Shared with flyers. Logged on the lead.");
         } else if (sentFlyerIds.length > 0) {
           setPasteFlyers(flyers.filter((f) => sentFlyerIds.includes(f.id)));
@@ -305,7 +308,9 @@ export function OutreachComposer({ lead, status, followUpActivityId, initialChan
       {channel === "WHATSAPP" && flyerIds.length > 0 && (
         <p className="outreach-hint">
           {shareWithFiles
-            ? `Your phone's share menu will open with the message and flyers — choose WhatsApp, then +${waNumber}.`
+            ? isTouchDevice()
+              ? `Your phone's share menu will open with the message and flyers — choose WhatsApp, then +${waNumber}.`
+              : `A share window opens with the message and flyers attached — choose WhatsApp (needs the WhatsApp desktop app), then +${waNumber}. No WhatsApp app on this PC? Use "WhatsApp Web instead".`
             : isTouchDevice() && selectedFiles.length < flyerIds.length
               ? "Preparing flyers…"
               : "WhatsApp Web opens with the message; then copy each flyer here and paste it into the chat (Ctrl+V)."}
@@ -346,8 +351,13 @@ export function OutreachComposer({ lead, status, followUpActivityId, initialChan
           </label>
         )}
         <span style={{ flex: 1 }} />
-        <button type="button" onClick={send} disabled={!canSend || sending}>
-          {sending ? "Sending…" : channel === "WHATSAPP" ? (shareWithFiles ? "Share on WhatsApp with flyers" : "Open in WhatsApp") : "Send email"}
+        {channel === "WHATSAPP" && shareWithFiles && !isTouchDevice() && (
+          <button type="button" className="secondary" onClick={() => send("web")} disabled={!canSend || sending}>
+            WhatsApp Web instead
+          </button>
+        )}
+        <button type="button" onClick={() => send()} disabled={!canSend || sending}>
+          {sending ? "Sending…" : channel === "WHATSAPP" ? (shareWithFiles ? "Send on WhatsApp with flyers" : "Open in WhatsApp") : "Send email"}
         </button>
       </div>
     </div>

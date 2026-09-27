@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { LeadStatus } from "@prisma/client";
 import { MODULE_KEYS, PERMISSIONS } from "@erp/shared-constants";
@@ -26,6 +26,13 @@ export class LeadsController {
     return this.leadsService.list(companyId, status);
   }
 
+  // Registered before :id so "dashboard" isn't read as a lead id.
+  @Get("dashboard")
+  @Permissions(PERMISSIONS.CRM_LEAD_VIEW)
+  async dashboard(@CurrentCompanyId() companyId: string) {
+    return this.leadsService.dashboard(companyId);
+  }
+
   @Get(":id")
   @Permissions(PERMISSIONS.CRM_LEAD_VIEW)
   async get(@CurrentCompanyId() companyId: string, @Param("id") id: string) {
@@ -47,5 +54,12 @@ export class LeadsController {
     @Body() dto: UpdateLeadDto,
   ) {
     return this.leadsService.update(companyId, id, user.sub, dto);
+  }
+
+  @Delete(":id")
+  @Permissions(PERMISSIONS.CRM_LEAD_MANAGE)
+  async delete(@CurrentCompanyId() companyId: string, @Param("id") id: string, @CurrentUser() user: JwtPayload) {
+    await this.leadsService.delete(companyId, id, user.sub);
+    return { success: true };
   }
 }
