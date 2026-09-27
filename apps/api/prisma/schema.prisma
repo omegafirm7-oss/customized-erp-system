@@ -3170,6 +3170,10 @@ model CrmAgentSettings {
   // Comma-separated day offsets after first contact, e.g. "3,7".
   followUpDays           String   @default("3,7")
   autoSendEmailFollowUps Boolean  @default(false)
+  // Pre-filled into the outreach composer when a user clicks Message;
+  // {name} and {company} are replaced with the lead's details.
+  defaultEmailSubject    String?
+  defaultMessage         String?
   updatedAt              DateTime @updatedAt
 
   @@map("crm_agent_settings")

@@ -38,4 +38,16 @@ export class UpdateAgentSettingsDto {
   @IsOptional()
   @IsBoolean()
   autoSendEmailFollowUps?: boolean;
+
+  @ApiProperty({ required: false, description: "Pre-filled email subject when clicking Message" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  defaultEmailSubject?: string;
+
+  @ApiProperty({ required: false, description: "Pre-filled message; {name} and {company} are replaced per lead" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(8000)
+  defaultMessage?: string;
 }

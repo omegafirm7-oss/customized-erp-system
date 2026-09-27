@@ -24,6 +24,8 @@ interface Settings {
   defaultLanguage: string;
   followUpDays: string;
   autoSendEmailFollowUps: boolean;
+  defaultEmailSubject: string | null;
+  defaultMessage: string | null;
   updatedAt: string | null;
 }
 
@@ -87,6 +89,8 @@ export function OutreachPage() {
         defaultLanguage: settings.defaultLanguage,
         followUpDays: settings.followUpDays,
         autoSendEmailFollowUps: settings.autoSendEmailFollowUps,
+        defaultEmailSubject: settings.defaultEmailSubject ?? "",
+        defaultMessage: settings.defaultMessage ?? "",
       });
       setSettings(res.data);
       setNotice("Agent settings saved.");
@@ -221,6 +225,26 @@ export function OutreachPage() {
             >
               Fill in the TUV training template
             </button>
+            <label className="block-label" style={{ marginTop: 14 }}>
+              Default email subject (filled in when you click Message)
+              <input
+                className="outreach-body"
+                value={settings.defaultEmailSubject ?? ""}
+                onChange={(e) => setSettings({ ...settings, defaultEmailSubject: e.target.value })}
+                placeholder="e.g. TÜV cards & safety training for your crew"
+              />
+            </label>
+            <label className="block-label" style={{ marginTop: 8 }}>
+              Default message (filled in when you click Message; {"{name}"} and {"{company}"} are replaced with the lead's details). Leave empty to use the company profile.
+              <textarea
+                rows={10}
+                className="outreach-body"
+                value={settings.defaultMessage ?? ""}
+                onChange={(e) => setSettings({ ...settings, defaultMessage: e.target.value })}
+                placeholder={"Dear {name},\n\n…"}
+                dir="auto"
+              />
+            </label>
             <label className="block-label" style={{ marginTop: 14 }}>
               Email signature (added to every email)
               <textarea

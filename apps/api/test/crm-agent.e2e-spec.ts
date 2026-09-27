@@ -294,6 +294,27 @@ describe("CRM sales agent — outreach, follow-ups, AI endpoints (e2e)", () => {
     expect((await request(app.getHttpServer()).get("/crm/agent/assets").set(auth(ctx.accessToken)).expect(200)).body).toHaveLength(0);
   });
 
+  it("saves and clears the default outreach message and subject", async () => {
+    const ctx = await setupContext();
+    const message = "Dear {name},\n\nWe train crews.";
+    const saved = (
+      await request(app.getHttpServer())
+        .put("/crm/agent/settings")
+        .set(auth(ctx.accessToken))
+        .send({ companyProfile: "Profile", defaultEmailSubject: " TUV cards for {company} ", defaultMessage: message })
+        .expect(200)
+    ).body;
+    expect(saved.defaultEmailSubject).toBe("TUV cards for {company}");
+    expect(saved.defaultMessage).toBe(message);
+    const got = (await request(app.getHttpServer()).get("/crm/agent/settings").set(auth(ctx.accessToken)).expect(200)).body;
+    expect(got.defaultMessage).toBe(message);
+    const cleared = (
+      await request(app.getHttpServer()).put("/crm/agent/settings").set(auth(ctx.accessToken)).send({ defaultMessage: "  " }).expect(200)
+    ).body;
+    expect(cleared.defaultMessage).toBeNull();
+    expect(cleared.defaultEmailSubject).toBe("TUV cards for {company}");
+  });
+
   it("isolates outreach between companies", async () => {
     const a = await setupContext();
     const b = await setupContext();

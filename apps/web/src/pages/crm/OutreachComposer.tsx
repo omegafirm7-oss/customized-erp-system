@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiClient } from "../../api/client";
 import { AgentStatus } from "./salesAgentConstants";
 import { toWhatsAppNumber, whatsAppLink } from "./whatsapp";
@@ -41,6 +41,32 @@ export function OutreachComposer({ lead, status, followUpActivityId, initialChan
   const [notice, setNotice] = useState<string | null>(null);
   const { flyers } = useFlyers();
   const [flyerIds, setFlyerIds] = useState<string[]>([]);
+  const flyersTouched = useRef(false);
+
+  // Open with the company's default message (Agent settings) already filled
+  // in — falling back to the company profile — so a typical outreach is
+  // review-and-send. {name} / {company} are swapped for this lead.
+  useEffect(() => {
+    let cancelled = false;
+    apiClient
+      .get<{ companyProfile: string; defaultMessage: string | null; defaultEmailSubject: string | null }>("/crm/agent/settings")
+      .then((res) => {
+        if (cancelled) return;
+        const fill = (t: string) => t.split("{name}").join(lead.name).split("{company}").join(lead.companyName ?? lead.name);
+        const template = res.data.defaultMessage || res.data.companyProfile;
+        setBody((b) => b || fill(template ?? ""));
+        setSubject((s) => s || fill(res.data.defaultEmailSubject ?? ""));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [lead.id]);
+
+  // All flyers ticked by default (max 5) until the user changes the selection.
+  useEffect(() => {
+    if (!flyersTouched.current) setFlyerIds(flyers.slice(0, 5).map((f) => f.id));
+  }, [flyers]);
 
   const canSend =
     body.trim().length > 0 &&
@@ -177,7 +203,10 @@ export function OutreachComposer({ lead, status, followUpActivityId, initialChan
                     type="checkbox"
                     checked={on}
                     disabled={!on && flyerIds.length >= 5}
-                    onChange={() => setFlyerIds(on ? flyerIds.filter((id) => id !== f.id) : [...flyerIds, f.id])}
+                    onChange={() => {
+                      flyersTouched.current = true;
+                      setFlyerIds(on ? flyerIds.filter((id) => id !== f.id) : [...flyerIds, f.id]);
+                    }}
                   />
                   <FlyerThumb flyer={f} />
                 </label>

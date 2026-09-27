@@ -69,6 +69,8 @@ export class OutreachService implements OnModuleInit, OnModuleDestroy {
       defaultLanguage: "en",
       followUpDays: "3,7",
       autoSendEmailFollowUps: false,
+      defaultEmailSubject: null,
+      defaultMessage: null,
       updatedAt: null,
     };
   }
@@ -83,6 +85,8 @@ export class OutreachService implements OnModuleInit, OnModuleDestroy {
       defaultLanguage: dto.defaultLanguage,
       followUpDays: dto.followUpDays !== undefined ? normalizeFollowUpDays(dto.followUpDays) : undefined,
       autoSendEmailFollowUps: dto.autoSendEmailFollowUps,
+      defaultEmailSubject: dto.defaultEmailSubject === undefined ? undefined : dto.defaultEmailSubject.trim() || null,
+      defaultMessage: dto.defaultMessage === undefined ? undefined : dto.defaultMessage.trim() || null,
     };
     const saved = await this.prisma.crmAgentSettings.upsert({
       where: { companyId },
