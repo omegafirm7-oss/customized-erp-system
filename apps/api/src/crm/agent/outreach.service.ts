@@ -72,6 +72,8 @@ export class OutreachService implements OnModuleInit, OnModuleDestroy {
       defaultEmailSubject: null,
       defaultMessage: null,
       defaultWhatsappMessage: null,
+      followUpMessage: null,
+      followUpWhatsappMessage: null,
       updatedAt: null,
     };
   }
@@ -89,6 +91,8 @@ export class OutreachService implements OnModuleInit, OnModuleDestroy {
       defaultEmailSubject: dto.defaultEmailSubject === undefined ? undefined : dto.defaultEmailSubject.trim() || null,
       defaultMessage: dto.defaultMessage === undefined ? undefined : dto.defaultMessage.trim() || null,
       defaultWhatsappMessage: dto.defaultWhatsappMessage === undefined ? undefined : dto.defaultWhatsappMessage.trim() || null,
+      followUpMessage: dto.followUpMessage === undefined ? undefined : dto.followUpMessage.trim() || null,
+      followUpWhatsappMessage: dto.followUpWhatsappMessage === undefined ? undefined : dto.followUpWhatsappMessage.trim() || null,
     };
     const saved = await this.prisma.crmAgentSettings.upsert({
       where: { companyId },
@@ -409,7 +413,9 @@ export class OutreachService implements OnModuleInit, OnModuleDestroy {
       body = draft.body;
     } else {
       subject = lastEmail?.subject ? `Re: ${lastEmail.subject.replace(/^Re:\s*/i, "")}` : "Following up";
-      body = `Dear ${lead.name},\n\nI'm following up on my earlier message in case it got buried. We would be glad to help with your team's safety training and TUV cards — just reply to this email and we will share the next available batch dates and a quote.`;
+      body = settings.followUpMessage
+        ? fillPlaceholders(settings.followUpMessage, lead)
+        : `Dear ${lead.name},\n\nI'm following up on my earlier message in case it got buried. We would be glad to help with your team's safety training and TUV cards — just reply to this email and we will share the next available batch dates and a quote.`;
     }
     const text = withSignature(body, settings.emailSignature);
     await this.mail.sendOutreachEmail({
@@ -572,3 +578,12 @@ function normalizeFollowUpDays(value: string): string {
   return days.join(",");
 }
 
+
+/** Same {name}/{company} substitution the composer does for the default messages. */
+function fillPlaceholders(template: string, lead: { name: string; companyName: string | null }) {
+  return template
+    .split("{name}")
+    .join(lead.name)
+    .split("{company}")
+    .join(lead.companyName ?? lead.name);
+}

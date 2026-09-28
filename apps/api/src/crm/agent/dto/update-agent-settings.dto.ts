@@ -56,4 +56,16 @@ export class UpdateAgentSettingsDto {
   @IsString()
   @MaxLength(4000)
   defaultWhatsappMessage?: string;
+
+  @ApiProperty({ required: false, description: "Pre-filled email text for scheduled follow-ups" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(8000)
+  followUpMessage?: string;
+
+  @ApiProperty({ required: false, description: "Pre-filled WhatsApp text for scheduled follow-ups" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  followUpWhatsappMessage?: string;
 }

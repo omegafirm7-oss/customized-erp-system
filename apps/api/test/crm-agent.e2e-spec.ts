@@ -309,6 +309,38 @@ describe("CRM sales agent — outreach, follow-ups, AI endpoints (e2e)", () => {
     expect((await request(app.getHttpServer()).get("/crm/agent/assets").set(auth(ctx.accessToken)).expect(200)).body).toHaveLength(0);
   });
 
+  it("sends the saved follow-up text (not the first message) on automatic email follow-ups", async () => {
+    const ctx = await setupContext();
+    await request(app.getHttpServer())
+      .put("/crm/agent/settings")
+      .set(auth(ctx.accessToken))
+      .send({
+        companyProfile: "Profile",
+        defaultMessage: "FIRST MESSAGE for {name}",
+        followUpMessage: "Hi {name}, just following up on {company}'s TUV cards.",
+        followUpWhatsappMessage: "Salam {name}, checking in",
+        followUpDays: "1",
+        autoSendEmailFollowUps: true,
+      })
+      .expect(200);
+    const lead = await createLead(ctx.accessToken, { companyName: "Follow Co", email: "fu@follow.test" });
+    await request(app.getHttpServer())
+      .post("/crm/agent/send-email")
+      .set(auth(ctx.accessToken))
+      .send({ leadId: lead.id, subject: "TUV cards", body: "Hello", scheduleFollowUps: true })
+      .expect(201);
+
+    sendSpy.mockClear();
+    await app.get(OutreachService).runAutoSendOnce(new Date(Date.now() + 2 * 86_400_000));
+    const call = sendSpy.mock.calls.find((c) => c[0].to === "fu@follow.test");
+    expect(call).toBeTruthy();
+    expect(call![0].text).toContain("Hi Eng. Khalid, just following up on Follow Co's TUV cards.");
+    expect(call![0].text).not.toContain("FIRST MESSAGE");
+
+    const settings = (await request(app.getHttpServer()).get("/crm/agent/settings").set(auth(ctx.accessToken)).expect(200)).body;
+    expect(settings.followUpWhatsappMessage).toBe("Salam {name}, checking in");
+  });
+
   it("saves and clears the default outreach message and subject", async () => {
     const ctx = await setupContext();
     const message = "Dear {name},\n\nWe train crews.";

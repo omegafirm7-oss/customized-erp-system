@@ -3176,6 +3176,10 @@ model CrmAgentSettings {
   defaultMessage         String?
   // Shorter variant used on the WhatsApp tab (falls back to defaultMessage).
   defaultWhatsappMessage String?
+  // Used instead of the defaults above when sending a scheduled follow-up
+  // (and by the automatic email follow-up when the AI is not configured).
+  followUpMessage         String?
+  followUpWhatsappMessage String?
   updatedAt              DateTime @updatedAt
 
   @@map("crm_agent_settings")

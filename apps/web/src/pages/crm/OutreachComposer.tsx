@@ -62,13 +62,21 @@ export function OutreachComposer({ lead, status, followUpActivityId, initialChan
         defaultMessage: string | null;
         defaultWhatsappMessage: string | null;
         defaultEmailSubject: string | null;
+        followUpMessage: string | null;
+        followUpWhatsappMessage: string | null;
       }>("/crm/agent/settings")
       .then((res) => {
         if (cancelled) return;
+        const d = res.data;
         const fill = (t: string) => t.split("{name}").join(lead.name).split("{company}").join(lead.companyName ?? lead.name);
-        const email = fill(res.data.defaultMessage || res.data.companyProfile || "");
-        setTemplates({ EMAIL: email, WHATSAPP: res.data.defaultWhatsappMessage ? fill(res.data.defaultWhatsappMessage) : email });
-        setSubject((s) => s || fill(res.data.defaultEmailSubject ?? ""));
+        // A scheduled follow-up gets its own (shorter, different) text when
+        // one is set; otherwise it falls back to the first-contact messages.
+        const isFollowUp = !!followUpActivityId;
+        const emailTpl = (isFollowUp && d.followUpMessage) || d.defaultMessage || d.companyProfile || "";
+        const waTpl = (isFollowUp && (d.followUpWhatsappMessage || d.followUpMessage)) || d.defaultWhatsappMessage || emailTpl;
+        setTemplates({ EMAIL: fill(emailTpl), WHATSAPP: fill(waTpl) });
+        const baseSubject = fill(d.defaultEmailSubject ?? "");
+        setSubject((s) => s || (isFollowUp && baseSubject ? `Re: ${baseSubject}` : baseSubject));
       })
       .catch(() => undefined);
     return () => {

@@ -27,6 +27,8 @@ interface Settings {
   defaultEmailSubject: string | null;
   defaultMessage: string | null;
   defaultWhatsappMessage: string | null;
+  followUpMessage: string | null;
+  followUpWhatsappMessage: string | null;
   updatedAt: string | null;
 }
 
@@ -93,6 +95,8 @@ export function OutreachPage() {
         defaultEmailSubject: settings.defaultEmailSubject ?? "",
         defaultMessage: settings.defaultMessage ?? "",
         defaultWhatsappMessage: settings.defaultWhatsappMessage ?? "",
+        followUpMessage: settings.followUpMessage ?? "",
+        followUpWhatsappMessage: settings.followUpWhatsappMessage ?? "",
       });
       setSettings(res.data);
       setNotice("Agent settings saved.");
@@ -255,6 +259,28 @@ export function OutreachPage() {
                 value={settings.defaultWhatsappMessage ?? ""}
                 onChange={(e) => setSettings({ ...settings, defaultWhatsappMessage: e.target.value })}
                 placeholder={"Salam {name}, …"}
+                dir="auto"
+              />
+            </label>
+            <label className="block-label" style={{ marginTop: 14 }}>
+              Follow-up email message (used for the day-3 / day-7 follow-ups instead of the first message; also sent by automatic email follow-ups)
+              <textarea
+                rows={7}
+                className="outreach-body"
+                value={settings.followUpMessage ?? ""}
+                onChange={(e) => setSettings({ ...settings, followUpMessage: e.target.value })}
+                placeholder={"Dear {name},\n\nJust following up on my earlier message…"}
+                dir="auto"
+              />
+            </label>
+            <label className="block-label" style={{ marginTop: 8 }}>
+              Follow-up WhatsApp message (leave empty to use the follow-up email message)
+              <textarea
+                rows={5}
+                className="outreach-body"
+                value={settings.followUpWhatsappMessage ?? ""}
+                onChange={(e) => setSettings({ ...settings, followUpWhatsappMessage: e.target.value })}
+                placeholder={"Salam {name}, just checking in…"}
                 dir="auto"
               />
             </label>
