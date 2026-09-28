@@ -117,7 +117,9 @@ export class SalesAgentController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const asset = await this.outreach.getAssetFile(companyId, id);
-    res.set({ "Content-Type": asset.mimeType, "Cache-Control": "private, max-age=3600" });
+    // no-cache: a flyer can be replaced in place under the same id, so the
+    // browser must re-check instead of showing a stale copy for an hour.
+    res.set({ "Content-Type": asset.mimeType, "Cache-Control": "private, no-cache" });
     return new StreamableFile(Buffer.from(asset.data));
   }
 

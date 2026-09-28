@@ -51,9 +51,15 @@ export function useFlyers() {
   return { flyers, reload };
 }
 
+/** Size in the URL changes whenever the flyer's image is replaced, so a copy
+ * a browser cached earlier can never be shown or shared in its place. */
+function flyerFileUrl(flyer: Flyer) {
+  return `/crm/agent/assets/${flyer.id}/file?v=${flyer.size}`;
+}
+
 /** Downloads a flyer as a File (for the phone share sheet / clipboard). */
 export async function fetchFlyerFile(flyer: Flyer): Promise<File> {
-  const res = await apiClient.get<Blob>(`/crm/agent/assets/${flyer.id}/file`, { responseType: "blob" });
+  const res = await apiClient.get<Blob>(flyerFileUrl(flyer), { responseType: "blob" });
   return new File([res.data], flyer.fileName, { type: flyer.mimeType });
 }
 
@@ -94,7 +100,7 @@ export function FlyerThumb({ flyer }: { flyer: Flyer }) {
     if (!flyer.mimeType.startsWith("image/")) return;
     let objectUrl: string | null = null;
     apiClient
-      .get(`/crm/agent/assets/${flyer.id}/file`, { responseType: "blob" })
+      .get(flyerFileUrl(flyer), { responseType: "blob" })
       .then((res) => {
         objectUrl = URL.createObjectURL(res.data);
         setUrl(objectUrl);
