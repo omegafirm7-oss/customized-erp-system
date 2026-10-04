@@ -2550,3 +2550,56 @@ button.crm-menu-btn {
   }
 }
 
+
+/* ProtectedContent — see components/ProtectedContent.tsx for what this does and doesn't guarantee. */
+.protected-content,
+.protected-content * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.protected-content input,
+.protected-content textarea,
+.protected-content select {
+  -webkit-user-select: text;
+  user-select: text;
+}
+.protected-content img {
+  -webkit-user-drag: none;
+}
+.protected-content[data-obscured="true"] {
+  visibility: hidden;
+}
+.protected-watermark {
+  position: fixed;
+  inset: 0;
+  z-index: 1900;
+  pointer-events: none;
+  background-repeat: repeat;
+}
+.protected-cover {
+  position: fixed;
+  inset: 0;
+  z-index: 1950;
+  background: #f2f4f7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #667085;
+  font-size: 15px;
+  cursor: pointer;
+}
+.protected-print-notice {
+  display: none;
+}
+@media print {
+  .protected-content,
+  .protected-watermark {
+    display: none !important;
+  }
+  .protected-print-notice {
+    display: block;
+    padding: 24px;
+    font-size: 16px;
+  }
+}

@@ -23,6 +23,7 @@ import { CashFlowPage } from "./pages/CashFlowPage";
 import { CashFlowLineDetailPage } from "./pages/CashFlowLineDetailPage";
 import { PartnersPage } from "./pages/PartnersPage";
 import { PartnerDetailPage } from "./pages/PartnerDetailPage";
+import { ProtectedContent } from "./components/ProtectedContent";
 import { EditPurchaseInvoicePage } from "./pages/EditPurchaseInvoicePage";
 import { ItemsPage } from "./pages/ItemsPage";
 import { SalesInvoicesPage, NewSalesInvoicePage } from "./pages/SalesInvoicesPage";
@@ -115,6 +116,19 @@ function HomeRedirect() {
   const toDashboard = !!user?.activeCompanyId && user.countryCode === "PK" && !!user.enabledModules?.includes("fbr");
   return <Navigate to={toDashboard ? "/pos/dashboard" : "/companies"} replace />;
 }
+
+// Routes whose data must not be bulk-copied or screenshotted (see ProtectedContent).
+const PROTECTED_PATHS = new Set<string>([
+  "/ap/invoices",
+  "/ap/invoices/new",
+  "/ap/invoices/:id/edit",
+  "/projects/monthly-cost-report",
+  "/projects/:id/monthly-cost-trend/:month/:category",
+  "/projects/:id",
+  "/projects/:id/costs/labor",
+  "/projects/:id/costs/accounts/:accountId",
+  "/projects/:id/costs/:category",
+]);
 
 const companyRoutes: Array<{ path: string; element: JSX.Element }> = [
   { path: "/coa", element: <CoaPage /> },
@@ -227,7 +241,15 @@ export default function App() {
       >
         <Route path="/companies" element={<CompaniesPage />} />
         {companyRoutes.map(({ path, element }) => (
-          <Route key={path} path={path} element={<RequireCompany>{element}</RequireCompany>} />
+          <Route
+            key={path}
+            path={path}
+            element={
+              <RequireCompany>
+                {PROTECTED_PATHS.has(path) ? <ProtectedContent>{element}</ProtectedContent> : element}
+              </RequireCompany>
+            }
+          />
         ))}
         <Route path="/" element={<HomeRedirect />} />
       </Route>
