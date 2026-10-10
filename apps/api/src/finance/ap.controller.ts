@@ -21,7 +21,7 @@ import { InvoiceStatus } from "@prisma/client";
 import { memoryStorage } from "multer";
 import { Response } from "express";
 import { PERMISSIONS } from "@erp/shared-constants";
-import { Permissions } from "../common/decorators/permissions.decorator";
+import { AnyPermissions, Permissions } from "../common/decorators/permissions.decorator";
 import { PlatformAdminGuard } from "../common/guards/platform-admin.guard";
 import { CurrentCompanyId } from "../common/decorators/current-company-id.decorator";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
@@ -143,14 +143,20 @@ export class ApController {
     return this.apService.uploadLineAttachment(companyId, lineId, user.sub, file);
   }
 
+  // Project viewers (e.g. the read-only Investor role) see these expense lines
+  // and their evidence on the project cost drill-downs, so they may open the
+  // file too — but only for lines charged to a project; anything else still
+  // needs AP_INVOICE_VIEW.
   @Get("lines/:lineId/attachment")
-  @Permissions(PERMISSIONS.AP_INVOICE_VIEW)
+  @AnyPermissions(PERMISSIONS.AP_INVOICE_VIEW, PERMISSIONS.PROJECT_VIEW)
   async getLineAttachment(
     @CurrentCompanyId() companyId: string,
     @Param("lineId") lineId: string,
+    @CurrentUser() user: JwtPayload,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const attachment = await this.apService.getLineAttachment(companyId, lineId);
+    const projectLinkedOnly = !user.permissions.includes(PERMISSIONS.AP_INVOICE_VIEW);
+    const attachment = await this.apService.getLineAttachment(companyId, lineId, projectLinkedOnly);
     res.set({ "Content-Type": attachment.mimeType, "Content-Disposition": `inline; filename="${attachment.filename}"` });
     return new StreamableFile(attachment.data);
   }

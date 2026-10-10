@@ -724,9 +724,13 @@ export class ApService {
     return attachment;
   }
 
-  async getLineAttachment(companyId: string, lineId: string) {
+  async getLineAttachment(companyId: string, lineId: string, projectLinkedOnly = false) {
     const attachment = await this.prisma.purchaseInvoiceLineAttachment.findFirst({
-      where: { purchaseInvoiceLineId: lineId, companyId },
+      where: {
+        purchaseInvoiceLineId: lineId,
+        companyId,
+        ...(projectLinkedOnly ? { purchaseInvoiceLine: { projectId: { not: null } } } : {}),
+      },
     });
     if (!attachment) {
       throw new NotFoundException("No attachment on this expense line");
