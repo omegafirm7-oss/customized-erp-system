@@ -84,6 +84,23 @@ describe("Expense-line evidence access for project viewers (e2e)", () => {
       .expect(201);
 
     const today = new Date().toISOString().slice(0, 10);
+    const invoiceIds: Record<string, string> = {};
+    async function draftInvoice(lines: Array<{ projectId?: string }>) {
+      return (
+        await request(app.getHttpServer())
+          .post("/ap/invoices")
+          .set(auth(ctx.accessToken))
+          .send({
+            businessPartnerId: vendor.id,
+            vendorInvoiceNumber: `EV-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            postingDate: today,
+            dueDate: today,
+            lines: lines.map((l) => ({ itemId: item.id, description: "Mixed line", quantity: "1", unitPrice: "50", ...l })),
+          })
+          .expect(201)
+      ).body;
+    }
+
     async function draftWithEvidence(projectId?: string) {
       const draft = (
         await request(app.getHttpServer())
@@ -99,6 +116,7 @@ describe("Expense-line evidence access for project viewers (e2e)", () => {
           .expect(201)
       ).body;
       const lineId: string = draft.lines[0].id;
+      invoiceIds[lineId] = draft.id;
       await request(app.getHttpServer())
         .post(`/ap/invoices/lines/${lineId}/attachment`)
         .set(auth(ctx.accessToken))
@@ -109,6 +127,8 @@ describe("Expense-line evidence access for project viewers (e2e)", () => {
 
     const projectLine = await draftWithEvidence(project.id);
     const plainLine = await draftWithEvidence();
+    const projectInvoiceId = invoiceIds[projectLine];
+    const plainInvoiceId = invoiceIds[plainLine];
 
     const investorToken = await addMember(ctx.companyId, ["projects.project.view"]);
     const nobodyToken = await addMember(ctx.companyId, []);
@@ -134,5 +154,27 @@ describe("Expense-line evidence access for project viewers (e2e)", () => {
 
     // The company owner (AP_INVOICE_VIEW) keeps access to both.
     await request(app.getHttpServer()).get(`/ap/invoices/lines/${plainLine}/attachment`).set(auth(ctx.accessToken)).expect(200);
+
+    // The Purchase Invoices list: the investor gets only fully project-charged
+    // invoices — not the plain one, not one that mixes project + other lines.
+    const mixed = await draftInvoice([{ projectId: project.id }, {}]);
+    const visibleToInvestor = (await request(app.getHttpServer()).get("/ap/invoices").set(auth(investorToken)).expect(200)).body;
+    const visibleIds = visibleToInvestor.map((i: any) => i.id);
+    expect(visibleIds).toContain(projectInvoiceId);
+    expect(visibleIds).not.toContain(plainInvoiceId);
+    expect(visibleIds).not.toContain(mixed.id);
+    for (const inv of visibleToInvestor) {
+      expect(inv.lines.every((l: any) => l.projectId)).toBe(true);
+    }
+    // ...while the owner still sees everything, and a member with no relevant
+    // permission is refused.
+    const ownerIds = (await request(app.getHttpServer()).get("/ap/invoices").set(auth(ctx.accessToken)).expect(200)).body.map((i: any) => i.id);
+    expect(ownerIds).toEqual(expect.arrayContaining([projectInvoiceId, plainInvoiceId, mixed.id]));
+    await request(app.getHttpServer()).get("/ap/invoices").set(auth(nobodyToken)).expect(403);
+
+    // View only: the investor cannot create, post, edit or delete anything.
+    await request(app.getHttpServer()).post("/ap/invoices").set(auth(investorToken)).send({}).expect(403);
+    await request(app.getHttpServer()).post(`/ap/invoices/${projectInvoiceId}/post`).set(auth(investorToken)).expect(403);
+    await request(app.getHttpServer()).delete(`/ap/invoices/${projectInvoiceId}`).set(auth(investorToken)).expect(403);
   });
 });

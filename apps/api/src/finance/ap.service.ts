@@ -636,10 +636,16 @@ export class ApService {
     return cancelled;
   }
 
-  async list(companyId: string, filters: { status?: InvoiceStatus; businessPartnerId?: string }) {
+  async list(
+    companyId: string,
+    filters: { status?: InvoiceStatus; businessPartnerId?: string; projectLinkedOnly?: boolean },
+  ) {
     return this.prisma.purchaseInvoice.findMany({
       where: {
         companyId,
+        // Whole-invoice rule, not per-line: invoice-level totals would leak
+        // the amounts of any non-project lines on a mixed invoice.
+        ...(filters.projectLinkedOnly ? { lines: { some: {}, every: { projectId: { not: null } } } } : {}),
         ...(filters.status ? { status: filters.status } : {}),
         ...(filters.businessPartnerId ? { businessPartnerId: filters.businessPartnerId } : {}),
       },

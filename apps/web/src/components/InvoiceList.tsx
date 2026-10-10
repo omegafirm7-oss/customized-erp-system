@@ -6,6 +6,7 @@ import { AttachButton } from "./AttachButton";
 import { AttachmentViewer } from "./AttachmentViewer";
 import { useDocumentPdfDownload } from "../hooks/useDocumentPdfDownload";
 import { useCanDownload } from "../hooks/useCanDownload";
+import { useAuth } from "../auth/AuthContext";
 
 interface InvoiceRow {
   id: string;
@@ -56,6 +57,15 @@ interface VendorRef {
 
 export function InvoiceList({ side }: { side: "ar" | "ap" }) {
   const canDownload = useCanDownload();
+  // A read-only project viewer (e.g. the Investor role) can open the AP list
+  // to see project-related expenses and their evidence, but nothing that
+  // changes data — the server refuses those calls too, this just hides the
+  // buttons. Purchase side only; sales keeps its existing behaviour.
+  const { user } = useAuth();
+  const has = (key: string) => !!user?.permissions?.includes(key);
+  const canCreate = side === "ar" || has("ap.invoice.create");
+  const canPost = side === "ar" || has("ap.invoice.post");
+  const canCancel = side === "ar" || has("ap.invoice.cancel");
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [loading, setLoading] = useState(true);
@@ -64,6 +74,7 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
   const [qrView, setQrView] = useState<{ invoiceNumber: string; dataUrl: string } | null>(null);
   const [importResult, setImportResult] = useState<string | null>(null);
   const [vendors, setVendors] = useState<VendorRef[]>([]);
+  const [vendorsRestricted, setVendorsRestricted] = useState(false);
   const [vendorSearch, setVendorSearch] = useState("");
   const [selectedVendors, setSelectedVendors] = useState<VendorRef[]>([]);
   const [accountSearch, setAccountSearch] = useState("");
@@ -90,8 +101,23 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
 
   useEffect(() => {
     if (side !== "ap") return;
-    apiClient.get<VendorRef[]>("/partners").then((res) => setVendors(res.data.filter((p) => p.partnerType === "VENDOR" || p.partnerType === "BOTH")));
+    apiClient
+      .get<VendorRef[]>("/partners")
+      .then((res) => setVendors(res.data.filter((p) => p.partnerType === "VENDOR" || p.partnerType === "BOTH")))
+      .catch(() => setVendorsRestricted(true));
   }, [side]);
+
+  // Without partner access the vendor filter is built from the invoices the
+  // user can actually see.
+  useEffect(() => {
+    if (!vendorsRestricted) return;
+    const seen = new Map<string, VendorRef>();
+    for (const inv of invoices) {
+      const bp = inv.businessPartner;
+      if (bp && !seen.has(bp.code)) seen.set(bp.code, { id: bp.code, code: bp.code, name: bp.name, partnerType: "VENDOR" });
+    }
+    setVendors(Array.from(seen.values()));
+  }, [vendorsRestricted, invoices]);
 
   const vendorMatches =
     side === "ap" && vendorSearch.trim().length > 0
@@ -337,6 +363,7 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
                   </button>{" "}
                 </>
               )}
+              {canCreate && (
               <label className="secondary" style={{ cursor: "pointer", padding: "6px 12px", border: "1px solid #d0d5dd", borderRadius: 6 }}>
                 Import Expenses (Excel)
                 <input
@@ -349,12 +376,15 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
                     e.target.value = "";
                   }}
                 />
-              </label>{" "}
+              </label>
+              )}{" "}
             </>
           )}
-          <Link to={`/${side}/invoices/new`}>
-            <button>New {side === "ar" ? "sales" : "purchase"} invoice</button>
-          </Link>
+          {canCreate && (
+            <Link to={`/${side}/invoices/new`}>
+              <button>New {side === "ar" ? "sales" : "purchase"} invoice</button>
+            </Link>
+          )}
         </span>
       </div>
       <div className="form-row">
@@ -509,8 +539,10 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
                           <button className="secondary" style={{ padding: "2px 8px", fontSize: 11 }} onClick={() => viewLineAttachment(l.id, l.attachment!.filename)}>
                             View
                           </button>
-                        ) : (
+                        ) : canCreate ? (
                           <AttachButton uploading={uploadingFor === l.id} onFile={(file) => uploadLineAttachment(l.id, file)} />
+                        ) : (
+                          <span style={{ color: "#98a2b3", fontSize: 12 }}>—</span>
                         )}
                       </div>
                     ))}
@@ -519,10 +551,12 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
                 <td style={{ whiteSpace: "nowrap" }}>
                   {inv.status === "DRAFT" && (
                     <>
-                      <button disabled={busyId === inv.id} onClick={() => action(inv.id, "post")}>
-                        Post
-                      </button>{" "}
-                      {side === "ap" && (
+                      {canPost && (
+                        <button disabled={busyId === inv.id} onClick={() => action(inv.id, "post")}>
+                          Post
+                        </button>
+                      )}{" "}
+                      {side === "ap" && canCreate && (
                         <>
                           <Link to={`/ap/invoices/${inv.id}/edit`}>
                             <button type="button" className="secondary" disabled={busyId === inv.id}>
@@ -531,12 +565,14 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
                           </Link>{" "}
                         </>
                       )}
-                      <button className="danger" disabled={busyId === inv.id} onClick={() => remove(inv.id)}>
-                        Delete
-                      </button>
+                      {canCreate && (
+                        <button className="danger" disabled={busyId === inv.id} onClick={() => remove(inv.id)}>
+                          Delete
+                        </button>
+                      )}
                     </>
                   )}
-                  {inv.status === "POSTED" && Number(inv.openAmount) === Number(inv.grossTotal) && (
+                  {canCancel && inv.status === "POSTED" && Number(inv.openAmount) === Number(inv.grossTotal) && (
                     <button className="secondary" disabled={busyId === inv.id} onClick={() => action(inv.id, "cancel")}>
                       Cancel
                     </button>

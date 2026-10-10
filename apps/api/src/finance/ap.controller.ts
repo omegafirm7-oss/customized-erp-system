@@ -37,14 +37,20 @@ import { UpdatePurchaseInvoiceDto } from "./dto/update-purchase-invoice.dto";
 export class ApController {
   constructor(private readonly apService: ApService) {}
 
+  // Read-only project viewers (e.g. the Investor role) may open this list to
+  // see project-related expenses and their evidence — nothing else: without
+  // AP_INVOICE_VIEW they only get invoices whose every line is charged to a
+  // project (see ApService.list).
   @Get()
-  @Permissions(PERMISSIONS.AP_INVOICE_VIEW)
+  @AnyPermissions(PERMISSIONS.AP_INVOICE_VIEW, PERMISSIONS.PROJECT_VIEW)
   async list(
     @CurrentCompanyId() companyId: string,
+    @CurrentUser() user: JwtPayload,
     @Query("status") status?: InvoiceStatus,
     @Query("partnerId") partnerId?: string,
   ) {
-    return this.apService.list(companyId, { status, businessPartnerId: partnerId });
+    const projectLinkedOnly = !user.permissions.includes(PERMISSIONS.AP_INVOICE_VIEW);
+    return this.apService.list(companyId, { status, businessPartnerId: partnerId, projectLinkedOnly });
   }
 
   @Get("open")
