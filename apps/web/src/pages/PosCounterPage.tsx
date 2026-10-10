@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
 import { apiClient } from "../api/client";
 import { useDocumentPdfDownload } from "../hooks/useDocumentPdfDownload";
+import { useCanDownload } from "../hooks/useCanDownload";
 import fbrLogoUrl from "../assets/fbr-digital-invoicing-logo.jpg";
 
 interface Terminal {
@@ -169,6 +170,7 @@ async function loadImageDataUrl(url: string): Promise<string | null> {
 }
 
 export function PosCounterPage() {
+  const canDownload = useCanDownload();
   const [terminals, setTerminals] = useState<Terminal[]>([]);
   const [terminalId, setTerminalId] = useState<string>(() => {
     try {
@@ -373,7 +375,7 @@ export function PosCounterPage() {
                 ? "FBR number pending (FBR unreachable — retried automatically; reprint later)"
                 : `FBR: ${lastSale.fbr.status}`}{" "}
             <button className="secondary" onClick={() => reprint(lastSale)}>Print receipt</button>{" "}
-            <button className="secondary" onClick={() => downloadA4(lastSale)}>A4 PDF</button>
+            {canDownload && <button className="secondary" onClick={() => downloadA4(lastSale)}>A4 PDF</button>}
           </div>
         )}
       </div>
@@ -489,7 +491,7 @@ export function PosCounterPage() {
                 </td>
                 <td style={{ whiteSpace: "nowrap" }}>
                   <button className="secondary" onClick={() => reprint(sale)}>Receipt</button>{" "}
-                  <button className="secondary" onClick={() => downloadA4(sale)}>A4</button>{" "}
+                  {canDownload && <button className="secondary" onClick={() => downloadA4(sale)}>A4</button>}{" "}
                   {sale.type === "SALE" && <button className="secondary" disabled={busy} onClick={() => processReturn(sale)}>Return</button>}
                 </td>
               </tr>

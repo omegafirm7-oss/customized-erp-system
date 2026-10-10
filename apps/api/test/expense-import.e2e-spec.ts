@@ -1,7 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import * as XLSX from "xlsx";
-import { createTestApp, createPartner, setupUserWithCompany } from "./utils/test-app";
+import { createTestApp, createPartner, setupUserWithCompany, asPlatformAdmin } from "./utils/test-app";
 
 const EXPENSE_HEADER = [
   "vendorCode",
@@ -44,7 +44,8 @@ describe("AP expense import from Excel (e2e)", () => {
     // the "template" was actually corrupt JSON, not a real spreadsheet.
     // Fixed via StreamableFile. `.buffer(true).parse(...)` is required here
     // because supertest doesn't buffer binary responses by default.
-    const { accessToken } = await setupUserWithCompany(app);
+    const adminCtx = await setupUserWithCompany(app);
+    const accessToken = await asPlatformAdmin(app, adminCtx);
     const res = await request(app.getHttpServer())
       .get("/ap/invoices/import/expenses/template")
       .set(auth(accessToken))

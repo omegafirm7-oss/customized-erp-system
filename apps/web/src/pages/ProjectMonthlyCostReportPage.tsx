@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { downloadCsv } from "../utils/csv";
+import { useCanDownload } from "../hooks/useCanDownload";
 import { formatAmount } from "../utils/currency";
 
 interface ReportRow {
@@ -38,6 +39,7 @@ function monthToRange(month: string): { fromDate: string; toDate: string } {
  * glance instead of opening each project's own intelligence page.
  */
 export function ProjectMonthlyCostReportPage() {
+  const canDownload = useCanDownload();
   const [month, setMonth] = useState(currentMonth());
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(false);
@@ -88,9 +90,11 @@ export function ProjectMonthlyCostReportPage() {
             }}
           />
         </label>
-        <button type="button" onClick={downloadReport} disabled={!report || report.rows.length === 0}>
-          Download CSV
-        </button>
+        {canDownload && (
+          <button type="button" onClick={downloadReport} disabled={!report || report.rows.length === 0}>
+            Download CSV
+          </button>
+        )}
       </div>
       {error && <div className="error-banner">{error}</div>}
       {loading && <p>Loading…</p>}

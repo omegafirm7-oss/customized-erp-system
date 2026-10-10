@@ -1,6 +1,6 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { createTestApp, setupUserWithCompany } from "./utils/test-app";
+import { createTestApp, setupUserWithCompany, asPlatformAdmin } from "./utils/test-app";
 
 describe("Business Partners CSV import (e2e)", () => {
   let app: INestApplication;
@@ -20,7 +20,8 @@ describe("Business Partners CSV import (e2e)", () => {
   const CSV_HEADER = "code,name,nameAr,partnerType,taxRegistrationNumber,commercialRegistrationNumber,currencyCode";
 
   it("downloads a template matching the expected column order", async () => {
-    const { accessToken } = await setupUserWithCompany(app);
+    const adminCtx = await setupUserWithCompany(app);
+    const accessToken = await asPlatformAdmin(app, adminCtx);
     const res = await request(app.getHttpServer())
       .get("/partners/import/template")
       .set(auth(accessToken))

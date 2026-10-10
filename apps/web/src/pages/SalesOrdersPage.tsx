@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { apiClient } from "../api/client";
 import { useDocumentPdfDownload } from "../hooks/useDocumentPdfDownload";
+import { useCanDownload } from "../hooks/useCanDownload";
 
 interface Partner {
   id: string;
@@ -74,6 +75,7 @@ function orderRemaining(order: SalesOrder): number {
 }
 
 export function SalesOrdersPage() {
+  const canDownload = useCanDownload();
   const [orders, setOrders] = useState<SalesOrder[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
   const [items, setItems] = useState<Item[]>([]);
@@ -283,9 +285,11 @@ export function SalesOrdersPage() {
                           </button>{" "}
                         </>
                       )}
-                      <button className="secondary" disabled={pdfBusyId === o.id} onClick={() => downloadPdf(o.id)}>
-                        {pdfBusyId === o.id ? "Preparing…" : "PDF"}
-                      </button>
+                      {canDownload && (
+                        <button className="secondary" disabled={pdfBusyId === o.id} onClick={() => downloadPdf(o.id)}>
+                          {pdfBusyId === o.id ? "Preparing…" : "PDF"}
+                        </button>
+                      )}
                     </td>
                   </tr>
                   {invoiceFormId === o.id && (

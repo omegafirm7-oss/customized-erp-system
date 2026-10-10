@@ -166,6 +166,22 @@ export async function createWarehouse(app: INestApplication, accessToken: string
   return res.body;
 }
 
+/**
+ * Download/export endpoints are restricted to the platform admin. Flags the
+ * user and re-logs-in so the returned access token carries `isPlatformAdmin`.
+ */
+export async function asPlatformAdmin(
+  app: INestApplication,
+  ctx: { email: string; password: string },
+): Promise<string> {
+  await getPrisma(app).user.update({ where: { email: ctx.email }, data: { isPlatformAdmin: true } });
+  const relogin = await request(app.getHttpServer())
+    .post("/auth/login")
+    .send({ email: ctx.email, password: ctx.password })
+    .expect(201);
+  return relogin.body.accessToken;
+}
+
 export function getPrisma(app: INestApplication): PrismaService {
   return app.get(PrismaService);
 }

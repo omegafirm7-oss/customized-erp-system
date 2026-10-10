@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { downloadCsv } from "../utils/csv";
 import { downloadPdf } from "../utils/pdf";
+import { useCanDownload } from "../hooks/useCanDownload";
 
 interface FiscalPeriod {
   id: string;
@@ -132,6 +133,7 @@ function TradeBarChart({ data }: { data: TradeRow[] }) {
 }
 
 export function EmployeesOverviewPage() {
+  const canDownload = useCanDownload();
   const navigate = useNavigate();
   const [periods, setPeriods] = useState<FiscalPeriod[]>([]);
   const [periodId, setPeriodId] = useState("");
@@ -345,12 +347,16 @@ export function EmployeesOverviewPage() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h2>Employees Overview</h2>
           <span>
-            <button className="secondary" onClick={downloadEmployeeCostReport} disabled={!dashboard}>
-              Download cost report (CSV)
-            </button>{" "}
-            <button className="secondary" onClick={downloadEmployeeCostReportPdf} disabled={!dashboard}>
-              Download cost report (PDF)
-            </button>{" "}
+            {canDownload && (
+              <>
+                <button className="secondary" onClick={downloadEmployeeCostReport} disabled={!dashboard}>
+                  Download cost report (CSV)
+                </button>{" "}
+                <button className="secondary" onClick={downloadEmployeeCostReportPdf} disabled={!dashboard}>
+                  Download cost report (PDF)
+                </button>{" "}
+              </>
+            )}
             <button
               className="secondary"
               onClick={() =>
@@ -506,12 +512,16 @@ export function EmployeesOverviewPage() {
                 <button className={tradeScope === "all" ? "" : "secondary"} onClick={() => setTradeScope("all")}>
                   Active + Released
                 </button>
-                <button className="secondary" onClick={downloadTradeBreakdown} disabled={tradeBreakdown.length === 0}>
-                  Download (CSV)
-                </button>
-                <button className="secondary" onClick={downloadTradeBreakdownPdf} disabled={tradeBreakdown.length === 0}>
-                  Download (PDF)
-                </button>
+                {canDownload && (
+                  <>
+                    <button className="secondary" onClick={downloadTradeBreakdown} disabled={tradeBreakdown.length === 0}>
+                      Download (CSV)
+                    </button>
+                    <button className="secondary" onClick={downloadTradeBreakdownPdf} disabled={tradeBreakdown.length === 0}>
+                      Download (PDF)
+                    </button>
+                  </>
+                )}
               </div>
             </div>
             {tradeBreakdown.length === 0 ? (

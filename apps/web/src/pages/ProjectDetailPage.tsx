@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { downloadCsv } from "../utils/csv";
 import { downloadPdf } from "../utils/pdf";
+import { useCanDownload } from "../hooks/useCanDownload";
 import { useAuth } from "../auth/AuthContext";
 
 interface WbsTask {
@@ -259,6 +260,7 @@ const NEXT_STATUS: Record<string, string[]> = {
 };
 
 export function ProjectDetailPage() {
+  const canDownload = useCanDownload();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [project, setProject] = useState<ProjectDetail | null>(null);
@@ -581,14 +583,16 @@ export function ProjectDetailPage() {
                 gross of VAT (the real amount paid/payable to vendors)
               </div>
             </div>
-            <div className="button-group">
-              <button className="secondary" onClick={downloadIntelligenceCsv}>
-                Download (CSV)
-              </button>
-              <button className="secondary" onClick={downloadIntelligencePdf}>
-                Download (PDF)
-              </button>
-            </div>
+            {canDownload && (
+              <div className="button-group">
+                <button className="secondary" onClick={downloadIntelligenceCsv}>
+                  Download (CSV)
+                </button>
+                <button className="secondary" onClick={downloadIntelligencePdf}>
+                  Download (PDF)
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="pi-kpi-strip">

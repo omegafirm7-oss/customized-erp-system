@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Header, Param, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Header, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { ZatcaEnvironment, ZatcaSubmissionStatus } from "@prisma/client";
 import { IsEnum, IsOptional, IsString } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
 import { PERMISSIONS } from "@erp/shared-constants";
 import { Permissions } from "../common/decorators/permissions.decorator";
+import { PlatformAdminGuard } from "../common/guards/platform-admin.guard";
 import { CurrentCompanyId } from "../common/decorators/current-company-id.decorator";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { JwtPayload } from "../auth/types/jwt-payload.type";
@@ -107,6 +108,7 @@ export class ZatcaController {
   }
 
   @Get("submissions/:id/xml")
+  @UseGuards(PlatformAdminGuard)
   @Permissions(PERMISSIONS.ZATCA_SUBMISSION_VIEW)
   @Header("Content-Type", "application/xml")
   async downloadXml(@CurrentCompanyId() companyId: string, @Param("id") id: string) {

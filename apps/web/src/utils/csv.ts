@@ -1,3 +1,5 @@
+import { downloadsAllowed } from "./downloadGate";
+
 function escapeCsvCell(value: string | number): string {
   const s = String(value);
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -6,6 +8,7 @@ function escapeCsvCell(value: string | number): string {
 /** Builds a CSV file client-side and triggers a browser download — no server round-trip needed
  * since the data driving these reports is already loaded on the page. */
 export function downloadCsv(filename: string, headers: string[], rows: Array<Array<string | number>>) {
+  if (!downloadsAllowed()) return;
   const lines = [headers, ...rows].map((row) => row.map(escapeCsvCell).join(","));
   const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);

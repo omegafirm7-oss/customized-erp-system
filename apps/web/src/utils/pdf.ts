@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { downloadsAllowed } from "./downloadGate";
 
 /** Builds a simple PDF report client-side (title + optional KPI summary + one or more tables)
  * and triggers a browser download — mirrors downloadCsv's no-server-round-trip approach. */
@@ -13,6 +14,7 @@ export function downloadPdf(
     rows?: Array<Array<string | number>>;
   }>,
 ) {
+  if (!downloadsAllowed()) return;
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
   let y = 18;

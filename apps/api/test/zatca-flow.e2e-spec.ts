@@ -4,7 +4,7 @@ import * as jsrsasign from "jsrsasign";
 import { ZatcaApiClient, ZatcaApiResult } from "../src/zatca/zatca-api.client";
 import { generateCsr } from "../src/zatca/crypto/csr";
 import { ZatcaEnvironment } from "@prisma/client";
-import { createTestApp, createItem, createPartner, setupUserWithCompany } from "./utils/test-app";
+import { createTestApp, createItem, createPartner, setupUserWithCompany, asPlatformAdmin } from "./utils/test-app";
 
 /**
  * Mock-based e2e for the ZATCA flow: the real crypto/UBL pipeline runs, but
@@ -184,7 +184,7 @@ describe("ZATCA flow (mock e2e)", () => {
     // The XML download endpoint serves the cleared document
     const xmlRes = await request(app.getHttpServer())
       .get(`/zatca/submissions/${detail.body.zatcaSubmission.id}/xml`)
-      .set("Authorization", `Bearer ${ctx.accessToken}`)
+      .set("Authorization", `Bearer ${await asPlatformAdmin(app, ctx)}`)
       .expect(200);
     expect(xmlRes.text).toContain("<Invoice");
     expect(xmlRes.text).toContain("310000000000003");
@@ -277,7 +277,7 @@ describe("ZATCA flow (mock e2e)", () => {
 
     await request(app.getHttpServer())
       .get(`/zatca/submissions/${detail.body.zatcaSubmission.id}/xml`)
-      .set("Authorization", `Bearer ${ctx.accessToken}`)
+      .set("Authorization", `Bearer ${await asPlatformAdmin(app, ctx)}`)
       .expect(409);
   });
 

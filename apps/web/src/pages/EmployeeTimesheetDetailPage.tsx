@@ -8,6 +8,7 @@ import { useCompanies } from "../hooks/useCompanies";
 import { useTemplateSettings } from "../hooks/useTemplateSettings";
 import { attendancePdfFilename, AttendancePdfParams, buildEmployeeAttendancePdf } from "../utils/attendancePdf";
 import { shareFileViaWhatsApp } from "../utils/shareViaWhatsApp";
+import { useCanDownload } from "../hooks/useCanDownload";
 
 interface FiscalPeriod {
   id: string;
@@ -50,6 +51,7 @@ function money(v: string | number): string {
 }
 
 export function EmployeeTimesheetDetailPage() {
+  const canDownload = useCanDownload();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -216,7 +218,7 @@ export function EmployeeTimesheetDetailPage() {
             {detail ? `${detail.code} — ${detail.nameEn} — Timesheets` : "Timesheets"}
           </h2>
           <span>
-            {scope === "period" && detail && (
+            {scope === "period" && detail && canDownload && (
               <>
                 <button className="secondary" disabled={downloadingPdf} onClick={downloadPdfForPeriod}>
                   {downloadingPdf ? "Preparing…" : "Download Attendance (PDF)"}

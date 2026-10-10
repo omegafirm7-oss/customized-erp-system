@@ -11,6 +11,7 @@ import {
   Query,
   Res,
   StreamableFile,
+  UseGuards,
   UploadedFile,
   UseInterceptors,
 } from "@nestjs/common";
@@ -21,6 +22,7 @@ import { memoryStorage } from "multer";
 import { Response } from "express";
 import { PERMISSIONS } from "@erp/shared-constants";
 import { Permissions } from "../common/decorators/permissions.decorator";
+import { PlatformAdminGuard } from "../common/guards/platform-admin.guard";
 import { CurrentCompanyId } from "../common/decorators/current-company-id.decorator";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { JwtPayload } from "../auth/types/jwt-payload.type";
@@ -52,6 +54,7 @@ export class ApController {
   }
 
   @Get("import/expenses/template")
+  @UseGuards(PlatformAdminGuard)
   @Permissions(PERMISSIONS.AP_INVOICE_VIEW)
   @Header("Content-Disposition", 'attachment; filename="expenses_import_template.xlsx"')
   importExpensesTemplate() {

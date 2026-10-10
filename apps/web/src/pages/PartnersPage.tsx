@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { useCanDownload } from "../hooks/useCanDownload";
 import { useAuth } from "../auth/AuthContext";
 import { NTN_CNIC_PATTERN, PK_PROVINCES } from "../utils/taxLocale";
 
@@ -55,6 +56,7 @@ function PkPartnerInputs({ form, onChange }: { form: PartnerForm; onChange: (f: 
 }
 
 export function PartnersPage() {
+  const canDownload = useCanDownload();
   const { user } = useAuth();
   const isPakistan = user?.countryCode === "PK";
   const canCheckFbr = isPakistan && (!!user?.isPlatformAdmin || !!user?.enabledModules?.includes("fbr"));
@@ -207,9 +209,13 @@ export function PartnersPage() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h2>Business Partners</h2>
           <span>
-            <button className="secondary" onClick={downloadTemplate}>
-              Download import template
-            </button>{" "}
+            {canDownload && (
+              <>
+                <button className="secondary" onClick={downloadTemplate}>
+                  Download import template
+                </button>{" "}
+              </>
+            )}
             <label className="secondary" style={{ cursor: "pointer", padding: "6px 12px", border: "1px solid #d0d5dd", borderRadius: 6 }}>
               Import CSV
               <input

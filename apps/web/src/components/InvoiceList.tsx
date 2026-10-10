@@ -5,6 +5,7 @@ import { apiClient } from "../api/client";
 import { AttachButton } from "./AttachButton";
 import { AttachmentViewer } from "./AttachmentViewer";
 import { useDocumentPdfDownload } from "../hooks/useDocumentPdfDownload";
+import { useCanDownload } from "../hooks/useCanDownload";
 
 interface InvoiceRow {
   id: string;
@@ -54,6 +55,7 @@ interface VendorRef {
 }
 
 export function InvoiceList({ side }: { side: "ar" | "ap" }) {
+  const canDownload = useCanDownload();
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [loading, setLoading] = useState(true);
@@ -244,13 +246,17 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
         )}
         {(sub.status === "CLEARED" || sub.status === "REPORTED") && (
           <>
-            <button
-              className="secondary"
-              style={{ padding: "2px 8px", fontSize: 11 }}
-              onClick={() => downloadXml(sub, inv.invoiceNumber ?? inv.id)}
-            >
-              XML
-            </button>{" "}
+            {canDownload && (
+              <>
+                <button
+                  className="secondary"
+                  style={{ padding: "2px 8px", fontSize: 11 }}
+                  onClick={() => downloadXml(sub, inv.invoiceNumber ?? inv.id)}
+                >
+                  XML
+                </button>{" "}
+              </>
+            )}
             <button className="secondary" style={{ padding: "2px 8px", fontSize: 11 }} onClick={() => showQr(inv)}>
               QR
             </button>
@@ -324,9 +330,13 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
         <span>
           {side === "ap" && (
             <>
-              <button className="secondary" onClick={downloadExpenseTemplate}>
-                Download Excel template
-              </button>{" "}
+              {canDownload && (
+                <>
+                  <button className="secondary" onClick={downloadExpenseTemplate}>
+                    Download Excel template
+                  </button>{" "}
+                </>
+              )}
               <label className="secondary" style={{ cursor: "pointer", padding: "6px 12px", border: "1px solid #d0d5dd", borderRadius: 6 }}>
                 Import Expenses (Excel)
                 <input
@@ -531,7 +541,7 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
                       Cancel
                     </button>
                   )}{" "}
-                  {side === "ar" && (
+                  {side === "ar" && canDownload && (
                     <button className="secondary" disabled={pdfBusyId === inv.id} onClick={() => downloadPdf(inv.id)}>
                       {pdfBusyId === inv.id ? "Preparing…" : "PDF"}
                     </button>

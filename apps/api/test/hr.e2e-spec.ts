@@ -1,6 +1,6 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { createTestApp, getPrisma, setupUserWithCompany } from "./utils/test-app";
+import { createTestApp, getPrisma, setupUserWithCompany, asPlatformAdmin } from "./utils/test-app";
 
 describe("HR & Saudi Payroll (e2e)", () => {
   let app: INestApplication;
@@ -79,10 +79,11 @@ describe("HR & Saudi Payroll (e2e)", () => {
 
   it("serves the CSV template and rejects invalid import rows with row numbers", async () => {
     const ctx = await setupUserWithCompany(app);
+    const adminToken = await asPlatformAdmin(app, ctx);
 
     const template = await request(app.getHttpServer())
       .get("/hr/employees/import/template")
-      .set(auth(ctx.accessToken))
+      .set(auth(adminToken))
       .expect(200);
     expect(template.text.split(/\r?\n/)[0]).toBe(CSV_HEADER);
 
@@ -283,7 +284,7 @@ describe("HR & Saudi Payroll (e2e)", () => {
   it("worked example: WPS SIF reconciles and the GOSI summary matches", async () => {
     const wps = await request(app.getHttpServer())
       .get(`/hr/payroll-runs/${wRunId}/wps-file`)
-      .set(auth(wctx.accessToken))
+      .set(auth(await asPlatformAdmin(app, wctx)))
       .expect(200);
     const rows = wps.text.trim().split(/\r?\n/);
     expect(rows[0]).toContain("EMPLOYER,1234567,80,SA9880000000000000000001");

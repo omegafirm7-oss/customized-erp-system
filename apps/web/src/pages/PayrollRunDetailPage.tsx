@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { useCanDownload } from "../hooks/useCanDownload";
 
 interface RunLine {
   id: string;
@@ -42,6 +43,7 @@ interface RunDetail {
 }
 
 export function PayrollRunDetailPage() {
+  const canDownload = useCanDownload();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [run, setRun] = useState<RunDetail | null>(null);
@@ -159,12 +161,16 @@ export function PayrollRunDetailPage() {
             )}
             {run.status === "POSTED" && (
               <>
-                <button className="secondary" onClick={() => download("wps-file", "wps.csv")}>
-                  WPS file
-                </button>{" "}
-                <button className="secondary" onClick={() => download("register.csv", "payroll_register.csv")}>
-                  Register CSV
-                </button>{" "}
+                {canDownload && (
+                  <>
+                    <button className="secondary" onClick={() => download("wps-file", "wps.csv")}>
+                      WPS file
+                    </button>{" "}
+                    <button className="secondary" onClick={() => download("register.csv", "payroll_register.csv")}>
+                      Register CSV
+                    </button>{" "}
+                  </>
+                )}
                 <button className="secondary" onClick={() => action("reverse", "Reverse this posted payroll run?")} disabled={busy}>
                   Reverse
                 </button>

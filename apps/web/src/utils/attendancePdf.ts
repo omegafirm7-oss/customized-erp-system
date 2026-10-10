@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { downloadsAllowed } from "./downloadGate";
 
 const DAY_TYPE_REMARKS: Record<string, string> = {
   REST: "Rest",
@@ -215,6 +216,7 @@ export function attendancePdfFilename(employeeCode: string, periodLabel: string)
 
 /** Convenience wrapper — builds the PDF and triggers a browser download immediately. */
 export function downloadEmployeeAttendancePdf(params: AttendancePdfParams) {
+  if (!downloadsAllowed()) return;
   const doc = buildEmployeeAttendancePdf(params);
   doc.save(attendancePdfFilename(params.employeeCode, params.periodLabel));
 }

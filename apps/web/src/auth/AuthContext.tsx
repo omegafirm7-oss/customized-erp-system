@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from "react";
 import { apiClient, refreshAccessToken, setAccessToken, setLoggingOut } from "../api/client";
 import { decodeAccessToken, DecodedAccessToken } from "./jwt";
+import { setDownloadsAllowed } from "../utils/downloadGate";
 
 interface AuthContextValue {
   user: DecodedAccessToken | null;
@@ -22,6 +23,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAccessToken(token);
     setUser(decodeAccessToken(token));
   }, []);
+
+  // Keeps the shared download helpers' gate in step with who is signed in.
+  useEffect(() => {
+    setDownloadsAllowed(!!user?.isPlatformAdmin);
+  }, [user]);
 
   useEffect(() => {
     // AuthCallbackPage (Google sign-in) delivers the access token directly

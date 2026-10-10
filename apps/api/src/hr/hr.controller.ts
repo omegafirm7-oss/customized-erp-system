@@ -11,6 +11,7 @@ import {
   Query,
   Res,
   StreamableFile,
+  UseGuards,
   UploadedFile,
   UseInterceptors,
 } from "@nestjs/common";
@@ -21,6 +22,7 @@ import { Response } from "express";
 import { EmployeeStatus } from "@prisma/client";
 import { PERMISSIONS } from "@erp/shared-constants";
 import { Permissions } from "../common/decorators/permissions.decorator";
+import { PlatformAdminGuard } from "../common/guards/platform-admin.guard";
 import { CurrentCompanyId } from "../common/decorators/current-company-id.decorator";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { JwtPayload } from "../auth/types/jwt-payload.type";
@@ -95,6 +97,7 @@ export class HrController {
   }
 
   @Get("employees/import/template")
+  @UseGuards(PlatformAdminGuard)
   @Permissions(PERMISSIONS.HR_EMPLOYEE_VIEW)
   @Header("Content-Type", "text/csv")
   @Header("Content-Disposition", 'attachment; filename="employees_import_template.csv"')
@@ -253,6 +256,7 @@ export class HrController {
   }
 
   @Get("payroll-runs/:id/wps-file")
+  @UseGuards(PlatformAdminGuard)
   @Permissions(PERMISSIONS.HR_PAYROLL_RUN)
   async wpsFile(@CurrentCompanyId() companyId: string, @Param("id") runId: string, @Res() res: Response) {
     const file = await this.wpsService.generateSif(companyId, runId);
@@ -262,6 +266,7 @@ export class HrController {
   }
 
   @Get("payroll-runs/:id/register.csv")
+  @UseGuards(PlatformAdminGuard)
   @Permissions(PERMISSIONS.HR_EMPLOYEE_VIEW)
   async registerCsv(@CurrentCompanyId() companyId: string, @Param("id") runId: string, @Res() res: Response) {
     const file = await this.hrReportsService.registerCsv(companyId, runId);

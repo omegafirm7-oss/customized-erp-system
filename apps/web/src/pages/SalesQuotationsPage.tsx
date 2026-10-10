@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { apiClient } from "../api/client";
 import { useDocumentPdfDownload } from "../hooks/useDocumentPdfDownload";
+import { useCanDownload } from "../hooks/useCanDownload";
 
 interface Partner {
   id: string;
@@ -47,6 +48,7 @@ function lineTotal(line: { quantity: string; unitPrice: string }): number {
 }
 
 export function SalesQuotationsPage() {
+  const canDownload = useCanDownload();
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
   const [items, setItems] = useState<Item[]>([]);
@@ -219,9 +221,11 @@ export function SalesQuotationsPage() {
                         </button>{" "}
                       </>
                     )}
-                    <button className="secondary" disabled={pdfBusyId === q.id} onClick={() => downloadPdf(q.id)}>
-                      {pdfBusyId === q.id ? "Preparing…" : "PDF"}
-                    </button>
+                    {canDownload && (
+                      <button className="secondary" disabled={pdfBusyId === q.id} onClick={() => downloadPdf(q.id)}>
+                        {pdfBusyId === q.id ? "Preparing…" : "PDF"}
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

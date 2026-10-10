@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { downloadsAllowed } from "./downloadGate";
 import { DocumentBranding, logoFormatFromDataUrl } from "./attendancePdf";
 
 const VAT_RATE: Record<string, number> = { STANDARD_15: 15, ZERO_RATED: 0, EXEMPT: 0, PK_STANDARD: 18, PK_THIRD_SCHEDULE: 18, PK_REDUCED: 0 };
@@ -69,6 +70,7 @@ export function downloadCommercialDocumentPdf(params: {
     termsText?: string | null;
   };
 }) {
+  if (!downloadsAllowed()) return;
   const { companyName, companyAddress, companyTaxNumber, docTypeLabel, documentNumber, documentDate, partnerLabel, partner, lines, branding } = params;
   const taxLabel = params.taxLabel ?? "VAT";
   const showItemCode = branding?.showItemCode ?? true;

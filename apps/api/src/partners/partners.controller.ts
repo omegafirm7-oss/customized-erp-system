@@ -1,7 +1,8 @@
-import { Body, Controller, Delete, Get, Header, Param, Patch, Post } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Header, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { PERMISSIONS } from "@erp/shared-constants";
 import { Permissions } from "../common/decorators/permissions.decorator";
+import { PlatformAdminGuard } from "../common/guards/platform-admin.guard";
 import { CurrentCompanyId } from "../common/decorators/current-company-id.decorator";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { JwtPayload } from "../auth/types/jwt-payload.type";
@@ -22,6 +23,7 @@ export class PartnersController {
   }
 
   @Get("import/template")
+  @UseGuards(PlatformAdminGuard)
   @Permissions(PERMISSIONS.PARTNER_CUSTOMER_MANAGE)
   @Header("Content-Type", "text/csv")
   @Header("Content-Disposition", 'attachment; filename="partners_import_template.csv"')

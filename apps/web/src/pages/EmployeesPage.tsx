@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { useCanDownload } from "../hooks/useCanDownload";
 
 interface Employee {
   id: string;
@@ -43,6 +44,7 @@ function expiryBadge(dateStr: string | null): JSX.Element | null {
 }
 
 export function EmployeesPage() {
+  const canDownload = useCanDownload();
   const navigate = useNavigate();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
@@ -151,9 +153,13 @@ export function EmployeesPage() {
             <button className="secondary" onClick={() => navigate("/hr/employees/overview")}>
               Overview
             </button>{" "}
-            <button className="secondary" onClick={downloadTemplate}>
-              Download import template
-            </button>{" "}
+            {canDownload && (
+              <>
+                <button className="secondary" onClick={downloadTemplate}>
+                  Download import template
+                </button>{" "}
+              </>
+            )}
             <label className="secondary" style={{ cursor: "pointer", padding: "6px 12px", border: "1px solid #d0d5dd", borderRadius: 6 }}>
               Import CSV
               <input
