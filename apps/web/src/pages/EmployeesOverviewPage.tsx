@@ -195,6 +195,25 @@ export function EmployeesOverviewPage() {
 
   const allRows = useMemo(() => dashboard?.groups.flatMap((g) => g.rows) ?? [], [dashboard]);
 
+  // Name/code filter for the per-employee "Cost by project" table. Subtotals
+  // and the grand total follow the filter so they always match what is shown.
+  const [nameFilter, setNameFilter] = useState("");
+  const nameQuery = nameFilter.trim().toLowerCase();
+  const visibleGroups = useMemo(() => {
+    if (!dashboard) return [];
+    if (!nameQuery) return dashboard.groups;
+    return dashboard.groups
+      .map((g) => {
+        const rows = g.rows.filter((r) => r.nameEn.toLowerCase().includes(nameQuery) || r.code.toLowerCase().includes(nameQuery));
+        return { ...g, rows, subtotal: String(rows.reduce((sum, r) => sum + Number(r.cost), 0)) };
+      })
+      .filter((g) => g.rows.length > 0);
+  }, [dashboard, nameQuery]);
+  const visibleEmployeeCount = visibleGroups.reduce((n, g) => n + g.rows.length, 0);
+  const visibleGrandTotal = nameQuery
+    ? String(visibleGroups.reduce((sum, g) => sum + Number(g.subtotal), 0))
+    : dashboard?.grandTotal ?? "0";
+
   const [tradeScope, setTradeScope] = useState<"active" | "all">("active");
 
   const tradeBreakdown = useMemo<TradeRow[]>(() => {
@@ -641,7 +660,27 @@ export function EmployeesOverviewPage() {
               <p>No active employees.</p>
             ) : (
               <>
-                {dashboard.groups.map((group) => (
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                  <input
+                    type="search"
+                    placeholder="Filter by employee name or code"
+                    value={nameFilter}
+                    onChange={(e) => setNameFilter(e.target.value)}
+                    style={{ minWidth: 280 }}
+                  />
+                  {nameQuery && (
+                    <>
+                      <span style={{ color: "#667085", fontSize: 13 }}>
+                        Showing {visibleEmployeeCount} of {allRows.length} employees
+                      </span>
+                      <button type="button" className="secondary" onClick={() => setNameFilter("")}>
+                        Clear
+                      </button>
+                    </>
+                  )}
+                </div>
+                {nameQuery && visibleGroups.length === 0 && <p style={{ color: "#98a2b3" }}>No employees match "{nameFilter.trim()}".</p>}
+                {visibleGroups.map((group) => (
                   <div key={group.key} style={{ marginBottom: 16 }}>
                     <h4>{group.label}</h4>
                     <table>
@@ -714,7 +753,9 @@ export function EmployeesOverviewPage() {
                     </table>
                   </div>
                 ))}
-                <p style={{ fontWeight: 600 }}>Grand total: {money(dashboard.grandTotal)}</p>
+                <p style={{ fontWeight: 600 }}>
+                  {nameQuery ? "Filtered total" : "Grand total"}: {money(visibleGrandTotal)}
+                </p>
               </>
             )}
           </div>

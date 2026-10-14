@@ -2570,13 +2570,6 @@ button.crm-menu-btn {
 .protected-content[data-obscured="true"] {
   visibility: hidden;
 }
-.protected-watermark {
-  position: fixed;
-  inset: 0;
-  z-index: 1900;
-  pointer-events: none;
-  background-repeat: repeat;
-}
 .protected-cover {
   position: fixed;
   inset: 0;
@@ -2593,8 +2586,7 @@ button.crm-menu-btn {
   display: none;
 }
 @media print {
-  .protected-content,
-  .protected-watermark {
+  .protected-content {
     display: none !important;
   }
   .protected-print-notice {

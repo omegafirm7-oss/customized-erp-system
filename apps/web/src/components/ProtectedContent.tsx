@@ -1,5 +1,4 @@
 import { ReactNode, useEffect, useRef, useState } from "react";
-import { useAuth } from "../auth/AuthContext";
 
 // How long the content stays obscured after a screenshot-style key combo,
 // long enough for the OS capture to finish while the page is blanked.
@@ -12,39 +11,22 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
 }
 
-function watermarkBackground(label: string): string {
-  const safe = label.replace(/&/g, "&amp;").replace(/</g, "&lt;");
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="420" height="260">` +
-    `<text x="50%" y="50%" text-anchor="middle" transform="rotate(-24 210 130)" ` +
-    `font-family="Arial, sans-serif" font-size="15" fill="rgba(16,24,40,0.10)">${safe}</text></svg>`;
-  return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}")`;
-}
-
 /**
  * Deterrents against bulk-copying or screenshotting sensitive screens (the
  * Project dashboard family and Purchase Invoices). A browser cannot truly
  * prevent a screenshot — OS-level capture and a phone camera are outside
  * its reach — so this layers what a web page *can* do: disables selecting,
  * copying and printing the page, blanks the content whenever the window
- * loses focus or a screenshot-style key combo is pressed, and stamps a
- * faint watermark with the viewer's email and the time over everything so
- * any leaked image traces back to who captured it.
+ * loses focus or a screenshot-style key combo is pressed. There is
+ * deliberately no visible watermark (it was removed as unprofessional), so a
+ * leaked screenshot can no longer be traced back to who took it.
  *
  * Typing in form fields still works normally, including copy/paste inside
  * a single field.
  */
 export function ProtectedContent({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
   const [obscured, setObscured] = useState(false);
-  const [stamp, setStamp] = useState(() => new Date());
   const holdTimer = useRef<number | null>(null);
-  const watermarkRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const id = window.setInterval(() => setStamp(new Date()), 30 * 1000);
-    return () => window.clearInterval(id);
-  }, []);
 
   useEffect(() => {
     function obscureFor(ms: number) {
@@ -145,27 +127,12 @@ export function ProtectedContent({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // If the watermark node is removed (e.g. via dev tools), put it straight back.
-  useEffect(() => {
-    const node = watermarkRef.current;
-    const parent = node?.parentElement;
-    if (!node || !parent) return;
-    const observer = new MutationObserver(() => {
-      if (!parent.contains(node)) parent.appendChild(node);
-    });
-    observer.observe(parent, { childList: true });
-    return () => observer.disconnect();
-  }, []);
-
-  const label = `${user?.email ?? "confidential"} • ${stamp.toLocaleString()}`;
-
   return (
     <>
       <div className="protected-content" data-obscured={obscured ? "true" : "false"}>
         {children}
       </div>
       <div className="protected-print-notice">Printing is disabled for this page.</div>
-      <div ref={watermarkRef} className="protected-watermark" style={{ backgroundImage: watermarkBackground(label) }} />
       {obscured && (
         <div
           className="protected-cover"
