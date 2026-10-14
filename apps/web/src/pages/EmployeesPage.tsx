@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { useCanDownload } from "../hooks/useCanDownload";
@@ -47,6 +47,15 @@ export function EmployeesPage() {
   const canDownload = useCanDownload();
   const navigate = useNavigate();
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [nameFilter, setNameFilter] = useState("");
+  const nameQuery = nameFilter.trim().toLowerCase();
+  const visibleEmployees = useMemo(
+    () =>
+      nameQuery
+        ? employees.filter((e) => e.nameEn.toLowerCase().includes(nameQuery) || e.code.toLowerCase().includes(nameQuery))
+        : employees,
+    [employees, nameQuery],
+  );
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -180,6 +189,26 @@ export function EmployeesPage() {
         {loading ? (
           <p>Loading…</p>
         ) : (
+          <>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+            <input
+              type="search"
+              placeholder="Filter by employee name or code"
+              value={nameFilter}
+              onChange={(e) => setNameFilter(e.target.value)}
+              style={{ minWidth: 280 }}
+            />
+            {nameQuery && (
+              <>
+                <span style={{ color: "#667085", fontSize: 13 }}>
+                  Showing {visibleEmployees.length} of {employees.length} employees
+                </span>
+                <button type="button" className="secondary" onClick={() => setNameFilter("")}>
+                  Clear
+                </button>
+              </>
+            )}
+          </div>
           <table>
             <thead>
               <tr>
@@ -197,7 +226,7 @@ export function EmployeesPage() {
               </tr>
             </thead>
             <tbody>
-              {employees.map((e) => (
+              {visibleEmployees.map((e) => (
                 <tr key={e.id}>
                   <td>
                     <Link to={`/hr/employees/${e.id}`}>{e.code}</Link>
@@ -218,8 +247,16 @@ export function EmployeesPage() {
                   </td>
                 </tr>
               ))}
+              {nameQuery && visibleEmployees.length === 0 && (
+                <tr>
+                  <td colSpan={11} style={{ color: "#98a2b3" }}>
+                    No employees match "{nameFilter.trim()}".
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
+          </>
         )}
       </div>
 
