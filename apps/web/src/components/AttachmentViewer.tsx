@@ -1,4 +1,5 @@
 import { SyntheticEvent, useEffect, useRef, useState, WheelEvent } from "react";
+import { ImageCropper } from "./ImageCropper";
 
 interface AttachmentViewerProps {
   filename: string;
@@ -9,6 +10,9 @@ interface AttachmentViewerProps {
    * unresponsive while the file is still coming down the wire. */
   fetchBlob: () => Promise<Blob>;
   onClose: () => void;
+  /** When provided (and the file is a croppable image), a Crop button lets the
+   * user trim the saved image; the cropped file is handed back to replace it. */
+  onCrop?: (file: File) => Promise<void>;
 }
 
 /**
@@ -20,8 +24,11 @@ interface AttachmentViewerProps {
  * (stays sharp, unlike a CSS transform: scale() which would just blow up
  * the already-rendered pixels) and pan via the container's scrollbars.
  */
-export function AttachmentViewer({ filename, mimeType, fetchBlob, onClose }: AttachmentViewerProps) {
+export function AttachmentViewer({ filename, mimeType, fetchBlob, onClose, onCrop }: AttachmentViewerProps) {
   const [url, setUrl] = useState<string | null>(null);
+  const blobRef = useRef<Blob | null>(null);
+  const [cropFile, setCropFile] = useState<File | null>(null);
+  const [cropError, setCropError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -37,6 +44,7 @@ export function AttachmentViewer({ filename, mimeType, fetchBlob, onClose }: Att
     fetchBlob()
       .then((blob) => {
         if (cancelled) return;
+        blobRef.current = blob;
         objectUrl = URL.createObjectURL(blob);
         setUrl(objectUrl);
       })
@@ -49,6 +57,25 @@ export function AttachmentViewer({ filename, mimeType, fetchBlob, onClose }: Att
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const canCrop = !!onCrop && isImage && !filename.toLowerCase().endsWith(".gif");
+
+  function startCrop() {
+    const blob = blobRef.current;
+    if (!blob) return;
+    setCropError(null);
+    setCropFile(new File([blob], filename, { type: blob.type || mimeType || "image/jpeg" }));
+  }
+
+  async function saveCrop(cropped: File) {
+    setCropFile(null);
+    try {
+      await onCrop!(cropped);
+      onClose();
+    } catch (err: any) {
+      setCropError(err?.response?.data?.message ?? "Couldn't save the cropped evidence — the original is unchanged.");
+    }
+  }
 
   function handleImageLoad(e: SyntheticEvent<HTMLImageElement>) {
     const img = e.currentTarget;
@@ -139,6 +166,11 @@ export function AttachmentViewer({ filename, mimeType, fetchBlob, onClose }: Att
                 <button type="button" className="secondary" onClick={resetZoom} title="Reset zoom">
                   Reset
                 </button>
+                {canCrop && (
+                  <button type="button" className="secondary" onClick={startCrop} title="Trim the border off this receipt">
+                    Crop
+                  </button>
+                )}
               </>
             )}
             {!isImage && url && (
@@ -165,6 +197,7 @@ export function AttachmentViewer({ filename, mimeType, fetchBlob, onClose }: Att
           }}
         >
           {error && <p style={{ color: "#b42318" }}>{error}</p>}
+          {cropError && <p style={{ color: "#b42318", position: "absolute", top: 70 }}>{cropError}</p>}
           {!error && !url && <p style={{ color: "#667085" }}>Loading…</p>}
           {url && isImage && (
             <img
@@ -195,6 +228,15 @@ export function AttachmentViewer({ filename, mimeType, fetchBlob, onClose }: Att
           )}
         </div>
       </div>
+      {cropFile && (
+        <ImageCropper
+          file={cropFile}
+          onDone={saveCrop}
+          onCancel={() => setCropFile(null)}
+          applyLabel="Save cropped evidence"
+          note="This replaces the saved evidence with the cropped version."
+        />
+      )}
     </div>
   );
 }

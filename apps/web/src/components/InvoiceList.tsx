@@ -7,6 +7,7 @@ import { AttachmentViewer } from "./AttachmentViewer";
 import { useDocumentPdfDownload } from "../hooks/useDocumentPdfDownload";
 import { useCanDownload } from "../hooks/useCanDownload";
 import { useAuth } from "../auth/AuthContext";
+import { replaceLineEvidence } from "../utils/lineEvidence";
 
 interface InvoiceRow {
   id: string;
@@ -639,6 +640,14 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
             apiClient.get(`/ap/invoices/lines/${viewer.lineId}/attachment`, { responseType: "blob" }).then((res) => res.data as Blob)
           }
           onClose={closeViewer}
+          onCrop={
+            side === "ap" && canCreate
+              ? async (file) => {
+                  await replaceLineEvidence(viewer.lineId, file);
+                  await load();
+                }
+              : undefined
+          }
         />
       )}
     </div>

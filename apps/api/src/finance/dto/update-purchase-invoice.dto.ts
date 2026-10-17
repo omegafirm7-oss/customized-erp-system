@@ -3,6 +3,14 @@ import { Type } from "class-transformer";
 import { ArrayMinSize, IsArray, IsDateString, IsOptional, IsString, IsUUID, ValidateNested } from "class-validator";
 import { InvoiceLineDto } from "./invoice-line.dto";
 
+/** A line in an edit payload; `sourceLineId` names the saved line it replaces so that line's evidence file is carried over. */
+export class UpdateInvoiceLineDto extends InvoiceLineDto {
+  @ApiProperty({ required: false, description: "Existing line this one replaces — its evidence file is carried over" })
+  @IsOptional()
+  @IsUUID()
+  sourceLineId?: string;
+}
+
 /**
  * Full replace for a DRAFT purchase invoice's lines (delete-then-rebuild,
  * mirroring createDraft's own line-building path) plus optional header edits.
@@ -33,10 +41,10 @@ export class UpdatePurchaseInvoiceDto {
   @IsString()
   memo?: string;
 
-  @ApiProperty({ type: [InvoiceLineDto] })
+  @ApiProperty({ type: [UpdateInvoiceLineDto] })
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
-  @Type(() => InvoiceLineDto)
-  lines!: InvoiceLineDto[];
+  @Type(() => UpdateInvoiceLineDto)
+  lines!: UpdateInvoiceLineDto[];
 }

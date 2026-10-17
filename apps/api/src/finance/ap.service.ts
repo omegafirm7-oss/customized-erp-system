@@ -355,9 +355,20 @@ export class ApService {
       const built = await this.lineBuilder.buildLines(tx, companyId, "PURCHASE", dto.lines);
       const totals = sumDocumentTotals(built.lines);
 
+      // Evidence hangs off each line and is deleted with it, so snapshot the
+      // files first and re-attach them to whichever rebuilt line names its
+      // source line.
+      const savedEvidence = new Map(
+        (
+          await tx.purchaseInvoiceLineAttachment.findMany({
+            where: { companyId, purchaseInvoiceLine: { purchaseInvoiceId: invoiceId } },
+          })
+        ).map((a) => [a.purchaseInvoiceLineId, a]),
+      );
+
       await tx.purchaseInvoiceLine.deleteMany({ where: { purchaseInvoiceId: invoiceId } });
 
-      return tx.purchaseInvoice.update({
+      const result = await tx.purchaseInvoice.update({
         where: { id: invoiceId },
         data: {
           businessPartnerId,
@@ -393,6 +404,26 @@ export class ApService {
         },
         include: { lines: true, businessPartner: true },
       });
+
+      for (const [index, dtoLine] of dto.lines.entries()) {
+        const kept = dtoLine.sourceLineId ? savedEvidence.get(dtoLine.sourceLineId) : undefined;
+        const rebuilt = result.lines.find((l) => l.lineNumber === built.lines[index].lineNumber);
+        if (kept && rebuilt) {
+          await tx.purchaseInvoiceLineAttachment.create({
+            data: {
+              companyId,
+              purchaseInvoiceLineId: rebuilt.id,
+              filename: kept.filename,
+              mimeType: kept.mimeType,
+              size: kept.size,
+              data: kept.data,
+              uploadedByUserId: kept.uploadedByUserId,
+            },
+          });
+        }
+      }
+
+      return result;
     });
 
     await this.auditService.log({
@@ -753,7 +784,13 @@ export class ApService {
   private async getOwnedInvoice(companyId: string, invoiceId: string) {
     const invoice = await this.prisma.purchaseInvoice.findFirst({
       where: { id: invoiceId, companyId },
-      include: { lines: { include: { item: true } }, businessPartner: true },
+      include: {
+        lines: {
+          orderBy: { lineNumber: "asc" },
+          include: { item: true, attachment: { select: { filename: true, mimeType: true } } },
+        },
+        businessPartner: true,
+      },
     });
     if (!invoice) {
       throw new NotFoundException("Purchase invoice not found");

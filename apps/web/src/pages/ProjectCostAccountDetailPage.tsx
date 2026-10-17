@@ -3,6 +3,8 @@ import { Link, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { AttachButton } from "../components/AttachButton";
 import { AttachmentViewer } from "../components/AttachmentViewer";
+import { useCanEditEvidence } from "../hooks/useCanEditEvidence";
+import { replaceLineEvidence } from "../utils/lineEvidence";
 
 interface InvoiceLine {
   lineId: string;
@@ -20,6 +22,7 @@ interface InvoiceLine {
 }
 
 export function ProjectCostAccountDetailPage() {
+  const canEditEvidence = useCanEditEvidence();
   const { id, accountId } = useParams<{ id: string; accountId: string }>();
   const [lines, setLines] = useState<InvoiceLine[] | null>(null);
   const [uploadingFor, setUploadingFor] = useState<string | null>(null);
@@ -140,6 +143,14 @@ export function ProjectCostAccountDetailPage() {
             apiClient.get(`/ap/invoices/lines/${viewer.lineId}/attachment`, { responseType: "blob" }).then((res) => res.data as Blob)
           }
           onClose={closeViewer}
+          onCrop={
+            canEditEvidence
+              ? async (file) => {
+                  await replaceLineEvidence(viewer.lineId, file);
+                  load();
+                }
+              : undefined
+          }
         />
       )}
     </div>

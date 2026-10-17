@@ -3,6 +3,8 @@ import { Link, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { AttachButton } from "../components/AttachButton";
 import { AttachmentViewer } from "../components/AttachmentViewer";
+import { useCanEditEvidence } from "../hooks/useCanEditEvidence";
+import { replaceLineEvidence } from "../utils/lineEvidence";
 
 interface InvoiceLineRow {
   lineId: string;
@@ -52,6 +54,7 @@ function formatMonthLabel(month: string): string {
 }
 
 export function ProjectMonthlyCostTrendDetailPage() {
+  const canEditEvidence = useCanEditEvidence();
   const { id, month, category } = useParams<{ id: string; month: string; category: string }>();
   const isLabor = category === "labor";
   const [invoiceData, setInvoiceData] = useState<InvoiceDetail | null>(null);
@@ -214,6 +217,14 @@ export function ProjectMonthlyCostTrendDetailPage() {
             apiClient.get(`/ap/invoices/lines/${viewer.lineId}/attachment`, { responseType: "blob" }).then((res) => res.data as Blob)
           }
           onClose={() => setViewer(null)}
+          onCrop={
+            canEditEvidence
+              ? async (file) => {
+                  await replaceLineEvidence(viewer.lineId, file);
+                  load();
+                }
+              : undefined
+          }
         />
       )}
     </div>

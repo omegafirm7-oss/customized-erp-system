@@ -132,6 +132,69 @@ describe("AP invoice editing + project cost breakdown (e2e)", () => {
     expect(kept.businessPartnerId).toBe(vendorB.id);
   });
 
+  it("keeps a line's evidence file through an edit when the line names its source, and drops it otherwise", async () => {
+    const ctx = await setupUserWithCompany(app);
+    const vendor = await createPartner(app, ctx.accessToken, "VENDOR");
+    const account = ctx.accountByCode("5240");
+    const line = (description: string, extra: object = {}) => ({ description, quantity: "1", unitPrice: "100", vatCategory: "STANDARD_15", accountId: account.id, ...extra });
+    const created = (
+      await request(app.getHttpServer())
+        .post("/ap/invoices")
+        .set(auth(ctx.accessToken))
+        .send({
+          businessPartnerId: vendor.id,
+          vendorInvoiceNumber: "EVID-EDIT-1",
+          postingDate: new Date().toISOString(),
+          dueDate: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+          lines: [line("First"), line("Second")],
+        })
+        .expect(201)
+    ).body;
+    const [first, second] = created.lines;
+    const bytesFirst = Buffer.from([1, 1, 1, 1]);
+    const bytesSecond = Buffer.from([2, 2, 2, 2]);
+    for (const [l, bytes, name] of [[first, bytesFirst, "first.png"], [second, bytesSecond, "second.png"]] as const) {
+      await request(app.getHttpServer())
+        .post(`/ap/invoices/lines/${l.id}/attachment`)
+        .set(auth(ctx.accessToken))
+        .attach("file", bytes, { filename: name, contentType: "image/png" })
+        .expect(201);
+    }
+
+    // Edit: drop the first line, keep the second (naming it), add a brand-new third.
+    await request(app.getHttpServer())
+      .patch(`/ap/invoices/${created.id}`)
+      .set(auth(ctx.accessToken))
+      .send({ lines: [line("Second (edited)", { sourceLineId: second.id }), line("Third (new)")] })
+      .expect(200);
+
+    const after = (await request(app.getHttpServer()).get(`/ap/invoices/${created.id}`).set(auth(ctx.accessToken)).expect(200)).body;
+    expect(after.lines.map((l: any) => l.description)).toEqual(["Second (edited)", "Third (new)"]);
+    expect(after.lines[0].attachment).toMatchObject({ filename: "second.png", mimeType: "image/png" });
+    expect(after.lines[1].attachment).toBeNull();
+
+    const file = await request(app.getHttpServer())
+      .get(`/ap/invoices/lines/${after.lines[0].id}/attachment`)
+      .set(auth(ctx.accessToken))
+      .buffer(true)
+      .parse((response, callback) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => chunks.push(chunk));
+        response.on("end", () => callback(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    expect((file.body as Buffer).equals(bytesSecond)).toBe(true);
+
+    // An edit that does not name the source line no longer carries evidence.
+    await request(app.getHttpServer())
+      .patch(`/ap/invoices/${created.id}`)
+      .set(auth(ctx.accessToken))
+      .send({ lines: [line("Second (again)")] })
+      .expect(200);
+    const dropped = (await request(app.getHttpServer()).get(`/ap/invoices/${created.id}`).set(auth(ctx.accessToken)).expect(200)).body;
+    expect(dropped.lines[0].attachment).toBeNull();
+  });
+
   it("returns 409 when editing a posted invoice", async () => {
     const ctx = await setupUserWithCompany(app);
     const vendor = await createPartner(app, ctx.accessToken, "VENDOR");

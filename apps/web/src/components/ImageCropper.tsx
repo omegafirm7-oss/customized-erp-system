@@ -55,10 +55,16 @@ export function ImageCropper({
   file,
   onDone,
   onCancel,
+  applyLabel = "Crop & attach",
+  note,
 }: {
   file: File;
   onDone: (file: File) => void;
   onCancel: () => void;
+  /** Label of the confirm button (e.g. when cropping already-saved evidence). */
+  applyLabel?: string;
+  /** Optional extra line under the title, e.g. a warning that the original is replaced. */
+  note?: string;
 }) {
   const outType = file.type === "image/png" ? "image/png" : "image/jpeg";
   const [working, setWorking] = useState<Blob>(file);
@@ -188,6 +194,7 @@ export function ImageCropper({
           <h3 style={{ margin: 0, fontSize: 16, color: "#101828" }}>Crop evidence</h3>
           <span style={{ fontSize: 12, color: "#667085" }}>Drag the corners or edges so only the receipt is inside the box</span>
         </div>
+        {note && <p style={{ margin: "2px 0 0", fontSize: 12, color: "#b54708" }}>{note}</p>}
 
         <div style={{ display: "flex", justifyContent: "center", alignItems: "center", background: "#f2f4f7", borderRadius: 8, padding: 10, margin: "10px 0", minHeight: 160, overflow: "hidden" }}>
           <div style={{ position: "relative", lineHeight: 0, userSelect: "none", touchAction: "none", overflow: "hidden" }}>
@@ -253,7 +260,7 @@ export function ImageCropper({
               Use full image
             </button>
             <button type="button" disabled={busy} onClick={() => apply(false)}>
-              {busy ? "Working…" : "Crop & attach"}
+              {busy ? "Working…" : applyLabel}
             </button>
           </span>
         </div>

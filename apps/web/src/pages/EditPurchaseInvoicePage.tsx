@@ -2,6 +2,9 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { SearchableSelect } from "../components/SearchableSelect";
+import { AttachButton } from "../components/AttachButton";
+import { AttachmentViewer } from "../components/AttachmentViewer";
+import { replaceLineEvidence } from "../utils/lineEvidence";
 
 interface Account {
   id: string;
@@ -30,9 +33,17 @@ interface LineForm {
   taxMode: TaxMode;
   accountId: string;
   projectId: string;
+  /** Id of the saved line this row came from; null for lines added in this session. */
+  lineId: string | null;
+  /** Evidence already saved on the line. */
+  attachment: { filename: string; mimeType: string } | null;
+  /** Evidence picked for a brand-new line, uploaded once the invoice is saved. */
+  attachmentFile: File | null;
 }
 
 interface InvoiceLine {
+  id: string;
+  attachment: { filename: string; mimeType: string } | null;
   itemId: string | null;
   description: string;
   quantity: string;
@@ -94,6 +105,8 @@ export function EditPurchaseInvoicePage() {
   const [lines, setLines] = useState<LineForm[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadingFor, setUploadingFor] = useState<string | null>(null);
+  const [viewer, setViewer] = useState<{ lineId: string; filename: string; mimeType: string } | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -120,6 +133,9 @@ export function EditPurchaseInvoicePage() {
           taxMode: "INCLUSIVE",
           accountId: l.expenseAccountId,
           projectId: l.projectId ?? "",
+          lineId: l.id,
+          attachment: l.attachment,
+          attachmentFile: null,
         })),
       );
     });
@@ -154,13 +170,28 @@ export function EditPurchaseInvoicePage() {
     setLines((prev) => prev.map((line, i) => (i === index ? { ...line, ...patch } : line)));
   }
 
+  // Evidence on a saved line is written straight away (like the invoice list),
+  // not held until Save changes.
+  async function attachToSavedLine(index: number, lineId: string, file: File) {
+    setError(null);
+    setUploadingFor(lineId);
+    try {
+      await replaceLineEvidence(lineId, file);
+      updateLine(index, { attachment: { filename: file.name, mimeType: file.type } });
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to attach evidence - the file may be too large or an unsupported type");
+    } finally {
+      setUploadingFor(null);
+    }
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!id) return;
     setError(null);
     setSubmitting(true);
     try {
-      await apiClient.patch(`/ap/invoices/${id}`, {
+      const saved = await apiClient.patch<{ lines: Array<{ id: string; lineNumber: number }> }>(`/ap/invoices/${id}`, {
         businessPartnerId: vendorId,
         vendorInvoiceNumber,
         postingDate: new Date(postingDate).toISOString(),
@@ -176,8 +207,25 @@ export function EditPurchaseInvoicePage() {
           taxMode: line.taxMode,
           accountId: line.accountId,
           projectId: line.projectId || undefined,
+          sourceLineId: line.lineId || undefined,
         })),
       });
+
+      // Evidence picked for lines added during this edit goes up now that they have ids.
+      const queued = lines
+        .map((line, i) => ({ line, savedLine: saved.data.lines.find((l) => l.lineNumber === i + 1) }))
+        .filter((x) => x.line.attachmentFile && x.savedLine);
+      if (queued.length > 0) {
+        const results = await Promise.allSettled(queued.map((x) => replaceLineEvidence(x.savedLine!.id, x.line.attachmentFile!)));
+        const failures = results.filter((r) => r.status === "rejected").length;
+        if (failures > 0) {
+          setError(
+            "Invoice saved, but " + failures + " evidence file" + (failures > 1 ? "s" : "") + " failed to upload - attach it again from the Purchase Invoices list.",
+          );
+          setSubmitting(false);
+          return;
+        }
+      }
       navigate("/ap/invoices");
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "Failed to update invoice");
@@ -267,6 +315,7 @@ export function EditPurchaseInvoicePage() {
                 <th className="num">Net</th>
                 <th className="num">VAT</th>
                 <th className="num">Gross</th>
+                <th>Evidence</th>
                 <th></th>
               </tr>
             </thead>
@@ -330,6 +379,26 @@ export function EditPurchaseInvoicePage() {
                     <td className="num">
                       <strong>{amounts.gross.toFixed(2)}</strong>
                     </td>
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      {line.attachment && line.lineId ? (
+                        <button
+                          type="button"
+                          className="secondary"
+                          style={{ padding: "2px 10px", fontSize: 12 }}
+                          onClick={() => setViewer({ lineId: line.lineId!, filename: line.attachment!.filename, mimeType: line.attachment!.mimeType })}
+                        >
+                          View
+                        </button>
+                      ) : line.lineId ? (
+                        <AttachButton uploading={uploadingFor === line.lineId} onFile={(file) => attachToSavedLine(index, line.lineId!, file)} />
+                      ) : (
+                        <AttachButton
+                          uploading={false}
+                          label={line.attachmentFile ? line.attachmentFile.name.slice(0, 14) : "Attach"}
+                          onFile={(file) => updateLine(index, { attachmentFile: file })}
+                        />
+                      )}
+                    </td>
                     <td>
                       {lines.length > 1 && (
                         <button
@@ -356,7 +425,7 @@ export function EditPurchaseInvoicePage() {
             onClick={() =>
               setLines((prev) => [
                 ...prev,
-                { itemId: null, description: "", quantity: "1", unitPrice: "0", discountAmount: "0", vatCategory: "STANDARD_15", taxMode: "INCLUSIVE", accountId: "", projectId: "" },
+                { itemId: null, description: "", quantity: "1", unitPrice: "0", discountAmount: "0", vatCategory: "STANDARD_15", taxMode: "INCLUSIVE", accountId: "", projectId: "", lineId: null, attachment: null, attachmentFile: null },
               ])
             }
           >
@@ -387,6 +456,19 @@ export function EditPurchaseInvoicePage() {
           </button>
         </div>
       </form>
+
+      {viewer && (
+        <AttachmentViewer
+          filename={viewer.filename}
+          mimeType={viewer.mimeType}
+          fetchBlob={() => apiClient.get(`/ap/invoices/lines/${viewer.lineId}/attachment`, { responseType: "blob" }).then((res) => res.data as Blob)}
+          onClose={() => setViewer(null)}
+          onCrop={async (file) => {
+            await replaceLineEvidence(viewer.lineId, file);
+            setLines((prev) => prev.map((l) => (l.lineId === viewer.lineId ? { ...l, attachment: { filename: file.name, mimeType: file.type } } : l)));
+          }}
+        />
+      )}
     </div>
   );
 }
