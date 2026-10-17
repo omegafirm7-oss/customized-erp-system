@@ -320,204 +320,254 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
     }
   }
 
+  const partyLabel = side === "ar" ? "Customer" : "Vendor";
+  const taxLabel = countryCode === "PK" ? "Sales tax" : "VAT";
+
   return (
-    <div className="card">
-      <h2>{side === "ar" ? "New Sales Invoice" : "New Purchase Invoice"}</h2>
+    <div className="card invoice-edit">
+      <div className="invoice-edit-header">
+        <div>
+          <h2 style={{ margin: 0 }}>{side === "ar" ? "New Sales Invoice" : "New Purchase Invoice"}</h2>
+          <p className="invoice-edit-sub">Saved as a draft first — review it, then post it from the invoice list.</p>
+        </div>
+        <span className="badge draft">NEW</span>
+      </div>
       {error && <div className="error-banner">{Array.isArray(error) ? (error as string[]).join("; ") : error}</div>}
       <form onSubmit={handleSubmit}>
-        <div className="form-row">
-          <div style={{ flex: 1 }}>
+        <div className="invoice-edit-section">Invoice details</div>
+        <div className="field-grid">
+          <div className="field field-wide">
+            <label>{partyLabel}</label>
             <SearchableSelect
               options={partners}
               value={partnerId}
               onChange={setPartnerId}
-              placeholder={`Search ${side === "ar" ? "customer" : "vendor"} by code or name…`}
+              placeholder={`Search ${partyLabel.toLowerCase()} by code or name…`}
               required
             />
           </div>
           {side === "ap" && (
-            <input
-              placeholder="Vendor invoice number"
-              value={vendorInvoiceNumber}
-              onChange={(e) => setVendorInvoiceNumber(e.target.value)}
-              required
-            />
+            <div className="field">
+              <label>Vendor invoice no.</label>
+              <input
+                placeholder="e.g. INV-1042"
+                value={vendorInvoiceNumber}
+                onChange={(e) => setVendorInvoiceNumber(e.target.value)}
+                required
+              />
+            </div>
           )}
-          <div>
-            <label>Posting </label>
+          <div className="field">
+            <label>Posting date</label>
             <input type="date" value={postingDate} onChange={(e) => setPostingDate(e.target.value)} required />
           </div>
           {side === "ar" && (
-            <div>
-              <label>Due </label>
+            <div className="field">
+              <label>Due date</label>
               <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required />
             </div>
           )}
-        </div>
-        <div className="form-row">
-          <input placeholder="Memo (optional)" value={memo} onChange={(e) => setMemo(e.target.value)} style={{ flex: 1 }} />
+          <div className="field field-full">
+            <label>Memo</label>
+            <input placeholder="Optional note for this invoice" value={memo} onChange={(e) => setMemo(e.target.value)} />
+          </div>
         </div>
 
-        <table>
-          <thead>
-            <tr>
-              <th>Item</th>
-              {side === "ap" && <th>Account</th>}
-              <th>Description</th>
-              <th>Qty</th>
-              <th>Unit Price</th>
-              <th>Discount</th>
-              <th>{countryCode === "PK" ? "Sales tax" : "VAT"}</th>
-              {side === "ap" && <th>VAT mode</th>}
-              <th>WH</th>
-              <th>Project</th>
-              <th>Task</th>
-              <th>Net</th>
-              <th>VAT Amt</th>
-              {side === "ap" && <th>Evidence</th>}
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {lines.map((line, index) => {
-              const amounts = lineAmounts(line, items.find((i) => i.id === line.itemId));
-              return (
-                <tr key={index}>
-                  <td>
-                    <select value={line.itemId} onChange={(e) => selectItem(index, e.target.value)}>
-                      <option value="">(no item)</option>
-                      {items.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.code} — {item.name}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  {side === "ap" && (
+        <div className="invoice-edit-section">Line items</div>
+        <div className="invoice-lines-wrap">
+          <table className="invoice-lines">
+            <thead>
+              <tr>
+                <th style={{ minWidth: 150 }}>Item</th>
+                {side === "ap" && <th style={{ minWidth: 220 }}>Account</th>}
+                <th style={{ minWidth: 200 }}>Description</th>
+                <th className="num">Qty</th>
+                <th className="num">Unit price</th>
+                <th className="num">Discount</th>
+                <th>{taxLabel}</th>
+                {side === "ap" && <th>{taxLabel} mode</th>}
+                <th>Warehouse</th>
+                <th>Project</th>
+                <th>Task</th>
+                <th className="num">Net</th>
+                <th className="num">{taxLabel} amt</th>
+                {side === "ap" && <th>Evidence</th>}
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((line, index) => {
+                const amounts = lineAmounts(line, items.find((i) => i.id === line.itemId));
+                return (
+                  <tr key={index}>
                     <td>
-                      <SearchableSelect
-                        options={accounts}
-                        value={line.accountId}
-                        onChange={(accountId) => updateLine(index, { accountId })}
-                        placeholder={line.itemId ? "(default from item)" : "Search account…"}
-                        required={!line.itemId}
-                      />
-                    </td>
-                  )}
-                  <td>
-                    <input value={line.description} onChange={(e) => updateLine(index, { description: e.target.value })} required />
-                  </td>
-                  <td>
-                    <input type="number" min="0.000001" step="any" style={{ width: 70 }} value={line.quantity} onChange={(e) => updateLine(index, { quantity: e.target.value })} />
-                  </td>
-                  <td>
-                    <input type="number" min="0" step="0.01" style={{ width: 90 }} value={line.unitPrice} onChange={(e) => updateLine(index, { unitPrice: e.target.value })} />
-                  </td>
-                  <td>
-                    <input type="number" min="0" step="0.01" style={{ width: 80 }} value={line.discountAmount} onChange={(e) => updateLine(index, { discountAmount: e.target.value })} />
-                  </td>
-                  <td>
-                    <select value={line.vatCategory} onChange={(e) => updateLine(index, { vatCategory: e.target.value as LineForm["vatCategory"] })}>
-                      {taxOptions.map((o) => (
-                        <option key={o.value} value={o.value}>{o.short}</option>
-                      ))}
-                    </select>
-                  </td>
-                  {side === "ap" && (
-                    <td>
-                      <select value={line.taxMode} onChange={(e) => updateLine(index, { taxMode: e.target.value as TaxMode })}>
-                        <option value="INCLUSIVE">Inclusive</option>
-                        <option value="EXCLUSIVE">Exclusive</option>
+                      <select value={line.itemId} onChange={(e) => selectItem(index, e.target.value)}>
+                        <option value="">(no item)</option>
+                        {items.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.code} — {item.name}
+                          </option>
+                        ))}
                       </select>
                     </td>
-                  )}
-                  <td>
-                    {isInventoryLine(line) ? (
-                      <select
-                        value={line.warehouseId}
-                        onChange={(e) => updateLine(index, { warehouseId: e.target.value })}
+                    {side === "ap" && (
+                      <td>
+                        <SearchableSelect
+                          options={accounts}
+                          value={line.accountId}
+                          onChange={(accountId) => updateLine(index, { accountId })}
+                          placeholder={line.itemId ? "(default from item)" : "Search account…"}
+                          required={!line.itemId}
+                        />
+                      </td>
+                    )}
+                    <td>
+                      <input
+                        value={line.description}
+                        placeholder="What was purchased"
+                        onChange={(e) => updateLine(index, { description: e.target.value })}
                         required
-                      >
-                        <option value="" disabled>
-                          WH…
-                        </option>
-                        {warehouses.map((w) => (
-                          <option key={w.id} value={w.id}>
-                            {w.code}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span style={{ color: "#98a2b3" }}>—</span>
-                    )}
-                  </td>
-                  <td>
-                    <select
-                      value={line.projectId}
-                      onChange={(e) => {
-                        updateLine(index, { projectId: e.target.value, wbsTaskId: "" });
-                        loadTasks(e.target.value);
-                      }}
-                    >
-                      <option value="">—</option>
-                      {projects.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.code}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>
-                    {line.projectId ? (
-                      <select value={line.wbsTaskId} onChange={(e) => updateLine(index, { wbsTaskId: e.target.value })}>
-                        <option value="">—</option>
-                        {(tasksByProject[line.projectId] ?? []).map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.code}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span style={{ color: "#98a2b3" }}>—</span>
-                    )}
-                  </td>
-                  <td>{amounts.net.toFixed(2)}</td>
-                  <td>{amounts.vat.toFixed(2)}</td>
-                  {side === "ap" && (
-                    <td>
-                      <AttachButton
-                        uploading={false}
-                        label={line.attachmentFile ? line.attachmentFile.name.slice(0, 14) : "Attach"}
-                        onFile={(file) => updateLine(index, { attachmentFile: file })}
                       />
                     </td>
-                  )}
-                  <td>
-                    {lines.length > 1 && (
-                      <button type="button" className="secondary" onClick={() => setLines((prev) => prev.filter((_, i) => i !== index))}>
-                        ×
-                      </button>
+                    <td>
+                      <input type="number" min="0.000001" step="any" className="num" value={line.quantity} onChange={(e) => updateLine(index, { quantity: e.target.value })} />
+                    </td>
+                    <td>
+                      <input type="number" min="0" step="0.01" className="num" value={line.unitPrice} onChange={(e) => updateLine(index, { unitPrice: e.target.value })} />
+                    </td>
+                    <td>
+                      <input type="number" min="0" step="0.01" className="num" value={line.discountAmount} onChange={(e) => updateLine(index, { discountAmount: e.target.value })} />
+                    </td>
+                    <td>
+                      <select value={line.vatCategory} onChange={(e) => updateLine(index, { vatCategory: e.target.value as LineForm["vatCategory"] })}>
+                        {taxOptions.map((o) => (
+                          <option key={o.value} value={o.value}>{o.short}</option>
+                        ))}
+                      </select>
+                    </td>
+                    {side === "ap" && (
+                      <td>
+                        <select value={line.taxMode} onChange={(e) => updateLine(index, { taxMode: e.target.value as TaxMode })}>
+                          <option value="INCLUSIVE">Inclusive</option>
+                          <option value="EXCLUSIVE">Exclusive</option>
+                        </select>
+                      </td>
                     )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-
-        <div className="form-row" style={{ justifyContent: "space-between", marginTop: 10 }}>
-          <button type="button" className="secondary" onClick={() => setLines((prev) => [...prev, emptyLine(side, countryCode)])}>
-            Add line
-          </button>
-          <strong>
-            Net {totals.net.toFixed(2)} + {countryCode === "PK" ? "Sales tax" : "VAT"} {totals.vat.toFixed(2)} = Gross {totals.gross.toFixed(2)}
-            {countryCode === "PK" && side === "ar" && <span className="muted"> (+ further tax for unregistered buyers, added on save)</span>}
-          </strong>
+                    <td>
+                      {isInventoryLine(line) ? (
+                        <select
+                          value={line.warehouseId}
+                          onChange={(e) => updateLine(index, { warehouseId: e.target.value })}
+                          required
+                        >
+                          <option value="" disabled>
+                            Select…
+                          </option>
+                          {warehouses.map((w) => (
+                            <option key={w.id} value={w.id}>
+                              {w.code}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span style={{ color: "#98a2b3" }}>—</span>
+                      )}
+                    </td>
+                    <td>
+                      <select
+                        value={line.projectId}
+                        onChange={(e) => {
+                          updateLine(index, { projectId: e.target.value, wbsTaskId: "" });
+                          loadTasks(e.target.value);
+                        }}
+                      >
+                        <option value="">— None —</option>
+                        {projects.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.code}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      {line.projectId ? (
+                        <select value={line.wbsTaskId} onChange={(e) => updateLine(index, { wbsTaskId: e.target.value })}>
+                          <option value="">— None —</option>
+                          {(tasksByProject[line.projectId] ?? []).map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.code}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span style={{ color: "#98a2b3" }}>—</span>
+                      )}
+                    </td>
+                    <td className="num">{amounts.net.toFixed(2)}</td>
+                    <td className="num">{amounts.vat.toFixed(2)}</td>
+                    {side === "ap" && (
+                      <td>
+                        <AttachButton
+                          uploading={false}
+                          label={line.attachmentFile ? line.attachmentFile.name.slice(0, 14) : "Attach"}
+                          onFile={(file) => updateLine(index, { attachmentFile: file })}
+                        />
+                      </td>
+                    )}
+                    <td>
+                      {lines.length > 1 && (
+                        <button
+                          type="button"
+                          className="secondary"
+                          title="Remove line"
+                          onClick={() => setLines((prev) => prev.filter((_, i) => i !== index))}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
 
-        <button type="submit" disabled={submitting || !partnerId} style={{ marginTop: 12 }}>
-          {submitting ? "Saving…" : "Save as draft"}
-        </button>
+        <div className="invoice-edit-footer">
+          <button type="button" className="secondary" onClick={() => setLines((prev) => [...prev, emptyLine(side, countryCode)])}>
+            + Add line
+          </button>
+          <div>
+            <div className="invoice-totals">
+              <div>
+                <span>Net</span>
+                <span>{totals.net.toFixed(2)}</span>
+              </div>
+              <div>
+                <span>{taxLabel}</span>
+                <span>{totals.vat.toFixed(2)}</span>
+              </div>
+              <div className="invoice-totals-gross">
+                <span>Gross total</span>
+                <span>{totals.gross.toFixed(2)}</span>
+              </div>
+            </div>
+            {countryCode === "PK" && side === "ar" && (
+              <p className="field-hint" style={{ margin: "6px 0 0", textAlign: "right" }}>
+                + further tax for unregistered buyers, added on save
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="invoice-edit-actions">
+          <button type="submit" disabled={submitting || !partnerId}>
+            {submitting ? "Saving…" : "Save as draft"}
+          </button>
+          <button type="button" className="secondary" onClick={() => navigate(`/${side}/invoices`)}>
+            Cancel
+          </button>
+        </div>
       </form>
     </div>
   );
