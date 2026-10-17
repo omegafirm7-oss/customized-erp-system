@@ -87,6 +87,51 @@ describe("AP invoice editing + project cost breakdown (e2e)", () => {
     expect(Number(updated.vatTotal)).toBe(15);
   });
 
+  it("moves a draft to a different vendor, and rejects customers, unknown vendors and duplicate vendor-invoice numbers", async () => {
+    const ctx = await setupUserWithCompany(app);
+    const vendorA = await createPartner(app, ctx.accessToken, "VENDOR");
+    const vendorB = await createPartner(app, ctx.accessToken, "VENDOR");
+    const customer = await createPartner(app, ctx.accessToken, "CUSTOMER");
+    const account = ctx.accountByCode("5240");
+    const lines = [{ description: "Fuel", quantity: "1", unitPrice: "100", vatCategory: "STANDARD_15", accountId: account.id }];
+    const draft = async (businessPartnerId: string, vendorInvoiceNumber: string) =>
+      (
+        await request(app.getHttpServer())
+          .post("/ap/invoices")
+          .set(auth(ctx.accessToken))
+          .send({
+            businessPartnerId,
+            vendorInvoiceNumber,
+            postingDate: new Date().toISOString(),
+            dueDate: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+            lines,
+          })
+          .expect(201)
+      ).body;
+
+    const invoice = await draft(vendorA.id, "MOVE-001");
+    const patch = (body: object) =>
+      request(app.getHttpServer()).patch(`/ap/invoices/${invoice.id}`).set(auth(ctx.accessToken)).send({ lines, ...body });
+
+    // A different vendor is accepted and saved (number stays as it was).
+    const moved = (await patch({ businessPartnerId: vendorB.id }).expect(200)).body;
+    expect(moved.businessPartnerId).toBe(vendorB.id);
+    expect(moved.businessPartner.id).toBe(vendorB.id);
+    expect(moved.vendorInvoiceNumber).toBe("MOVE-001");
+
+    // Not a vendor / not a real partner.
+    await patch({ businessPartnerId: customer.id }).expect(400);
+    await patch({ businessPartnerId: "00000000-0000-4000-8000-000000000000" }).expect(404);
+
+    // The (vendor, vendor invoice no.) pair stays unique after moving.
+    await draft(vendorA.id, "MOVE-001");
+    await patch({ businessPartnerId: vendorA.id }).expect(409);
+
+    // Leaving the vendor out keeps the current one.
+    const kept = (await patch({ memo: "no vendor in payload" }).expect(200)).body;
+    expect(kept.businessPartnerId).toBe(vendorB.id);
+  });
+
   it("returns 409 when editing a posted invoice", async () => {
     const ctx = await setupUserWithCompany(app);
     const vendor = await createPartner(app, ctx.accessToken, "VENDOR");

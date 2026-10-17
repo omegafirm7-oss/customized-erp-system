@@ -2595,3 +2595,139 @@ button.crm-menu-btn {
     font-size: 16px;
   }
 }
+
+/* Edit Purchase Invoice — sectioned, labelled form (see pages/EditPurchaseInvoicePage.tsx). */
+.invoice-edit-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding-bottom: 14px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid #eef0f3;
+}
+.invoice-edit-sub {
+  margin: 4px 0 0;
+  color: #667085;
+  font-size: 13px;
+}
+.invoice-edit-section {
+  margin: 4px 0 12px;
+  color: #475467;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 18px;
+  margin-bottom: 26px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.field > label {
+  color: #344054;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.field input {
+  width: 100%;
+  box-sizing: border-box;
+  max-width: none;
+}
+.field-wide {
+  grid-column: span 3;
+}
+.field-full {
+  grid-column: 1 / -1;
+}
+.field-hint {
+  color: #98a2b3;
+  font-size: 12px;
+}
+.invoice-lines-wrap {
+  border: 1px solid #e4e7ec;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.invoice-lines th {
+  background: #f9fafb;
+  white-space: nowrap;
+}
+.invoice-lines td {
+  vertical-align: middle;
+}
+.invoice-lines td input,
+.invoice-lines td select {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+}
+.invoice-lines td select {
+  min-width: 108px;
+}
+.invoice-lines td input:not(.num) {
+  min-width: 180px;
+}
+.invoice-lines th.num,
+.invoice-lines td.num,
+.invoice-lines input.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.invoice-lines input.num {
+  min-width: 100px;
+}
+.invoice-edit-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-top: 14px;
+}
+.invoice-totals {
+  min-width: 260px;
+  border: 1px solid #e4e7ec;
+  border-radius: 8px;
+  background: #f9fafb;
+  padding: 10px 14px;
+  font-size: 13px;
+}
+.invoice-totals > div {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  color: #475467;
+  font-variant-numeric: tabular-nums;
+}
+.invoice-totals-gross {
+  margin-top: 4px;
+  padding-top: 8px !important;
+  border-top: 1px solid #e4e7ec;
+  color: #101828 !important;
+  font-weight: 700;
+  font-size: 14.5px;
+}
+.invoice-edit-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid #eef0f3;
+}
+@media (max-width: 800px) {
+  .field-grid {
+    grid-template-columns: 1fr;
+  }
+  .field-wide {
+    grid-column: auto;
+  }
+  .invoice-edit-footer {
+    flex-direction: column;
+  }
+}

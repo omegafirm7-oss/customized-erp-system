@@ -1,6 +1,6 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { ArrayMinSize, IsArray, IsDateString, IsOptional, IsString, ValidateNested } from "class-validator";
+import { ArrayMinSize, IsArray, IsDateString, IsOptional, IsString, IsUUID, ValidateNested } from "class-validator";
 import { InvoiceLineDto } from "./invoice-line.dto";
 
 /**
@@ -8,6 +8,11 @@ import { InvoiceLineDto } from "./invoice-line.dto";
  * mirroring createDraft's own line-building path) plus optional header edits.
  */
 export class UpdatePurchaseInvoiceDto {
+  @ApiProperty({ required: false, description: "Move this draft to a different vendor" })
+  @IsOptional()
+  @IsUUID()
+  businessPartnerId?: string;
+
   @ApiProperty({ required: false, description: "The supplier's own invoice number — unique per vendor" })
   @IsOptional()
   @IsString()

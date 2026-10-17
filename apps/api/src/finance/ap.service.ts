@@ -328,20 +328,25 @@ export class ApService {
       throw new ConflictException("Only draft invoices can be edited; delete and recreate a posted invoice's cancellation replacement instead");
     }
 
+    let businessPartnerId = before.businessPartnerId;
+    if (dto.businessPartnerId && dto.businessPartnerId !== before.businessPartnerId) {
+      if (before.sourcePurchaseOrderId) {
+        throw new BadRequestException("This invoice was generated from a purchase order, so its vendor can't be changed");
+      }
+      businessPartnerId = (await this.getVendor(companyId, dto.businessPartnerId)).id;
+    }
+
     const vendorInvoiceNumber = dto.vendorInvoiceNumber ?? before.vendorInvoiceNumber;
-    if (dto.vendorInvoiceNumber && dto.vendorInvoiceNumber !== before.vendorInvoiceNumber) {
+    if (vendorInvoiceNumber !== before.vendorInvoiceNumber || businessPartnerId !== before.businessPartnerId) {
+      // The (vendor, vendor invoice no.) pair is unique in the database even
+      // for cancelled invoices, so they count here too rather than surfacing
+      // as a raw constraint error on save.
       const duplicate = await this.prisma.purchaseInvoice.findFirst({
-        where: {
-          companyId,
-          businessPartnerId: before.businessPartnerId,
-          vendorInvoiceNumber: dto.vendorInvoiceNumber,
-          status: { not: InvoiceStatus.CANCELLED },
-          id: { not: invoiceId },
-        },
+        where: { companyId, businessPartnerId, vendorInvoiceNumber, id: { not: invoiceId } },
       });
       if (duplicate) {
         throw new ConflictException(
-          `Vendor invoice "${dto.vendorInvoiceNumber}" is already booked for this supplier (${duplicate.status})`,
+          `Vendor invoice "${vendorInvoiceNumber}" is already booked for this supplier (${duplicate.status})`,
         );
       }
     }
@@ -355,6 +360,7 @@ export class ApService {
       return tx.purchaseInvoice.update({
         where: { id: invoiceId },
         data: {
+          businessPartnerId,
           vendorInvoiceNumber,
           postingDate: dto.postingDate ? new Date(dto.postingDate) : undefined,
           dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
