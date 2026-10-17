@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import axios from "axios";
+import { ImageCropper } from "../components/ImageCropper";
 
 type Phase = "checking" | "ready" | "uploading" | "done" | "expired";
 
@@ -16,6 +17,8 @@ export function PhotoUploadMobilePage() {
   const [phase, setPhase] = useState<Phase>("checking");
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // The photo just taken, waiting to be trimmed before it is sent.
+  const [cropFile, setCropFile] = useState<File | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -71,7 +74,7 @@ export function PhotoUploadMobilePage() {
       {phase === "ready" && (
         <>
           <p style={{ color: "#98a2b3", maxWidth: 280, marginBottom: 20 }}>
-            Take a photo of the receipt or document — it'll be sent straight to your PC.
+            Take a photo of the receipt or document, trim it to just the receipt, and it'll be sent to your PC.
           </p>
           {error && <p style={{ color: "#f97066", marginBottom: 12 }}>{error}</p>}
           <button
@@ -96,9 +99,24 @@ export function PhotoUploadMobilePage() {
             accept="image/*"
             capture="environment"
             style={{ display: "none" }}
-            onChange={(e) => handleFile(e.target.files?.[0])}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) setCropFile(file);
+            }}
           />
         </>
+      )}
+
+      {cropFile && (
+        <ImageCropper
+          file={cropFile}
+          onDone={(cropped) => {
+            setCropFile(null);
+            void handleFile(cropped);
+          }}
+          onCancel={() => setCropFile(null)}
+        />
       )}
 
       {phase === "uploading" && <p style={{ color: "#98a2b3" }}>Sending photo to your PC…</p>}

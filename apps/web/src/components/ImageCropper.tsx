@@ -12,15 +12,19 @@ interface Box {
 
 const FULL: Box = { x: 0, y: 0, w: 1, h: 1 };
 const MIN_PX = 40;
+// Bigger drag targets on touch screens (phones), so a fingertip can grab a corner.
+const COARSE = typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
+const HS = COARSE ? 28 : 14;
+const OFF = -HS / 2;
 const HANDLES: Array<{ mode: Mode; style: React.CSSProperties; cursor: string }> = [
-  { mode: "nw", style: { left: -7, top: -7 }, cursor: "nwse-resize" },
-  { mode: "n", style: { left: "50%", top: -7, marginLeft: -7 }, cursor: "ns-resize" },
-  { mode: "ne", style: { right: -7, top: -7 }, cursor: "nesw-resize" },
-  { mode: "e", style: { right: -7, top: "50%", marginTop: -7 }, cursor: "ew-resize" },
-  { mode: "se", style: { right: -7, bottom: -7 }, cursor: "nwse-resize" },
-  { mode: "s", style: { left: "50%", bottom: -7, marginLeft: -7 }, cursor: "ns-resize" },
-  { mode: "sw", style: { left: -7, bottom: -7 }, cursor: "nesw-resize" },
-  { mode: "w", style: { left: -7, top: "50%", marginTop: -7 }, cursor: "ew-resize" },
+  { mode: "nw", style: { left: OFF, top: OFF }, cursor: "nwse-resize" },
+  { mode: "n", style: { left: "50%", top: OFF, marginLeft: OFF }, cursor: "ns-resize" },
+  { mode: "ne", style: { right: OFF, top: OFF }, cursor: "nesw-resize" },
+  { mode: "e", style: { right: OFF, top: "50%", marginTop: OFF }, cursor: "ew-resize" },
+  { mode: "se", style: { right: OFF, bottom: OFF }, cursor: "nwse-resize" },
+  { mode: "s", style: { left: "50%", bottom: OFF, marginLeft: OFF }, cursor: "ns-resize" },
+  { mode: "sw", style: { left: OFF, bottom: OFF }, cursor: "nesw-resize" },
+  { mode: "w", style: { left: OFF, top: "50%", marginTop: OFF }, cursor: "ew-resize" },
 ];
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -224,7 +228,7 @@ export function ImageCropper({
                     onPointerMove={onPointerMove}
                     onPointerUp={onPointerUp}
                     onPointerCancel={onPointerUp}
-                    style={{ position: "absolute", width: 14, height: 14, background: "#fff", border: "2px solid #2a78d6", borderRadius: 3, touchAction: "none", cursor: h.cursor, ...h.style }}
+                    style={{ position: "absolute", width: HS, height: HS, background: "#fff", border: "2px solid #2a78d6", borderRadius: 3, touchAction: "none", cursor: h.cursor, ...h.style }}
                   />
                 ))}
               </div>

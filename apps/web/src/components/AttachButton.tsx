@@ -170,7 +170,8 @@ export function AttachButton({
           const mimeType = (fileRes.headers["content-type"] as string) ?? "image/jpeg";
           const file = new File([fileRes.data], "phone-photo.jpg", { type: mimeType });
           setQrDataUrl(null);
-          pick(file);
+          // Already cropped on the phone itself — attach without a second crop step.
+          void finishCrop(file);
         } finally {
           releaseIdlePause();
         }
