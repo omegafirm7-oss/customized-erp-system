@@ -13,6 +13,7 @@ interface InvoiceRow {
   invoiceNumber: string | null;
   vendorInvoiceNumber?: string;
   documentKind?: "INVOICE" | "CREDIT_NOTE";
+  memo?: string | null;
   status: string;
   postingDate: string;
   dueDate: string;
@@ -21,6 +22,7 @@ interface InvoiceRow {
   businessPartner?: { code: string; name: string };
   lines?: Array<{
     id: string;
+    description?: string;
     expenseAccount?: { code: string; name: string } | null;
     costCenter?: { code: string; name: string } | null;
     attachment?: { filename: string } | null;
@@ -76,6 +78,7 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
   const [vendors, setVendors] = useState<VendorRef[]>([]);
   const [vendorsRestricted, setVendorsRestricted] = useState(false);
   const [vendorSearch, setVendorSearch] = useState("");
+  const [textSearch, setTextSearch] = useState("");
   const [selectedVendors, setSelectedVendors] = useState<VendorRef[]>([]);
   const [accountSearch, setAccountSearch] = useState("");
   const [fromDate, setFromDate] = useState("");
@@ -144,6 +147,21 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
   const filteredInvoices = invoices.filter((inv) => {
     if (side === "ap" && selectedVendors.length > 0) {
       if (!selectedVendors.some((v) => v.code === inv.businessPartner?.code)) return false;
+    }
+    if (side === "ap" && textSearch.trim()) {
+      const needle = textSearch.trim().toLowerCase();
+      const haystack = [
+        inv.businessPartner?.name,
+        inv.businessPartner?.code,
+        inv.invoiceNumber,
+        inv.vendorInvoiceNumber,
+        inv.memo,
+        ...(inv.lines ?? []).map((l) => l.description),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      if (!haystack.includes(needle)) return false;
     }
     if (side === "ap" && accountSearch.trim()) {
       if (!accountSummary(inv).toLowerCase().includes(accountSearch.trim().toLowerCase())) return false;
@@ -403,6 +421,13 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
         <>
           <div className="form-row" style={{ position: "relative" }}>
             <input
+              type="search"
+              placeholder="Search vendor, invoice no. or description…"
+              value={textSearch}
+              onChange={(e) => setTextSearch(e.target.value)}
+              style={{ minWidth: 280 }}
+            />
+            <input
               placeholder="Select vendor (e.g. KPS)…"
               value={vendorSearch}
               onChange={(e) => setVendorSearch(e.target.value)}
@@ -436,11 +461,12 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
             <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
             <label>to </label>
             <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
-            {(selectedVendors.length > 0 || accountSearch || fromDate || toDate) && (
+            {(selectedVendors.length > 0 || textSearch || accountSearch || fromDate || toDate) && (
               <button
                 type="button"
                 className="secondary"
                 onClick={() => {
+                  setTextSearch("");
                   setSelectedVendors([]);
                   setAccountSearch("");
                   setFromDate("");

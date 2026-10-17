@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { apiClient } from "../api/client";
 import { pauseIdleTimeout, resumeIdleTimeout } from "../utils/idleActivityPause";
+import { ImageCropper } from "./ImageCropper";
 
 const MAX_DIMENSION = 1600;
 const JPEG_QUALITY = 0.82;
@@ -64,6 +65,8 @@ export function AttachButton({
   const [open, setOpen] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [qrError, setQrError] = useState<string | null>(null);
+  // An image waiting to be cropped before it is attached.
+  const [cropFile, setCropFile] = useState<File | null>(null);
   const wrapperRef = useRef<HTMLSpanElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -106,15 +109,24 @@ export function AttachButton({
     releaseIdlePause();
   }
 
-  async function pick(file: File | undefined) {
+  // Images go through the crop step first (so a photographed receipt can be
+  // trimmed to just the receipt); PDFs and GIFs are attached as they are.
+  function pick(file: File | undefined) {
     setOpen(false);
     if (!file) return;
     if (file.type.startsWith("image/") && file.type !== "image/gif") {
-      try {
-        file = await compressImage(file);
-      } catch {
-        // fall through and upload the original if compression fails for any reason
-      }
+      setCropFile(file);
+      return;
+    }
+    onFile(file);
+  }
+
+  async function finishCrop(file: File) {
+    setCropFile(null);
+    try {
+      file = await compressImage(file);
+    } catch {
+      // fall through and upload the original if compression fails for any reason
     }
     onFile(file);
   }
@@ -252,6 +264,7 @@ export function AttachButton({
           e.target.value = "";
         }}
       />
+      {cropFile && <ImageCropper file={cropFile} onDone={finishCrop} onCancel={() => setCropFile(null)} />}
       {(qrDataUrl || qrError) && (
         <div
           style={{
