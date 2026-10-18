@@ -25,6 +25,18 @@ interface PlatformSummary {
   storageUsedPercent: number;
 }
 
+type UsageStatus = "ok" | "warning" | "over";
+
+interface CloudUsageSnapshot {
+  configured: boolean;
+  checkedAt: string | null;
+  cost: { monthToDateUsd: number; currency: string; byService: { service: string; amountUsd: number }[] } | null;
+  compute: { ocpusUsed: number; ocpusCap: number; memoryGbUsed: number; memoryGbCap: number; status: UsageStatus };
+  blockStorage: { gbUsed: number; gbCap: number; volumeCount: number; status: UsageStatus };
+  loadBalancers: { count: number; cap: number; status: UsageStatus };
+  error?: string;
+}
+
 interface PlatformClient {
   id: string;
   code: string;
@@ -44,11 +56,16 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
+const STATUS_COLOR: Record<UsageStatus, string> = { ok: "#12b76a", warning: "#f79009", over: "#d92d20" };
+
 export function PlatformDashboardPage() {
   const [summary, setSummary] = useState<PlatformSummary | null>(null);
   const [clients, setClients] = useState<PlatformClient[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [cloudUsage, setCloudUsage] = useState<CloudUsageSnapshot | null>(null);
+  const [cloudUsageError, setCloudUsageError] = useState<string | null>(null);
+  const [refreshingCloudUsage, setRefreshingCloudUsage] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -60,6 +77,24 @@ export function PlatformDashboardPage() {
         setClients(clientsRes.data);
       })
       .catch((err) => setError(err?.response?.data?.message ?? "Failed to load platform dashboard"));
+  }, []);
+
+  // Fetched independently of summary/clients (own loading/error state) so a
+  // slow or failing OCI call never blocks the rest of the dashboard.
+  function loadCloudUsage(force: boolean) {
+    if (force) setRefreshingCloudUsage(true);
+    apiClient
+      .get<CloudUsageSnapshot>("/platform/cloud-usage", { params: force ? { force: "true" } : undefined })
+      .then((res) => {
+        setCloudUsage(res.data);
+        setCloudUsageError(null);
+      })
+      .catch((err) => setCloudUsageError(err?.response?.data?.message ?? "Failed to load cloud infrastructure usage"))
+      .finally(() => setRefreshingCloudUsage(false));
+  }
+
+  useEffect(() => {
+    loadCloudUsage(false);
   }, []);
 
   async function toggleModule(client: PlatformClient, moduleKey: string) {
@@ -101,8 +136,9 @@ export function PlatformDashboardPage() {
           </div>
         </div>
         <p style={{ color: "#667085", marginTop: 16, marginBottom: -4 }}>
-          {formatBytes(summary.totalStorageBytes)} used of {formatBytes(summary.storageLimitBytes)} Oracle Cloud
-          Always Free allowance ({summary.storageUsedPercent}%)
+          {formatBytes(summary.totalStorageBytes)} of app attachments (receipts, invoices, evidence) — compared
+          against a {formatBytes(summary.storageLimitBytes)} reference cap ({summary.storageUsedPercent}%). For the
+          actual OCI block-volume usage, see Cloud infrastructure below.
         </p>
         <div style={{ background: "#eaecf0", borderRadius: 6, height: 10, overflow: "hidden" }}>
           <div
@@ -114,6 +150,106 @@ export function PlatformDashboardPage() {
             }}
           />
         </div>
+      </div>
+
+      <div className="card">
+        <h2>Cloud infrastructure (Oracle)</h2>
+        {cloudUsageError && <p style={{ color: "#d92d20" }}>{cloudUsageError}</p>}
+        {!cloudUsageError && !cloudUsage && <p style={{ color: "#98a2b3" }}>Loading…</p>}
+        {!cloudUsageError && cloudUsage && !cloudUsage.configured && (
+          <p style={{ color: "#667085" }}>
+            Not connected yet — set the OCI_* environment variables to enable live cost and Always-Free-usage
+            monitoring here.
+          </p>
+        )}
+        {!cloudUsageError && cloudUsage?.configured && (
+          <>
+            {cloudUsage.error && (
+              <p style={{ color: "#d92d20", marginBottom: 12 }}>{cloudUsage.error}</p>
+            )}
+            {cloudUsage.cost && (
+              <div style={{ marginBottom: 16 }}>
+                <span className="kpi-label">Cost this month (as of last OCI data refresh)</span>
+                <div className="kpi-value">
+                  ${cloudUsage.cost.monthToDateUsd.toFixed(2)} {cloudUsage.cost.currency}
+                </div>
+                {cloudUsage.cost.byService.length > 0 && (
+                  <p style={{ color: "#667085", fontSize: 13, marginTop: 4 }}>
+                    {cloudUsage.cost.byService
+                      .slice(0, 4)
+                      .map((s) => `${s.service}: $${s.amountUsd.toFixed(2)}`)
+                      .join(" · ")}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {(
+              [
+                {
+                  label: "Compute — OCPUs",
+                  used: cloudUsage.compute.ocpusUsed,
+                  cap: cloudUsage.compute.ocpusCap,
+                  status: cloudUsage.compute.status,
+                  unit: "OCPU",
+                  suffix: undefined as string | undefined,
+                },
+                {
+                  label: "Compute — memory",
+                  used: cloudUsage.compute.memoryGbUsed,
+                  cap: cloudUsage.compute.memoryGbCap,
+                  status: cloudUsage.compute.status,
+                  unit: "GB",
+                  suffix: undefined as string | undefined,
+                },
+                {
+                  label: "OCI block volume usage",
+                  used: cloudUsage.blockStorage.gbUsed,
+                  cap: cloudUsage.blockStorage.gbCap,
+                  status: cloudUsage.blockStorage.status,
+                  unit: "GB",
+                  suffix: `${cloudUsage.blockStorage.volumeCount} volume${cloudUsage.blockStorage.volumeCount === 1 ? "" : "s"}` as string | undefined,
+                },
+                {
+                  label: "Load balancers",
+                  used: cloudUsage.loadBalancers.count,
+                  cap: cloudUsage.loadBalancers.cap,
+                  status: cloudUsage.loadBalancers.status,
+                  unit: "",
+                  suffix: undefined as string | undefined,
+                },
+              ]
+            ).map((bar) => {
+              const pct = bar.cap > 0 ? Math.min(100, (bar.used / bar.cap) * 100) : 0;
+              return (
+                <div key={bar.label} style={{ marginTop: 12 }}>
+                  <p style={{ color: "#667085", marginBottom: 4, fontSize: 13 }}>
+                    {bar.label}: {bar.used.toLocaleString()} / {bar.cap.toLocaleString()} {bar.unit}
+                    {bar.suffix ? ` (${bar.suffix})` : ""}
+                  </p>
+                  <div style={{ background: "#eaecf0", borderRadius: 6, height: 8, overflow: "hidden" }}>
+                    <div style={{ width: `${pct}%`, background: STATUS_COLOR[bar.status], height: "100%" }} />
+                  </div>
+                </div>
+              );
+            })}
+
+            <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={{ color: "#98a2b3", fontSize: 12 }}>
+                {cloudUsage.checkedAt ? `Last checked: ${new Date(cloudUsage.checkedAt).toLocaleString()}` : ""}
+              </span>
+              <button
+                type="button"
+                className="secondary"
+                disabled={refreshingCloudUsage}
+                onClick={() => loadCloudUsage(true)}
+                style={{ padding: "4px 10px", fontSize: 12.5 }}
+              >
+                {refreshingCloudUsage ? "Refreshing…" : "Refresh"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="card">

@@ -37,6 +37,23 @@ export interface AppConfig {
     retryIntervalMs: number;
     maxRetries: number;
   };
+  /** Oracle Cloud Infrastructure API access for the Platform tab's live
+   * cost/Always-Free-usage card (see CloudUsageService) — the signing key
+   * itself is a file on disk (generated directly on the server, never
+   * passed through this app's DB/UI/env value), only its path lives here.
+   * Any field empty = not configured, degrades gracefully. */
+  oci: {
+    tenancyOcid: string;
+    userOcid: string;
+    fingerprint: string;
+    privateKeyPath: string;
+    /** Region the actual compute/storage/LB resources live in. */
+    region: string;
+    /** May differ from `region` — oci-usageapi must be called against the
+     * tenancy's home region regardless of where resources live. */
+    homeRegion: string;
+    compartmentId: string;
+  };
   /** Anthropic API for the CRM sales agent (lead research + message
    * drafting). Empty key = not configured; the agent endpoints return a
    * clear "not configured" error and the UI hides the AI buttons. */
@@ -87,6 +104,15 @@ export default (): AppConfig => ({
     posTimeoutMs: process.env.FBR_POS_TIMEOUT_MS ? Number(process.env.FBR_POS_TIMEOUT_MS) : 5000,
     retryIntervalMs: process.env.FBR_RETRY_INTERVAL_MS ? Number(process.env.FBR_RETRY_INTERVAL_MS) : 5 * 60 * 1000,
     maxRetries: process.env.FBR_MAX_RETRIES ? Number(process.env.FBR_MAX_RETRIES) : 20,
+  },
+  oci: {
+    tenancyOcid: process.env.OCI_TENANCY_OCID ?? "",
+    userOcid: process.env.OCI_USER_OCID ?? "",
+    fingerprint: process.env.OCI_KEY_FINGERPRINT ?? "",
+    privateKeyPath: process.env.OCI_PRIVATE_KEY_PATH ?? "",
+    region: process.env.OCI_REGION ?? "",
+    homeRegion: process.env.OCI_HOME_REGION ?? "",
+    compartmentId: process.env.OCI_COMPARTMENT_ID ?? "",
   },
   ai: {
     anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
