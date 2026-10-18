@@ -3,6 +3,8 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { AttachButton } from "../components/AttachButton";
 import { AttachmentViewer } from "../components/AttachmentViewer";
+import { useHasPermission } from "../hooks/useHasPermission";
+import { uploadEvidenceFile } from "../utils/uploadEvidence";
 import { formatPeriodLabel } from "../utils/period";
 
 interface FiscalPeriod {
@@ -61,6 +63,7 @@ function money(v: string | number): string {
 // Accrued cost here is a flat dayRate per day marked used, rolled into
 // this project's Machinery Cost on the Project Intelligence dashboard.
 export function ProjectEquipmentTimesheetPage() {
+  const canEditEquipment = useHasPermission("equipment.manage");
   const { id: projectId } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const [periods, setPeriods] = useState<FiscalPeriod[]>([]);
@@ -440,6 +443,14 @@ export function ProjectEquipmentTimesheetPage() {
               .then((res) => res.data as Blob)
           }
           onClose={() => setViewingPeriodAttachment(false)}
+          onCrop={
+            canEditEquipment
+              ? async (file) => {
+                  await uploadEvidenceFile(`/equipment/projects/${projectId}/period-attachment?fiscalPeriodId=${periodId}`, file);
+                  await load();
+                }
+              : undefined
+          }
         />
       )}
     </div>

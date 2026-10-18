@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { AttachmentViewer } from "../components/AttachmentViewer";
+import { useHasPermission } from "../hooks/useHasPermission";
+import { uploadEvidenceFile } from "../utils/uploadEvidence";
 import { formatAmount } from "../utils/currency";
 
 interface PaidTransaction {
@@ -31,11 +33,14 @@ function monthLabel(month: string): string {
 }
 
 export function PaidTransactionsPage() {
+  const canEditHr = useHasPermission("hr.employee.manage");
   const [data, setData] = useState<PaidTransactionsResponse | null>(null);
   const [viewer, setViewer] = useState<{ paymentId: string; filename: string; mimeType: string } | null>(null);
 
+  const loadData = () => apiClient.get<PaidTransactionsResponse>("/hr/reports/paid-transactions").then((res) => setData(res.data));
+
   useEffect(() => {
-    apiClient.get<PaidTransactionsResponse>("/hr/reports/paid-transactions").then((res) => setData(res.data));
+    loadData();
   }, []);
 
   if (!data) return <p style={{ padding: 24 }}>Loading…</p>;
@@ -121,6 +126,14 @@ export function PaidTransactionsPage() {
             apiClient.get(`/hr/employee-payments/${viewer.paymentId}/receipt`, { responseType: "blob" }).then((res) => res.data as Blob)
           }
           onClose={() => setViewer(null)}
+          onCrop={
+            canEditHr
+              ? async (file) => {
+                  await uploadEvidenceFile(`/hr/employee-payments/${viewer.paymentId}/receipt`, file);
+                  await loadData();
+                }
+              : undefined
+          }
         />
       )}
     </div>

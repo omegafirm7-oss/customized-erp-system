@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { AttachButton } from "../components/AttachButton";
 import { AttachmentViewer } from "../components/AttachmentViewer";
+import { useHasPermission } from "../hooks/useHasPermission";
+import { uploadEvidenceFile } from "../utils/uploadEvidence";
 import { formatPeriodLabel } from "../utils/period";
 
 interface FiscalPeriod {
@@ -115,6 +117,7 @@ const EMPLOYEE_NAME_STYLE: CSSProperties = {
 };
 
 export function UpdateTimesheetsPage() {
+  const canEditHr = useHasPermission("hr.employee.manage");
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [periods, setPeriods] = useState<FiscalPeriod[]>([]);
@@ -621,6 +624,14 @@ export function UpdateTimesheetsPage() {
               .then((res) => res.data as Blob)
           }
           onClose={() => setViewingPeriodAttachment(false)}
+          onCrop={
+            canEditHr
+              ? async (file) => {
+                  await uploadEvidenceFile(`/hr/employee-timesheet/period-attachment?fiscalPeriodId=${periodId}`, file);
+                  await loadRaw(periodId);
+                }
+              : undefined
+          }
         />
       )}
     </div>

@@ -3,6 +3,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { AttachButton } from "../components/AttachButton";
 import { AttachmentViewer } from "../components/AttachmentViewer";
+import { useHasPermission } from "../hooks/useHasPermission";
+import { uploadEvidenceFile } from "../utils/uploadEvidence";
 
 interface Entry {
   id: string;
@@ -53,6 +55,7 @@ const DAY_STATUSES = [
 // Hiace vans, buses, and other project-assigned equipment all run their day
 // logging, overtime, and attached evidence through this same usage-log grid.
 export function UsageLogPage() {
+  const canEditEquipment = useHasPermission("equipment.manage");
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [usageLog, setUsageLog] = useState<UsageLogDetail | null>(null);
@@ -349,6 +352,14 @@ export function UsageLogPage() {
               .then((res) => res.data as Blob)
           }
           onClose={() => setViewer(null)}
+          onCrop={
+            canEditEquipment
+              ? async (file) => {
+                  await uploadEvidenceFile(`/equipment/usage-logs/entries/${viewer.entryId}/attachment`, file);
+                  await load();
+                }
+              : undefined
+          }
         />
       )}
     </div>

@@ -3,6 +3,8 @@ import { useNavigate, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { AttachButton } from "../components/AttachButton";
 import { AttachmentViewer } from "../components/AttachmentViewer";
+import { useHasPermission } from "../hooks/useHasPermission";
+import { uploadEvidenceFile } from "../utils/uploadEvidence";
 
 interface Loan {
   id: string;
@@ -174,6 +176,7 @@ const emptyDetailsForm = {
 };
 
 export function EmployeeDetailPage() {
+  const canEditHr = useHasPermission("hr.employee.manage");
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [employee, setEmployee] = useState<EmployeeDetail | null>(null);
@@ -1109,6 +1112,14 @@ export function EmployeeDetailPage() {
             apiClient.get(`/hr/employee-payments/${receiptViewer.paymentId}/receipt`, { responseType: "blob" }).then((res) => res.data as Blob)
           }
           onClose={closeReceiptViewer}
+          onCrop={
+            canEditHr
+              ? async (file) => {
+                  await uploadEvidenceFile(`/hr/employee-payments/${receiptViewer.paymentId}/receipt`, file);
+                  await load();
+                }
+              : undefined
+          }
         />
       )}
     </div>
