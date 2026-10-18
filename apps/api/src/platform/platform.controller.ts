@@ -4,6 +4,7 @@ import { PlatformAdminGuard } from "../common/guards/platform-admin.guard";
 import { PlatformService } from "./platform.service";
 import { UpdateClientModulesDto } from "./dto/update-client-modules.dto";
 import { CloudUsageService } from "./cloud-usage/cloud-usage.service";
+import { CloudUsageAlertService } from "./cloud-usage/cloud-usage-alert.service";
 
 // JwtAuthGuard is registered globally in AppModule. PlatformAdminGuard is
 // applied locally (not via @Permissions()) since this dashboard is
@@ -17,6 +18,7 @@ export class PlatformController {
   constructor(
     private readonly platformService: PlatformService,
     private readonly cloudUsageService: CloudUsageService,
+    private readonly cloudUsageAlertService: CloudUsageAlertService,
   ) {}
 
   @Get("summary")
@@ -32,7 +34,8 @@ export class PlatformController {
    */
   @Get("cloud-usage")
   async getCloudUsage(@Query("force") force?: string) {
-    return this.cloudUsageService.getSnapshot(force === "true");
+    const snapshot = await this.cloudUsageService.getSnapshot(force === "true");
+    return { ...snapshot, alerts: await this.cloudUsageAlertService.describe() };
   }
 
   @Get("clients")

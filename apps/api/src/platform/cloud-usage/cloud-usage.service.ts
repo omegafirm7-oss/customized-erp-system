@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
-import { computeStatus, UsageStatus } from "./cloud-usage.util";
+import { computeStatus, percent, UsageStatus } from "./cloud-usage.util";
 import { CLOUD_USAGE_PROVIDER, CloudUsageProvider } from "./cloud-usage.provider";
 
 // Always Free entitlements are fixed, documented Oracle limits — not
@@ -18,9 +18,19 @@ export interface CloudUsageSnapshot {
   configured: boolean;
   checkedAt: string | null;
   cost: { monthToDateUsd: number; currency: string; byService: { service: string; amountUsd: number }[] } | null;
-  compute: { ocpusUsed: number; ocpusCap: number; memoryGbUsed: number; memoryGbCap: number; status: UsageStatus };
-  blockStorage: { gbUsed: number; gbCap: number; volumeCount: number; status: UsageStatus };
-  loadBalancers: { count: number; cap: number; status: UsageStatus };
+  compute: {
+    ocpusUsed: number;
+    ocpusCap: number;
+    ocpusPercent: number;
+    memoryGbUsed: number;
+    memoryGbCap: number;
+    memoryPercent: number;
+    status: UsageStatus;
+  };
+  blockStorage: { gbUsed: number; gbCap: number; percent: number; volumeCount: number; status: UsageStatus };
+  loadBalancers: { count: number; cap: number; percent: number; status: UsageStatus };
+  /** none = nothing billed and nothing near a limit; approaching = a metric is past the alert threshold; active = a metric is over its free limit or the month already shows a charge. */
+  billing: "none" | "approaching" | "active";
   error?: string;
 }
 
@@ -55,8 +65,10 @@ export class CloudUsageService {
         compute: {
           ocpusUsed: compute.ocpusUsed,
           ocpusCap: FREE_TIER_CAPS.ocpus,
+          ocpusPercent: percent(compute.ocpusUsed, FREE_TIER_CAPS.ocpus),
           memoryGbUsed: compute.memoryGbUsed,
           memoryGbCap: FREE_TIER_CAPS.memoryGb,
+          memoryPercent: percent(compute.memoryGbUsed, FREE_TIER_CAPS.memoryGb),
           status: this.worseStatus(
             computeStatus(compute.ocpusUsed, FREE_TIER_CAPS.ocpus),
             computeStatus(compute.memoryGbUsed, FREE_TIER_CAPS.memoryGb),
@@ -65,15 +77,19 @@ export class CloudUsageService {
         blockStorage: {
           gbUsed: blockStorage.gbUsed,
           gbCap: FREE_TIER_CAPS.blockStorageGb,
+          percent: percent(blockStorage.gbUsed, FREE_TIER_CAPS.blockStorageGb),
           volumeCount: blockStorage.volumeCount,
           status: computeStatus(blockStorage.gbUsed, FREE_TIER_CAPS.blockStorageGb),
         },
         loadBalancers: {
           count: loadBalancerCount,
           cap: FREE_TIER_CAPS.loadBalancers,
+          percent: percent(loadBalancerCount, FREE_TIER_CAPS.loadBalancers),
           status: computeStatus(loadBalancerCount, FREE_TIER_CAPS.loadBalancers),
         },
+        billing: "none",
       };
+      snapshot.billing = this.billingState(snapshot);
       this.cached = snapshot;
       this.cachedAtMs = Date.now();
       return snapshot;
@@ -90,6 +106,13 @@ export class CloudUsageService {
     }
   }
 
+  private billingState(snap: CloudUsageSnapshot): CloudUsageSnapshot["billing"] {
+    const statuses = [snap.compute.status, snap.blockStorage.status, snap.loadBalancers.status];
+    if ((snap.cost?.monthToDateUsd ?? 0) > 0 || statuses.includes("over")) return "active";
+    if (statuses.includes("warning")) return "approaching";
+    return "none";
+  }
+
   private worseStatus(a: UsageStatus, b: UsageStatus): UsageStatus {
     const rank: Record<UsageStatus, number> = { ok: 0, warning: 1, over: 2 };
     return rank[a] >= rank[b] ? a : b;
@@ -100,9 +123,18 @@ export class CloudUsageService {
       configured: false,
       checkedAt: null,
       cost: null,
-      compute: { ocpusUsed: 0, ocpusCap: FREE_TIER_CAPS.ocpus, memoryGbUsed: 0, memoryGbCap: FREE_TIER_CAPS.memoryGb, status: "ok" },
-      blockStorage: { gbUsed: 0, gbCap: FREE_TIER_CAPS.blockStorageGb, volumeCount: 0, status: "ok" },
-      loadBalancers: { count: 0, cap: FREE_TIER_CAPS.loadBalancers, status: "ok" },
+      compute: {
+        ocpusUsed: 0,
+        ocpusCap: FREE_TIER_CAPS.ocpus,
+        ocpusPercent: 0,
+        memoryGbUsed: 0,
+        memoryGbCap: FREE_TIER_CAPS.memoryGb,
+        memoryPercent: 0,
+        status: "ok",
+      },
+      blockStorage: { gbUsed: 0, gbCap: FREE_TIER_CAPS.blockStorageGb, percent: 0, volumeCount: 0, status: "ok" },
+      loadBalancers: { count: 0, cap: FREE_TIER_CAPS.loadBalancers, percent: 0, status: "ok" },
+      billing: "none",
     };
   }
 }

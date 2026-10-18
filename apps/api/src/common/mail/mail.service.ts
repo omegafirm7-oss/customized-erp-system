@@ -78,6 +78,23 @@ export class MailService {
   }
 
   /**
+   * Plain-text system email (e.g. the Oracle usage alert). Like the outreach
+   * path it THROWS on failure so the caller can decide whether to retry,
+   * rather than silently losing an alert.
+   */
+  async sendPlainEmail(params: { to: string | string[]; subject: string; text: string }): Promise<void> {
+    if (!this.transporter) {
+      throw new Error("Outgoing email is not configured on the server (SMTP settings missing)");
+    }
+    await this.transporter.sendMail({
+      from: this.smtpUser ? { name: "Universa Centrix", address: this.smtpUser } : this.fromAddress,
+      to: params.to,
+      subject: params.subject,
+      text: params.text,
+    });
+  }
+
+  /**
    * Silently no-ops (with a log line) until SMTP_HOST is configured — lets
    * the password-reset flow work end-to-end in dev/tests without real
    * credentials, and fail safe rather than crash a request in production if

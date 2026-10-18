@@ -3,14 +3,18 @@ import { ConfigService } from "@nestjs/config";
 import { PlatformController } from "./platform.controller";
 import { PlatformService } from "./platform.service";
 import { CloudUsageService } from "./cloud-usage/cloud-usage.service";
+import { CloudUsageAlertService } from "./cloud-usage/cloud-usage-alert.service";
+import { MailModule } from "../common/mail/mail.module";
 import { CLOUD_USAGE_PROVIDER, isOciConfigured, OciCloudUsageProvider } from "./cloud-usage/cloud-usage.provider";
 import { AppConfig } from "../core/config/configuration";
 
 @Module({
+  imports: [MailModule],
   controllers: [PlatformController],
   providers: [
     PlatformService,
     CloudUsageService,
+    CloudUsageAlertService,
     {
       provide: CLOUD_USAGE_PROVIDER,
       inject: [ConfigService],

@@ -3430,3 +3430,15 @@ model PosSale {
   @@index([companyId, createdAt])
   @@map("pos_sales")
 }
+
+// Remembers which Oracle-usage alert levels have already been emailed, so the
+// periodic check sends one email per threshold crossing instead of one per
+// run (see CloudUsageAlertService). One row per monitored metric.
+model PlatformAlertState {
+  key       String   @id
+  level     String
+  alertedAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("platform_alert_states")
+}

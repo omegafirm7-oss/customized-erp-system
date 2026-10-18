@@ -1,4 +1,4 @@
-import { computeStatus, percent } from "./cloud-usage.util";
+import { alertTransition, computeStatus, percent } from "./cloud-usage.util";
 
 describe("cloud-usage.util", () => {
   describe("percent", () => {
@@ -33,5 +33,26 @@ describe("cloud-usage.util", () => {
     it("treats a zero/negative cap as ok rather than dividing by zero", () => {
       expect(computeStatus(5, 0)).toBe("ok");
     });
+  });
+});
+
+describe("alertTransition", () => {
+  it("alerts when a metric first reaches the warning level, and again if it then goes over", () => {
+    expect(alertTransition(null, "warning")).toBe("alert");
+    expect(alertTransition("ok", "warning")).toBe("alert");
+    expect(alertTransition("warning", "over")).toBe("alert");
+    expect(alertTransition(null, "over")).toBe("alert");
+  });
+
+  it("stays quiet while the level hasn\u0027t got worse", () => {
+    expect(alertTransition("warning", "warning")).toBe("none");
+    expect(alertTransition("over", "over")).toBe("none");
+    expect(alertTransition("over", "warning")).toBe("none");
+    expect(alertTransition(null, "ok")).toBe("none");
+  });
+
+  it("clears (re-arming the alert) once the metric is back under the threshold", () => {
+    expect(alertTransition("warning", "ok")).toBe("clear");
+    expect(alertTransition("over", "ok")).toBe("clear");
   });
 });

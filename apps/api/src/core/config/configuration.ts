@@ -53,6 +53,8 @@ export interface AppConfig {
      * tenancy's home region regardless of where resources live. */
     homeRegion: string;
     compartmentId: string;
+    /** Comma-separated addresses for the 80%-of-free-tier usage email; empty = every platform admin. */
+    alertEmail: string;
   };
   /** Anthropic API for the CRM sales agent (lead research + message
    * drafting). Empty key = not configured; the agent endpoints return a
@@ -113,6 +115,7 @@ export default (): AppConfig => ({
     region: process.env.OCI_REGION ?? "",
     homeRegion: process.env.OCI_HOME_REGION ?? "",
     compartmentId: process.env.OCI_COMPARTMENT_ID ?? "",
+    alertEmail: process.env.OCI_ALERT_EMAIL ?? "",
   },
   ai: {
     anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
