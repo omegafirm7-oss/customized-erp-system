@@ -119,7 +119,8 @@ export class OciCloudUsageProvider implements CloudUsageProvider {
       const service = item.service ?? "Other";
       const amount = item.computedAmount ?? 0;
       byServiceTotals.set(service, (byServiceTotals.get(service) ?? 0) + amount);
-      if (item.currency) currency = item.currency;
+      // OCI returns a blank currency on zero-cost rows — keep the default then.
+      if (item.currency?.trim()) currency = item.currency.trim();
     }
 
     const byService = Array.from(byServiceTotals, ([service, amountUsd]) => ({ service, amountUsd })).sort(
