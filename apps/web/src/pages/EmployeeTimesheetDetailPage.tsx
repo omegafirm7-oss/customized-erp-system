@@ -218,11 +218,18 @@ export function EmployeeTimesheetDetailPage() {
             {detail ? `${detail.code} — ${detail.nameEn} — Timesheets` : "Timesheets"}
           </h2>
           <span>
-            {scope === "period" && detail && canDownload && (
+            {scope === "period" && detail && (
               <>
-                <button className="secondary" disabled={downloadingPdf} onClick={downloadPdfForPeriod}>
-                  {downloadingPdf ? "Preparing…" : "Download Attendance (PDF)"}
-                </button>{" "}
+                {canDownload && (
+                  <>
+                    <button className="secondary" disabled={downloadingPdf} onClick={downloadPdfForPeriod}>
+                      {downloadingPdf ? "Preparing…" : "Download Attendance (PDF)"}
+                    </button>{" "}
+                  </>
+                )}
+                {/* Open to everyone who can see this page (e.g. project coordinators) —
+                    sending the sheet to the employee is part of their job, unlike saving
+                    the file for themselves. */}
                 <button className="secondary" disabled={sharingPdf} onClick={sendPdfViaWhatsApp} title="Send this employee's attendance sheet via WhatsApp">
                   {sharingPdf ? "Preparing…" : "Send via WhatsApp"}
                 </button>{" "}
