@@ -42,6 +42,9 @@ export interface AttendancePdfParams {
   designation?: string;
   iqamaOrNationalId?: string;
   projectName?: string;
+  /** Fixed monthly basic salary and the hourly rate derived from it (basic / 26 / 10). */
+  monthlySalary?: string | number | null;
+  hourlyRate?: string | number | null;
   periodLabel: string;
   startDate: string;
   endDate: string;
@@ -66,7 +69,7 @@ export interface AttendancePdfParams {
  * blob for other destinations (e.g. WhatsApp share) without generating twice.
  */
 export function buildEmployeeAttendancePdf(params: AttendancePdfParams): jsPDF {
-  const { companyName, employeeName, designation, iqamaOrNationalId, projectName, periodLabel, startDate, endDate, entries, totalHours, branding } = params;
+  const { companyName, employeeName, designation, iqamaOrNationalId, projectName, monthlySalary, hourlyRate, periodLabel, startDate, endDate, entries, totalHours, branding } = params;
   const title = branding?.title ?? "Monthly Timesheet";
   const showIqama = branding?.showIqama ?? true;
   const showDesignation = branding?.showDesignation ?? true;
@@ -164,6 +167,15 @@ export function buildEmployeeAttendancePdf(params: AttendancePdfParams): jsPDF {
     ["Month / Year", periodLabel, "Iqama No.", showIqama ? (iqamaOrNationalId ?? "") : ""],
     ["Supervisor", "", "Signature", ""],
   ];
+  if (monthlySalary != null || hourlyRate != null) {
+    const fmt = (v: string | number, maxDp: number) => Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: maxDp });
+    infoRows.push([
+      "Monthly Salary (Fixed)",
+      monthlySalary != null ? fmt(monthlySalary, 2) : "",
+      "Hourly Rate",
+      hourlyRate != null ? fmt(hourlyRate, 4) : "",
+    ]);
+  }
 
   autoTable(doc, {
     startY: y,

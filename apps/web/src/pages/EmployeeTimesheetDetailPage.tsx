@@ -125,6 +125,7 @@ export function EmployeeTimesheetDetailPage() {
       designation?: string;
       iqamaOrNationalId?: string;
       phone?: string | null;
+      basicSalary?: string | number | null;
       costCenter?: { project?: { name: string } | null } | null;
     }>(`/hr/employees/${id}`);
     const companyName = companies.find((c) => c.companyId === user?.activeCompanyId)?.companyName ?? "";
@@ -138,6 +139,8 @@ export function EmployeeTimesheetDetailPage() {
         designation: employeeRes.data.designation,
         iqamaOrNationalId: employeeRes.data.iqamaOrNationalId,
         projectName: employeeRes.data.costCenter?.project?.name,
+        monthlySalary: employeeRes.data.basicSalary,
+        hourlyRate: detail.hourlyRate,
         periodLabel,
         startDate: period.startDate,
         endDate: period.endDate,
