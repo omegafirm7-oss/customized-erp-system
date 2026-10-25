@@ -161,16 +161,23 @@ export function PartnersPage() {
   }
 
   async function handleDelete(p: Partner) {
-    if (!window.confirm(`Deactivate ${p.code} — ${p.name}? It will be hidden from new invoices/orders but existing history is kept.`)) {
+    if (
+      !window.confirm(
+        `Delete ${p.code} — ${p.name}? It is erased permanently. If it already has invoices, orders, payments or other records, it can't be erased and is deactivated instead (hidden from invoices/orders, history kept).`,
+      )
+    ) {
       return;
     }
     setError(null);
     setBusyId(p.id);
     try {
-      await apiClient.delete(`/partners/${p.id}`);
+      const res = await apiClient.delete<{ deleted: boolean }>(`/partners/${p.id}`);
+      if (!res.data.deleted) {
+        setError(`${p.code} has booked records so it can't be erased; it was deactivated and is hidden from invoices and orders.`);
+      }
       await load();
     } catch (err: any) {
-      setError(err?.response?.data?.message ?? "Failed to deactivate partner");
+      setError(err?.response?.data?.message ?? "Failed to delete partner");
     } finally {
       setBusyId(null);
     }

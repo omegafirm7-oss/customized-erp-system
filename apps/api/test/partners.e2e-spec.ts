@@ -1,6 +1,6 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { createTestApp, setupUserWithCompany, asPlatformAdmin } from "./utils/test-app";
+import { createTestApp, setupUserWithCompany, asPlatformAdmin, getPrisma } from "./utils/test-app";
 
 describe("Business Partners CSV import (e2e)", () => {
   let app: INestApplication;
@@ -112,6 +112,33 @@ describe("Business Partners CSV import (e2e)", () => {
     expect(bList).toHaveLength(0);
   });
 
+  it("deleting a partner with no records erases it permanently; one with records is only deactivated", async () => {
+    const { accessToken, companyId } = await setupUserWithCompany(app);
+    const create = async (code: string) =>
+      (
+        await request(app.getHttpServer())
+          .post("/partners")
+          .set(auth(accessToken))
+          .send({ code, name: `Vendor ${code}`, partnerType: "VENDOR" })
+          .expect(201)
+      ).body;
+
+    const unused = await create("V-DEL-1");
+    const delRes = await request(app.getHttpServer()).delete(`/partners/${unused.id}`).set(auth(accessToken)).expect(200);
+    expect(delRes.body.deleted).toBe(true);
+    await request(app.getHttpServer()).get(`/partners/${unused.id}`).set(auth(accessToken)).expect(404);
+
+    const used = await create("V-DEL-2");
+    const user = await getPrisma(app).companyUser.findFirstOrThrow({ where: { companyId } });
+    await getPrisma(app).contact.create({
+      data: { companyId, businessPartnerId: used.id, firstName: "Ali", createdByUserId: user.userId },
+    });
+    const keepRes = await request(app.getHttpServer()).delete(`/partners/${used.id}`).set(auth(accessToken)).expect(200);
+    expect(keepRes.body.deleted).toBe(false);
+    const after = (await request(app.getHttpServer()).get(`/partners/${used.id}`).set(auth(accessToken)).expect(200)).body;
+    expect(after.isActive).toBe(false);
+  });
+
   it("edits an existing partner's name, type and VAT/TRN", async () => {
     const { accessToken } = await setupUserWithCompany(app);
     const created = (
@@ -154,22 +181,5 @@ describe("Business Partners CSV import (e2e)", () => {
       .set(auth(accessToken))
       .send({ code: "V-007" })
       .expect(409);
-  });
-
-  it("deactivates a partner via DELETE, keeping it visible with isActive=false", async () => {
-    const { accessToken } = await setupUserWithCompany(app);
-    const created = (
-      await request(app.getHttpServer())
-        .post("/partners")
-        .set(auth(accessToken))
-        .send({ code: "V-009", name: "To Deactivate", partnerType: "VENDOR" })
-        .expect(201)
-    ).body;
-
-    await request(app.getHttpServer()).delete(`/partners/${created.id}`).set(auth(accessToken)).expect(200);
-
-    const list = (await request(app.getHttpServer()).get("/partners").set(auth(accessToken)).expect(200)).body;
-    const found = list.find((p: any) => p.id === created.id);
-    expect(found.isActive).toBe(false);
   });
 });

@@ -60,6 +60,7 @@ interface VendorRef {
   code: string;
   name: string;
   partnerType: "CUSTOMER" | "VENDOR" | "BOTH";
+  isActive?: boolean;
 }
 
 interface InvoiceDetail {
@@ -141,7 +142,7 @@ export function EditPurchaseInvoicePage() {
     });
     apiClient
       .get<VendorRef[]>("/partners")
-      .then((res) => setVendors(res.data.filter((p) => p.partnerType === "VENDOR" || p.partnerType === "BOTH")))
+      .then((res) => setVendors(res.data.filter((p) => p.isActive !== false && (p.partnerType === "VENDOR" || p.partnerType === "BOTH"))))
       .catch(() => setVendors([]));
     apiClient.get<Account[]>("/coa/accounts").then((res) => setAccounts(res.data.filter((a) => a.isPostable)));
     apiClient.get<ProjectRef[]>("/projects").then((res) => setProjects(res.data.filter((p) => p.status === "ACTIVE")));

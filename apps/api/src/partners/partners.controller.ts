@@ -66,7 +66,7 @@ export class PartnersController {
 
   @Delete(":id")
   @Permissions(PERMISSIONS.PARTNER_CUSTOMER_MANAGE)
-  async deactivate(@CurrentCompanyId() companyId: string, @Param("id") id: string) {
-    return this.partnersService.deactivate(companyId, id);
+  async remove(@CurrentCompanyId() companyId: string, @Param("id") id: string) {
+    return this.partnersService.remove(companyId, id);
   }
 }

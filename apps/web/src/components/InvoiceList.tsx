@@ -56,6 +56,7 @@ interface VendorRef {
   code: string;
   name: string;
   partnerType: "CUSTOMER" | "VENDOR" | "BOTH";
+  isActive?: boolean;
 }
 
 export function InvoiceList({ side }: { side: "ar" | "ap" }) {
@@ -107,7 +108,7 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
     if (side !== "ap") return;
     apiClient
       .get<VendorRef[]>("/partners")
-      .then((res) => setVendors(res.data.filter((p) => p.partnerType === "VENDOR" || p.partnerType === "BOTH")))
+      .then((res) => setVendors(res.data.filter((p) => p.isActive !== false && (p.partnerType === "VENDOR" || p.partnerType === "BOTH"))))
       .catch(() => setVendorsRestricted(true));
   }, [side]);
 

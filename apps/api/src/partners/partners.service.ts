@@ -54,9 +54,45 @@ export class PartnersService {
     return this.prisma.businessPartner.create({ data: { companyId, ...dto } });
   }
 
-  async deactivate(companyId: string, id: string) {
+  /**
+   * Delete is permanent when the partner has no business history at all.
+   * Once anything references it (invoices, orders, payments, journal lines,
+   * contracts, projects, CRM records...) it can't be erased without breaking
+   * those records, so it is deactivated instead (hidden from pickers).
+   */
+  async remove(companyId: string, id: string): Promise<{ deleted: boolean; partner?: unknown }> {
     const partner = await this.get(companyId, id);
-    return this.prisma.businessPartner.update({ where: { id: partner.id }, data: { isActive: false } });
+    const { _count } = await this.prisma.businessPartner.findUniqueOrThrow({
+      where: { id: partner.id },
+      select: {
+        _count: {
+          select: {
+            journalEntryLines: true,
+            salesInvoices: true,
+            purchaseInvoices: true,
+            purchaseQuotations: true,
+            purchaseOrders: true,
+            salesQuotations: true,
+            salesOrders: true,
+            payments: true,
+            projects: true,
+            manpowerContracts: true,
+            equipmentRentalContracts: true,
+            hiredEquipmentContracts: true,
+            contacts: true,
+            opportunities: true,
+            crmActivities: true,
+          },
+        },
+      },
+    });
+    const hasHistory = Object.values(_count).some((n) => n > 0);
+    if (hasHistory) {
+      const updated = await this.prisma.businessPartner.update({ where: { id: partner.id }, data: { isActive: false } });
+      return { deleted: false, partner: updated };
+    }
+    await this.prisma.businessPartner.delete({ where: { id: partner.id } });
+    return { deleted: true };
   }
 
   async update(companyId: string, id: string, userId: string, dto: UpdateBusinessPartnerDto) {

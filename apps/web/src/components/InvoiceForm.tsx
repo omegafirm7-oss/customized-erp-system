@@ -11,6 +11,7 @@ interface Partner {
   code: string;
   name: string;
   partnerType: "CUSTOMER" | "VENDOR" | "BOTH";
+  isActive?: boolean;
 }
 
 interface Item {
@@ -195,7 +196,7 @@ export function InvoiceForm({ side }: { side: "ar" | "ap" }) {
   useEffect(() => {
     apiClient.get<Partner[]>("/partners").then((res) => {
       const wanted = side === "ar" ? ["CUSTOMER", "BOTH"] : ["VENDOR", "BOTH"];
-      setPartners(res.data.filter((p) => wanted.includes(p.partnerType)));
+      setPartners(res.data.filter((p) => p.isActive !== false && wanted.includes(p.partnerType)));
     });
     apiClient.get<Item[]>("/items").then((res) => setItems(res.data));
     apiClient.get<Warehouse[]>("/warehouses").then((res) => setWarehouses(res.data));
