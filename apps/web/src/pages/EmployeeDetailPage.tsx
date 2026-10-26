@@ -864,8 +864,9 @@ export function EmployeeDetailPage() {
             </tbody>
           </table>
         )}
-        {active && (
-          <form onSubmit={createPayment}>
+        {/* Not gated on `active`: terminated/released employees still have pending
+            amounts that get paid out and need to be recorded here. */}
+        <form onSubmit={createPayment}>
             <div className="form-row" style={{ marginTop: 10 }}>
               <select value={payForm.category} onChange={(e) => setPayForm({ ...payForm, category: e.target.value })}>
                 <option value="ALLOWANCE">Allowance</option>
@@ -934,8 +935,7 @@ export function EmployeeDetailPage() {
               </label>
               <button type="submit">Record payment</button>
             </div>
-          </form>
-        )}
+        </form>
       </div>
 
       {(showRelease || employee.finalSettlement || !active) && (
