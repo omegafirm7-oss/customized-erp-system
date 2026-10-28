@@ -102,6 +102,16 @@ export const DEFAULT_COA_TEMPLATE: DefaultCoaEntry[] = [
   { code: "5220", name: "Utilities Expense", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT" },
   { code: "5230", name: "Depreciation Expense", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT", controlAccountType: "DEPRECIATION_EXPENSE" },
   { code: "5240", name: "Office & Administrative Expense", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT" },
+  // Fines & penalties, split by who levied them so each can be categorised and
+  // reviewed on its own. Not a tax: VAT/ZATCA penalties are an expense, never
+  // part of the VAT payable/receivable accounts.
+  { code: "5280", name: "Fines & Penalties", subClassCode: "OPERATING_EXPENSE", isPostable: false, normalBalance: "DEBIT" },
+  { code: "5281", name: "Traffic & Vehicle Fines", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT", parentCode: "5280" },
+  { code: "5282", name: "VAT / ZATCA Penalties", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT", parentCode: "5280" },
+  { code: "5283", name: "GOSI & Labour Office Penalties", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT", parentCode: "5280" },
+  { code: "5284", name: "Iqama, Visa & Jawazat Fines", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT", parentCode: "5280" },
+  { code: "5285", name: "Municipality & Civil Defense Fines", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT", parentCode: "5280" },
+  { code: "5286", name: "Other Fines & Penalties", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT", parentCode: "5280" },
   { code: "5800", name: "Finance Costs", subClassCode: "FINANCE_COST", isPostable: true, normalBalance: "DEBIT" },
   { code: "5850", name: "Foreign Exchange Gain/Loss", subClassCode: "FINANCE_COST", isPostable: true, normalBalance: "DEBIT" },
   { code: "5900", name: "Tax Expense", subClassCode: "TAX_EXPENSE", isPostable: true, normalBalance: "DEBIT" },

@@ -31,6 +31,19 @@ describe("Chart of Accounts — rename & Project Intelligence category (e2e)", (
     expect(ctx.accountByCode("5220").costCategory).toBeNull();
   });
 
+  it("seeds the Fines & Penalties group with postable expense accounts under a non-postable header", async () => {
+    const ctx = await setupUserWithCompany(app);
+    const header = ctx.accountByCode("5280");
+    expect(header.isPostable).toBe(false);
+    for (const code of ["5281", "5282", "5283", "5284", "5285", "5286"]) {
+      const account = ctx.accountByCode(code);
+      expect(account.isPostable).toBe(true);
+      expect(account.parentAccountId).toBe(header.id);
+      expect(account.accountClass.code).toBe("EXPENSE");
+      expect(account.normalBalance).toBe("DEBIT");
+    }
+  });
+
   it("renames an account and sets/clears its cost category via PATCH", async () => {
     const ctx = await setupUserWithCompany(app);
     const account = ctx.accountByCode("5107");
