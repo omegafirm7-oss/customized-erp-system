@@ -33,6 +33,8 @@ const OPEN_STATUSES: InvoiceStatus[] = [InvoiceStatus.POSTED, InvoiceStatus.PART
 /** Column order of the sales-invoice import template (one row = one invoice line). */
 const SALES_XLSX_COLUMNS = [
   "customerCode",
+  "customerName",
+  "customerTaxNumber",
   "invoiceNumber",
   "issueDate",
   "dueDate",
@@ -46,6 +48,8 @@ const SALES_XLSX_COLUMNS = [
 
 const SALES_XLSX_SAMPLE_ROW = [
   "C-001",
+  "Al Falak Trading Est.",
+  "300012345600003",
   "INV-2026-0456",
   "2026-10-15",
   "2026-11-15",
@@ -56,6 +60,14 @@ const SALES_XLSX_SAMPLE_ROW = [
   "4200",
   "",
 ];
+
+/** Arabic-Indic / Persian digits to plain 0-9, and strip spaces, so a tax number matches however it was typed. */
+function normalizeDigits(value: string): string {
+  return value
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[\u06f0-\u06f9]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
+    .replace(/\s+/g, "");
+}
 
 export interface SalesImportRowError {
   row: number;
@@ -634,16 +646,24 @@ export class ArService {
       accountId: string;
       costCenterId?: string;
     }
+    interface NewCustomer {
+      code: string;
+      name: string;
+      taxRegistrationNumber?: string;
+    }
     interface ParsedInvoice {
-      customerId: string;
-      customerCode: string;
+      customerKey: string;
+      customerId?: string;
+      newCustomer?: NewCustomer;
       invoiceNumber: string;
       issueDate: string;
       dueDate: string;
       lines: ParsedLine[];
     }
     const invoices = new Map<string, ParsedInvoice>();
-    const customerCache = new Map<string, { id: string; partnerType: PartnerType } | null>();
+    // Existing customer by code or tax number; or a customer to create when the
+    // file gives a name but no match exists yet.
+    const customerCache = new Map<string, { id?: string; create?: NewCustomer } | null>();
     const accountCache = new Map<string, string | null>();
     const costCenterCache = new Map<string, string | null>();
 
@@ -652,11 +672,25 @@ export class ArService {
       const cells = raw[i] as unknown[];
       if (cells.length === 0 || cells.every((c) => String(c).trim() === "")) continue;
       const get = (idx: number) => String(cells[idx] ?? "").trim();
-      const [customerCode, invoiceNumber, issueDate, dueDateRaw, description, amount, amountTypeRaw, vatCategoryRaw, accountCode, costCenterCode] =
-        SALES_XLSX_COLUMNS.map((_, idx) => get(idx));
+      const [
+        customerCode,
+        customerNameRaw,
+        customerTaxRaw,
+        invoiceNumber,
+        issueDate,
+        dueDateRaw,
+        description,
+        amount,
+        amountTypeRaw,
+        vatCategoryRaw,
+        accountCode,
+        costCenterCode,
+      ] = SALES_XLSX_COLUMNS.map((_, idx) => get(idx));
+      const customerName = customerNameRaw.normalize("NFKC");
+      const customerTax = normalizeDigits(customerTaxRaw);
       const dueDate = dueDateRaw || issueDate;
 
-      if (!customerCode) errors.push({ row: rowNum, message: "customerCode is required" });
+      if (!customerCode && !customerTax) errors.push({ row: rowNum, message: "customerCode or customerTaxNumber is required" });
       if (!invoiceNumber) errors.push({ row: rowNum, message: "invoiceNumber is required" });
       if (!issueDate || isNaN(Date.parse(issueDate))) errors.push({ row: rowNum, message: "issueDate must be a valid date (YYYY-MM-DD)" });
       if (dueDate && isNaN(Date.parse(dueDate))) errors.push({ row: rowNum, message: "dueDate must be a valid date (YYYY-MM-DD)" });
@@ -669,24 +703,42 @@ export class ArService {
       }
       if (!accountCode) errors.push({ row: rowNum, message: "revenueAccountCode is required" });
 
-      let customer: { id: string; partnerType: PartnerType } | null = null;
-      if (customerCode) {
-        if (!customerCache.has(customerCode)) {
-          customerCache.set(
-            customerCode,
-            await this.prisma.businessPartner.findFirst({
-              where: { companyId, code: customerCode, isActive: true },
-              select: { id: true, partnerType: true },
-            }),
-          );
+      const customerKey = customerCode || customerTax;
+      let customer: { id?: string; create?: NewCustomer } | null = null;
+      if (customerKey) {
+        if (!customerCache.has(customerKey)) {
+          const partners = await this.prisma.businessPartner.findMany({
+            where: {
+              companyId,
+              isActive: true,
+              OR: [...(customerCode ? [{ code: customerCode }] : []), ...(customerTax ? [{ taxRegistrationNumber: customerTax }] : [])],
+            },
+            select: { id: true, code: true, partnerType: true },
+          });
+          const found = partners.find((p) => p.code === customerCode) ?? partners[0];
+          if (found) {
+            customerCache.set(
+              customerKey,
+              found.partnerType === PartnerType.CUSTOMER || found.partnerType === PartnerType.BOTH ? { id: found.id } : null,
+            );
+            if (found.partnerType === PartnerType.VENDOR) {
+              errors.push({ row: rowNum, message: `Partner "${found.code}" is a vendor, not a customer` });
+            }
+          } else if (customerName) {
+            const code = customerCode || `C-${customerTax}`;
+            const clash = await this.prisma.businessPartner.findUnique({ where: { companyId_code: { companyId, code } }, select: { id: true } });
+            if (clash) {
+              errors.push({ row: rowNum, message: `Partner code "${code}" already exists but is inactive or has a different tax number` });
+              customerCache.set(customerKey, null);
+            } else {
+              customerCache.set(customerKey, { create: { code, name: customerName, taxRegistrationNumber: customerTax || undefined } });
+            }
+          } else {
+            errors.push({ row: rowNum, message: `Customer "${customerKey}" not found — add a customerName to have it created, or add the partner first` });
+            customerCache.set(customerKey, null);
+          }
         }
-        customer = customerCache.get(customerCode) ?? null;
-        if (!customer) {
-          errors.push({ row: rowNum, message: `Customer code "${customerCode}" not found or inactive` });
-        } else if (customer.partnerType !== PartnerType.CUSTOMER && customer.partnerType !== PartnerType.BOTH) {
-          errors.push({ row: rowNum, message: `Partner "${customerCode}" is not a customer` });
-          customer = null;
-        }
+        customer = customerCache.get(customerKey) ?? null;
       }
 
       let accountId: string | null = null;
@@ -710,10 +762,10 @@ export class ArService {
       }
 
       if (!customer || !accountId || !invoiceNumber) continue;
-      const key = `${customerCode}|${invoiceNumber}`;
+      const key = `${customerKey}|${invoiceNumber}`;
       let invoice = invoices.get(key);
       if (!invoice) {
-        invoice = { customerId: customer.id, customerCode, invoiceNumber, issueDate, dueDate, lines: [] };
+        invoice = { customerKey, customerId: customer.id, newCustomer: customer.create, invoiceNumber, issueDate, dueDate, lines: [] };
         invoices.set(key, invoice);
       } else if (invoice.issueDate !== issueDate) {
         errors.push({ row: rowNum, message: `Invoice ${invoiceNumber} has different issue dates on different rows` });
@@ -731,6 +783,7 @@ export class ArService {
 
     // Already imported earlier? (same customer + same external number, not cancelled)
     for (const inv of invoices.values()) {
+      if (!inv.customerId) continue;
       const existing = await this.prisma.salesInvoice.findFirst({
         where: {
           companyId,
@@ -741,22 +794,45 @@ export class ArService {
         select: { id: true },
       });
       if (existing) {
-        errors.push({ row: inv.lines[0].row, message: `Invoice "${inv.invoiceNumber}" for ${inv.customerCode} was already imported` });
+        errors.push({ row: inv.lines[0].row, message: `Invoice "${inv.invoiceNumber}" for ${inv.customerKey} was already imported` });
       }
     }
 
     if (errors.length > 0) {
-      return { imported: 0, posted: 0, errors };
+      return { imported: 0, posted: 0, customersCreated: 0, errors };
     }
     if (invoices.size === 0) {
       throw new BadRequestException("No data rows found in the file");
+    }
+
+    // Create the customers that didn't exist yet (once each), then the invoices.
+    let customersCreated = 0;
+    const createdCustomerIds = new Map<string, string>();
+    for (const inv of invoices.values()) {
+      if (inv.customerId || !inv.newCustomer) continue;
+      let id = createdCustomerIds.get(inv.customerKey);
+      if (!id) {
+        const partner = await this.prisma.businessPartner.create({
+          data: {
+            companyId,
+            code: inv.newCustomer.code,
+            name: inv.newCustomer.name,
+            partnerType: PartnerType.CUSTOMER,
+            taxRegistrationNumber: inv.newCustomer.taxRegistrationNumber,
+          },
+        });
+        id = partner.id;
+        createdCustomerIds.set(inv.customerKey, id);
+        customersCreated += 1;
+      }
+      inv.customerId = id;
     }
 
     const createdIds: string[] = [];
     let posted = 0;
     for (const inv of invoices.values()) {
       const draft = await this.createDraft(companyId, userId, {
-        businessPartnerId: inv.customerId,
+        businessPartnerId: inv.customerId!,
         issueDateTime: inv.issueDate,
         postingDate: inv.issueDate,
         dueDate: inv.dueDate,
@@ -791,10 +867,10 @@ export class ArService {
       entityId: "xlsx-import",
       action: "CREATE",
       changedByUserId: userId,
-      afterSnapshot: { importedCount: createdIds.length, postedCount: posted, invoiceIds: createdIds },
+      afterSnapshot: { importedCount: createdIds.length, postedCount: posted, customersCreated, invoiceIds: createdIds },
     });
 
-    return { imported: createdIds.length, posted, errors: [] as SalesImportRowError[] };
+    return { imported: createdIds.length, posted, customersCreated, errors: [] as SalesImportRowError[] };
   }
 
   async cancelInvoice(companyId: string, invoiceId: string, userId: string) {

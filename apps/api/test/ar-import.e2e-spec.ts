@@ -5,6 +5,8 @@ import { createPartner, createTestApp, getPrisma, setupUserWithCompany } from ".
 
 const COLUMNS = [
   "customerCode",
+  "customerName",
+  "customerTaxNumber",
   "invoiceNumber",
   "issueDate",
   "dueDate",
@@ -16,8 +18,11 @@ const COLUMNS = [
   "costCenterCode",
 ];
 
+// Rows are written in the short form (code, invoice#, ...); name/tax columns are blank
+// unless the row already has the full 12 columns.
 function workbook(rows: string[][]): Buffer {
-  const sheet = XLSX.utils.aoa_to_sheet([COLUMNS, ...rows]);
+  const full = rows.map((r) => (r.length === COLUMNS.length ? r : [r[0], "", "", ...r.slice(1)]));
+  const sheet = XLSX.utils.aoa_to_sheet([COLUMNS, ...full]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, sheet, "Sales invoices");
   return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
@@ -109,7 +114,7 @@ describe("Sales invoice Excel import (e2e)", () => {
     ).expect(201);
     expect(bad.body.imported).toBe(0);
     const messages = bad.body.errors.map((e: any) => `${e.row}:${e.message}`).join(" | ");
-    expect(messages).toContain('3:Customer code "NO-SUCH" not found');
+    expect(messages).toContain('3:Customer "NO-SUCH" not found');
     expect(messages).toContain("4:issueDate must be a valid date");
     expect(messages).toContain("4:amount must be a positive number");
     expect(messages).toContain('4:Revenue account code "9999" not found');
@@ -120,6 +125,38 @@ describe("Sales invoice Excel import (e2e)", () => {
     const again = await upload(ctx.accessToken, workbook(rows)).expect(201);
     expect(again.body.imported).toBe(0);
     expect(again.body.errors[0].message).toContain("already imported");
+  });
+
+  it("matches customers by tax number (Arabic digits too) and creates the ones that don't exist yet", async () => {
+    const ctx = await setupUserWithCompany(app);
+    const existing = await createPartner(app, ctx.accessToken, "CUSTOMER", { taxRegistrationNumber: "300503618400003" });
+
+    const res = await upload(
+      ctx.accessToken,
+      workbook([
+        // existing customer found by tax number, written with Arabic-Indic digits
+        ["", "ignored", "٣٠٠٥٠٣٦١٨٤٠٠٠٠٣", "T-1", "2026-10-10", "", "Sale", "100", "NET", "", "4200", ""],
+        // unknown customer: created from name + tax number, reused by the second row
+        ["", "New Client Co", "311488559200003", "T-2", "2026-10-11", "", "Sale", "200", "NET", "", "4200", ""],
+        ["", "New Client Co", "311488559200003", "T-3", "2026-10-12", "", "Sale", "300", "NET", "", "4200", ""],
+      ]),
+      true,
+    ).expect(201);
+    expect(res.body).toMatchObject({ imported: 3, posted: 3, customersCreated: 1 });
+
+    const partners = (await request(app.getHttpServer()).get("/partners").set("Authorization", `Bearer ${ctx.accessToken}`).expect(200)).body;
+    expect(partners).toHaveLength(2);
+    const created = partners.find((p: any) => p.taxRegistrationNumber === "311488559200003");
+    expect(created).toMatchObject({ code: "C-311488559200003", name: "New Client Co", partnerType: "CUSTOMER" });
+
+    const invoices = (await request(app.getHttpServer()).get("/ar/invoices").set("Authorization", `Bearer ${ctx.accessToken}`).expect(200)).body;
+    expect(invoices.filter((i: any) => i.businessPartnerId === existing.id)).toHaveLength(1);
+    expect(invoices.filter((i: any) => i.businessPartnerId === created.id)).toHaveLength(2);
+
+    // A customer with no name and no match is an error, nothing is created
+    const bad = await upload(ctx.accessToken, workbook([["", "", "399999999900003", "T-9", "2026-10-10", "", "Sale", "100", "NET", "", "4200", ""]])).expect(201);
+    expect(bad.body.imported).toBe(0);
+    expect(bad.body.errors[0].message).toContain("not found");
   });
 
   it("refuses to post on import while ZATCA e-invoicing is active, but still allows drafts", async () => {

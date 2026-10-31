@@ -369,8 +369,8 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
       } else if (side === "ar") {
         setImportResult(
           res.data.posted > 0
-            ? `Imported and posted ${res.data.imported} sales invoices.`
-            : `Imported ${res.data.imported} sales invoices as drafts — review them and press Post on each, or import again with "post immediately" ticked.`,
+            ? `Imported and posted ${res.data.imported} sales invoices.${res.data.customersCreated ? ` ${res.data.customersCreated} new customer(s) were added to Partners.` : ""}`
+            : `Imported ${res.data.imported} sales invoices as drafts${res.data.customersCreated ? ` (${res.data.customersCreated} new customer(s) added to Partners)` : ""} — review them and press Post on each.`,
         );
         await load();
       } else {
