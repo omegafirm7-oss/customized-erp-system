@@ -74,6 +74,16 @@ export class ReportsController {
     return this.reportsService.vatReturn(companyId, new Date(fromDate), new Date(toDate));
   }
 
+  @Get("vat-return/details")
+  @Permissions(PERMISSIONS.REPORTS_VIEW)
+  async vatReturnDetails(
+    @CurrentCompanyId() companyId: string,
+    @Query("fromDate") fromDate: string,
+    @Query("toDate") toDate: string,
+  ) {
+    return this.reportsService.vatReturnDetails(companyId, new Date(fromDate), new Date(toDate));
+  }
+
   @Get("stock-summary")
   @Permissions(PERMISSIONS.REPORTS_VIEW)
   async stockSummary(@CurrentCompanyId() companyId: string, @Query("warehouseId") warehouseId?: string) {

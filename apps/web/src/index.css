@@ -2731,3 +2731,35 @@ button.crm-menu-btn {
     flex-direction: column;
   }
 }
+
+/* VAT Return report — printable / save-as-PDF hand-off (pages/VatReturnPage.tsx). */
+.vat-report-header {
+  border-bottom: 2px solid #101828;
+  margin-bottom: 12px;
+}
+.vat-schedule {
+  font-size: 12px;
+}
+@media print {
+  .sidebar,
+  .topbar,
+  .no-print {
+    display: none !important;
+  }
+  .app-shell {
+    display: block !important;
+  }
+  .main-area {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+  .vat-report {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+  }
+  .vat-schedule tr {
+    page-break-inside: avoid;
+  }
+}

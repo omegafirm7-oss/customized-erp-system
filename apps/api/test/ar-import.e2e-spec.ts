@@ -159,6 +159,32 @@ describe("Sales invoice Excel import (e2e)", () => {
     expect(bad.body.errors[0].message).toContain("not found");
   });
 
+  it("VAT return details list the documents behind the figures and flag drafts that are not counted", async () => {
+    const ctx = await setupUserWithCompany(app);
+    const customer = await createPartner(app, ctx.accessToken, "CUSTOMER", { taxRegistrationNumber: "300111222300003" });
+    await upload(
+      ctx.accessToken,
+      workbook([
+        [customer.code, "D-1", "2026-10-10", "", "Posted sale", "1000", "NET", "STANDARD_15", "4200", ""],
+        [customer.code, "D-2", "2026-10-11", "", "Posted export", "500", "NET", "ZERO_RATED", "4200", ""],
+      ]),
+      true,
+    ).expect(201);
+    await upload(ctx.accessToken, workbook([[customer.code, "D-3", "2026-10-12", "", "Still a draft", "400", "NET", "STANDARD_15", "4200", ""]])).expect(201);
+
+    const q = "fromDate=2026-10-01T00:00:00.000Z&toDate=2026-10-31T23:59:59.000Z";
+    const details = (await request(app.getHttpServer()).get(`/reports/vat-return/details?${q}`).set("Authorization", `Bearer ${ctx.accessToken}`).expect(200)).body;
+    const summary = (await request(app.getHttpServer()).get(`/reports/vat-return?${q}`).set("Authorization", `Bearer ${ctx.accessToken}`).expect(200)).body;
+
+    expect(details.company.legalName).toBe("Test Company Ltd");
+    expect(details.salesDocuments).toHaveLength(2);
+    expect(details.salesDocuments.map((d: any) => d.reference)).toEqual(["D-1", "D-2"]);
+    expect(details.salesDocuments[0]).toMatchObject({ taxNumber: "300111222300003", net: "1000.00", vat: "150.00", gross: "1150.00" });
+    const vatSum = details.salesDocuments.reduce((n: number, d: any) => n + Number(d.vat), 0);
+    expect(vatSum).toBe(Number(summary.outputVat));
+    expect(details.notIncluded).toMatchObject({ draftSalesCount: 1, draftSalesVat: "60.00", draftPurchaseCount: 0 });
+  });
+
   it("refuses to post on import while ZATCA e-invoicing is active, but still allows drafts", async () => {
     const ctx = await setupUserWithCompany(app);
     const customer = await createPartner(app, ctx.accessToken, "CUSTOMER");

@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { useHasPermission } from "../hooks/useHasPermission";
+import { useCanDownload } from "../hooks/useCanDownload";
 
 interface Account {
   id: string;
@@ -29,6 +30,26 @@ interface VatReturnReport {
   netVatPayable: string;
 }
 
+interface VatDetails {
+  company: { legalName: string; tradeName: string | null; taxRegistrationNumber: string | null; crNumber: string | null; currency: string };
+  salesDocuments: Array<{ number: string | null; kind: string; date: string; reference: string | null; party: string; taxNumber: string | null; net: string; vat: string; gross: string }>;
+  purchaseDocuments: Array<{ number: string | null; reference: string; date: string; party: string; taxNumber: string | null; net: string; vat: string; gross: string }>;
+  notIncluded: { draftSalesCount: number; draftSalesVat: string; draftPurchaseCount: number; draftPurchaseVat: string };
+}
+
+const CATEGORY_ORDER = ["STANDARD_15", "ZERO_RATED", "EXEMPT"];
+
+const money = (v: string | number) =>
+  Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** Calendar quarter as YYYY-MM-DD bounds. */
+function quarterRange(year: number, quarter: number): { from: string; to: string } {
+  const startMonth = (quarter - 1) * 3;
+  const from = new Date(Date.UTC(year, startMonth, 1));
+  const to = new Date(Date.UTC(year, startMonth + 3, 0));
+  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
+}
+
 const CATEGORY_LABELS: Record<string, string> = {
   STANDARD_15: "Standard-rated (15%)",
   ZERO_RATED: "Zero-rated (0%)",
@@ -45,6 +66,9 @@ export function VatReturnPage() {
   const [toDate, setToDate] = useState(new Date().toISOString().slice(0, 10));
   const [report, setReport] = useState<VatReturnReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [details, setDetails] = useState<VatDetails | null>(null);
+  const [presetYear, setPresetYear] = useState(new Date().getUTCFullYear());
+  const canPrint = useCanDownload();
   const navigate = useNavigate();
   const canCreateJournal = useHasPermission("gl.journal.create");
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -65,6 +89,10 @@ export function VatReturnPage() {
       .get<VatReturnReport>("/reports/vat-return", { params: { fromDate, toDate } })
       .then((res) => setReport(res.data))
       .finally(() => setLoading(false));
+    apiClient
+      .get<VatDetails>("/reports/vat-return/details", { params: { fromDate, toDate } })
+      .then((res) => setDetails(res.data))
+      .catch(() => setDetails(null));
   }, [fromDate, toDate]);
 
   useEffect(() => {
@@ -141,74 +169,157 @@ export function VatReturnPage() {
     }
   }
 
+  const periodLabel = `${fromDate} to ${toDate}`;
+  const categoryRows = (rows: Breakdown[]) =>
+    CATEGORY_ORDER.map((cat) => rows.find((r) => r.vatCategory === cat) ?? { vatCategory: cat, netAmount: "0.00", vatAmount: "0.00" });
+  const sum = (values: string[]) => values.reduce((n, v) => n + Number(v), 0);
+
   return (
-    <div className="card">
-      <div className="form-row" style={{ justifyContent: "space-between" }}>
-        <h2>VAT Return Summary</h2>
-        <div>
-          <label>From </label>
-          <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
-          <label> To </label>
-          <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+    <div className="card vat-report">
+      <div className="no-print">
+        <div className="form-row" style={{ justifyContent: "space-between" }}>
+          <h2>VAT Return</h2>
+          <div>
+            <label>From </label>
+            <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+            <label> To </label>
+            <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+          </div>
+        </div>
+        <div className="form-row">
+          <span style={{ color: "#667085", fontSize: 13 }}>Quarter:</span>
+          <select value={presetYear} onChange={(e) => setPresetYear(Number(e.target.value))}>
+            {[0, 1, 2].map((back) => {
+              const y = new Date().getUTCFullYear() - back;
+              return (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              );
+            })}
+          </select>
+          {[1, 2, 3, 4].map((q) => (
+            <button
+              key={q}
+              type="button"
+              className="secondary"
+              onClick={() => {
+                const r = quarterRange(presetYear, q);
+                setFromDate(r.from);
+                setToDate(r.to);
+              }}
+            >
+              Q{q}
+            </button>
+          ))}
+          {canPrint && (
+            <button type="button" style={{ marginLeft: "auto" }} onClick={() => window.print()}>
+              Print / Save as PDF
+            </button>
+          )}
         </div>
       </div>
+
+      {details && (
+        <div className="vat-report-header">
+          <h2 style={{ margin: 0 }}>VAT Return Report</h2>
+          <p style={{ margin: "4px 0", fontSize: 18, fontWeight: 600 }}>{details.company.legalName}</p>
+          <p style={{ margin: 0, color: "#475467" }}>
+            VAT registration no.: <strong>{details.company.taxRegistrationNumber ?? "— (not set in Companies)"}</strong>
+            {details.company.crNumber && <> &nbsp;|&nbsp; CR no.: {details.company.crNumber}</>}
+          </p>
+          <p style={{ margin: "4px 0 12px", color: "#475467" }}>
+            Period: <strong>{periodLabel}</strong> &nbsp;|&nbsp; Amounts in {details.company.currency} &nbsp;|&nbsp; Prepared{" "}
+            {new Date().toISOString().slice(0, 10)} from posted documents in Universa Centrix
+          </p>
+        </div>
+      )}
+
+      {details && (details.notIncluded.draftSalesCount > 0 || details.notIncluded.draftPurchaseCount > 0) && (
+        <div className="error-banner no-print">
+          Not included yet — draft documents dated in this period:{" "}
+          {details.notIncluded.draftSalesCount > 0 && (
+            <>
+              {details.notIncluded.draftSalesCount} sales invoice(s) with {money(details.notIncluded.draftSalesVat)} output VAT.{" "}
+            </>
+          )}
+          {details.notIncluded.draftPurchaseCount > 0 && (
+            <>
+              {details.notIncluded.draftPurchaseCount} purchase invoice(s) with {money(details.notIncluded.draftPurchaseVat)} input VAT (you would
+              claim this).{" "}
+            </>
+          )}
+          Post them first if they belong in this return.
+        </div>
+      )}
       {loading || !report ? (
         <p>Loading…</p>
       ) : (
         <>
-          <h3>Sales (Output VAT)</h3>
+          <h3>1. Sales (Output VAT)</h3>
           <table>
             <thead>
               <tr>
                 <th>Category</th>
-                <th>Net Sales</th>
-                <th>VAT</th>
+                <th style={{ textAlign: "right" }}>Net sales</th>
+                <th style={{ textAlign: "right" }}>VAT</th>
               </tr>
             </thead>
             <tbody>
-              {report.salesByCategory.map((row) => (
+              {categoryRows(report.salesByCategory).map((row) => (
                 <tr key={row.vatCategory}>
                   <td>{CATEGORY_LABELS[row.vatCategory] ?? row.vatCategory}</td>
-                  <td>{row.netAmount}</td>
-                  <td>{row.vatAmount}</td>
+                  <td style={{ textAlign: "right" }}>{money(row.netAmount)}</td>
+                  <td style={{ textAlign: "right" }}>{money(row.vatAmount)}</td>
                 </tr>
               ))}
+              <tr style={{ fontWeight: 700, background: "#f8f9fb" }}>
+                <td>Total sales</td>
+                <td style={{ textAlign: "right" }}>{money(sum(report.salesByCategory.map((r) => r.netAmount)))}</td>
+                <td style={{ textAlign: "right" }}>{money(report.outputVat)}</td>
+              </tr>
             </tbody>
           </table>
 
-          <h3>Purchases (Input VAT)</h3>
+          <h3>2. Purchases (Input VAT)</h3>
           <table>
             <thead>
               <tr>
                 <th>Category</th>
-                <th>Net Purchases</th>
-                <th>VAT</th>
+                <th style={{ textAlign: "right" }}>Net purchases</th>
+                <th style={{ textAlign: "right" }}>VAT</th>
               </tr>
             </thead>
             <tbody>
-              {report.purchasesByCategory.map((row) => (
+              {categoryRows(report.purchasesByCategory).map((row) => (
                 <tr key={row.vatCategory}>
                   <td>{CATEGORY_LABELS[row.vatCategory] ?? row.vatCategory}</td>
-                  <td>{row.netAmount}</td>
-                  <td>{row.vatAmount}</td>
+                  <td style={{ textAlign: "right" }}>{money(row.netAmount)}</td>
+                  <td style={{ textAlign: "right" }}>{money(row.vatAmount)}</td>
                 </tr>
               ))}
+              <tr style={{ fontWeight: 700, background: "#f8f9fb" }}>
+                <td>Total purchases</td>
+                <td style={{ textAlign: "right" }}>{money(sum(report.purchasesByCategory.map((r) => r.netAmount)))}</td>
+                <td style={{ textAlign: "right" }}>{money(report.inputVat)}</td>
+              </tr>
             </tbody>
           </table>
 
+          <h3>3. Net VAT</h3>
           <div className="card" style={{ marginTop: 16, background: "#f8f9fb" }}>
             <p>
-              Output VAT: <strong>{report.outputVat}</strong>
+              Output VAT (on sales): <strong>{money(report.outputVat)}</strong>
             </p>
             <p>
-              Input VAT (deductible): <strong>{report.inputVat}</strong>
+              Less: Input VAT (deductible): <strong>{money(report.inputVat)}</strong>
             </p>
-            <p>
-              Net VAT {Number(report.netVatPayable) >= 0 ? "payable" : "refundable"}:{" "}
-              <strong>{report.netVatPayable}</strong>
+            <p style={{ fontSize: 18 }}>
+              Net VAT {Number(report.netVatPayable) >= 0 ? "payable to ZATCA" : "refundable"}:{" "}
+              <strong>{money(Math.abs(Number(report.netVatPayable)))}</strong>
             </p>
             {canCreateJournal && (
-              <div style={{ marginTop: 12 }}>
+              <div className="no-print" style={{ marginTop: 12 }}>
                 {!payOpen ? (
                   <button type="button" onClick={openPay} disabled={!vatPayable || !vatReceivable}>
                     Record VAT {Number(report.netVatPayable) >= 0 ? "payment" : "refund"}
@@ -275,6 +386,89 @@ export function VatReturnPage() {
               </div>
             )}
           </div>
+
+          {details && (
+            <>
+              <h3 style={{ marginTop: 24 }}>Schedule A — Sales invoices included ({details.salesDocuments.length})</h3>
+              <table className="vat-schedule">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Invoice</th>
+                    <th>Other-system ref.</th>
+                    <th>Customer</th>
+                    <th>Customer VAT no.</th>
+                    <th style={{ textAlign: "right" }}>Net</th>
+                    <th style={{ textAlign: "right" }}>VAT</th>
+                    <th style={{ textAlign: "right" }}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {details.salesDocuments.map((d, i) => (
+                    <tr key={i}>
+                      <td>{d.date}</td>
+                      <td>
+                        {d.number ?? "—"}
+                        {d.kind === "CREDIT_NOTE" ? " (credit note)" : ""}
+                      </td>
+                      <td>{d.reference ?? ""}</td>
+                      <td>{d.party}</td>
+                      <td>{d.taxNumber ?? ""}</td>
+                      <td style={{ textAlign: "right" }}>{money(d.net)}</td>
+                      <td style={{ textAlign: "right" }}>{money(d.vat)}</td>
+                      <td style={{ textAlign: "right" }}>{money(d.gross)}</td>
+                    </tr>
+                  ))}
+                  <tr style={{ fontWeight: 700, background: "#f8f9fb" }}>
+                    <td colSpan={5}>Total</td>
+                    <td style={{ textAlign: "right" }}>{money(sum(details.salesDocuments.map((d) => d.net)))}</td>
+                    <td style={{ textAlign: "right" }}>{money(sum(details.salesDocuments.map((d) => d.vat)))}</td>
+                    <td style={{ textAlign: "right" }}>{money(sum(details.salesDocuments.map((d) => d.gross)))}</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <h3 style={{ marginTop: 24 }}>Schedule B — Purchase invoices included ({details.purchaseDocuments.length})</h3>
+              {details.purchaseDocuments.length === 0 ? (
+                <p style={{ color: "#667085" }}>No posted purchase invoices in this period, so no input VAT is claimed.</p>
+              ) : (
+                <table className="vat-schedule">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Our ref.</th>
+                      <th>Supplier invoice</th>
+                      <th>Supplier</th>
+                      <th>Supplier VAT no.</th>
+                      <th style={{ textAlign: "right" }}>Net</th>
+                      <th style={{ textAlign: "right" }}>VAT</th>
+                      <th style={{ textAlign: "right" }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {details.purchaseDocuments.map((d, i) => (
+                      <tr key={i}>
+                        <td>{d.date}</td>
+                        <td>{d.number ?? "—"}</td>
+                        <td>{d.reference}</td>
+                        <td>{d.party}</td>
+                        <td>{d.taxNumber ?? ""}</td>
+                        <td style={{ textAlign: "right" }}>{money(d.net)}</td>
+                        <td style={{ textAlign: "right" }}>{money(d.vat)}</td>
+                        <td style={{ textAlign: "right" }}>{money(d.gross)}</td>
+                      </tr>
+                    ))}
+                    <tr style={{ fontWeight: 700, background: "#f8f9fb" }}>
+                      <td colSpan={5}>Total</td>
+                      <td style={{ textAlign: "right" }}>{money(sum(details.purchaseDocuments.map((d) => d.net)))}</td>
+                      <td style={{ textAlign: "right" }}>{money(sum(details.purchaseDocuments.map((d) => d.vat)))}</td>
+                      <td style={{ textAlign: "right" }}>{money(sum(details.purchaseDocuments.map((d) => d.gross)))}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              )}
+            </>
+          )}
         </>
       )}
     </div>

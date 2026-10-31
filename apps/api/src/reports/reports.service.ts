@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { InvoiceStatus, Prisma } from "@prisma/client";
 import { PrismaService } from "../common/prisma/prisma.service";
 
 // Shared between statementOfCashFlows() and cashFlowLineDetail() — the two
@@ -234,6 +234,111 @@ export class ReportsService {
       outputVat: outputVat.toFixed(2),
       inputVat: inputVat.toFixed(2),
       netVatPayable: outputVat.sub(inputVat).toFixed(2),
+    };
+  }
+
+  /**
+   * Everything behind the VAT return for a period, so the report can be handed
+   * to someone who files it: the company header, the sales and purchase
+   * documents that make up each box (same status/date filter as vatReturn, credit
+   * notes negated, functional currency), and a count of DRAFT documents dated in
+   * the period that are NOT in the return yet — the usual reason a figure looks
+   * too low.
+   */
+  async vatReturnDetails(companyId: string, fromDate: Date, toDate: Date): Promise<VatReturnDetails> {
+    const COUNTED = [InvoiceStatus.POSTED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.PAID];
+    const range = { gte: fromDate, lte: toDate };
+    const [company, sales, purchases, draftSales, draftPurchases] = await Promise.all([
+      this.prisma.company.findUniqueOrThrow({
+        where: { id: companyId },
+        select: { legalName: true, tradeName: true, taxRegistrationNumber: true, crNumber: true, baseCurrencyCode: true },
+      }),
+      this.prisma.salesInvoice.findMany({
+        where: { companyId, status: { in: COUNTED }, postingDate: range },
+        orderBy: [{ postingDate: "asc" }, { invoiceNumber: "asc" }],
+        select: {
+          invoiceNumber: true,
+          documentKind: true,
+          postingDate: true,
+          memo: true,
+          buyerNameSnapshot: true,
+          buyerTrnSnapshot: true,
+          businessPartner: { select: { name: true, taxRegistrationNumber: true } },
+          netTotalFunctional: true,
+          vatTotalFunctional: true,
+          grossTotalFunctional: true,
+        },
+      }),
+      this.prisma.purchaseInvoice.findMany({
+        where: { companyId, status: { in: COUNTED }, postingDate: range },
+        orderBy: [{ postingDate: "asc" }, { invoiceNumber: "asc" }],
+        select: {
+          invoiceNumber: true,
+          vendorInvoiceNumber: true,
+          postingDate: true,
+          businessPartner: { select: { name: true, taxRegistrationNumber: true } },
+          netTotalFunctional: true,
+          vatTotalFunctional: true,
+          grossTotalFunctional: true,
+        },
+      }),
+      // Drafts have no functional-currency totals yet (set at posting), so use
+      // the document VAT at its exchange rate.
+      this.prisma.salesInvoice.findMany({
+        where: { companyId, status: InvoiceStatus.DRAFT, postingDate: range },
+        select: { documentKind: true, vatTotal: true, exchangeRateToFunctional: true },
+      }),
+      this.prisma.purchaseInvoice.findMany({
+        where: { companyId, status: InvoiceStatus.DRAFT, postingDate: range },
+        select: { vatTotal: true, exchangeRateToFunctional: true },
+      }),
+    ]);
+
+    const fixed = (v: Prisma.Decimal | null | undefined) => (v ?? new Prisma.Decimal(0)).toFixed(2);
+    const draftVat = (docs: Array<{ documentKind?: string; vatTotal: Prisma.Decimal; exchangeRateToFunctional: Prisma.Decimal }>) =>
+      docs.reduce(
+        (sum, d) => sum.add(d.vatTotal.mul(d.exchangeRateToFunctional).mul(d.documentKind === "CREDIT_NOTE" ? -1 : 1)),
+        new Prisma.Decimal(0),
+      );
+    return {
+      company: {
+        legalName: company.legalName,
+        tradeName: company.tradeName,
+        taxRegistrationNumber: company.taxRegistrationNumber,
+        crNumber: company.crNumber,
+        currency: company.baseCurrencyCode,
+      },
+      salesDocuments: sales.map((d) => {
+        const sign = d.documentKind === "CREDIT_NOTE" ? -1 : 1;
+        const signed = (v: Prisma.Decimal) => v.mul(sign).toFixed(2);
+        return {
+          number: d.invoiceNumber,
+          kind: d.documentKind,
+          date: d.postingDate.toISOString().slice(0, 10),
+          reference: d.memo?.startsWith("[EXT:") ? d.memo.slice(5, d.memo.indexOf("]")) : null,
+          party: d.buyerNameSnapshot ?? d.businessPartner.name,
+          taxNumber: d.buyerTrnSnapshot ?? d.businessPartner.taxRegistrationNumber,
+          net: signed(d.netTotalFunctional),
+          vat: signed(d.vatTotalFunctional),
+          gross: signed(d.grossTotalFunctional),
+        };
+      }),
+      purchaseDocuments: purchases.map((d) => ({
+        number: d.invoiceNumber,
+        reference: d.vendorInvoiceNumber,
+        date: d.postingDate.toISOString().slice(0, 10),
+        party: d.businessPartner.name,
+        taxNumber: d.businessPartner.taxRegistrationNumber,
+        net: fixed(d.netTotalFunctional),
+        vat: fixed(d.vatTotalFunctional),
+        gross: fixed(d.grossTotalFunctional),
+      })),
+      notIncluded: {
+        draftSalesCount: draftSales.length,
+        draftSalesVat: fixed(draftVat(draftSales)),
+        draftPurchaseCount: draftPurchases.length,
+        draftPurchaseVat: fixed(draftVat(draftPurchases)),
+      },
     };
   }
 
@@ -1217,6 +1322,32 @@ interface VatBreakdownRawRow {
   vatCategory: string;
   netAmount: Prisma.Decimal;
   vatAmount: Prisma.Decimal;
+}
+
+export interface VatReturnDetails {
+  company: { legalName: string; tradeName: string | null; taxRegistrationNumber: string | null; crNumber: string | null; currency: string };
+  salesDocuments: Array<{
+    number: string | null;
+    kind: string;
+    date: string;
+    reference: string | null;
+    party: string;
+    taxNumber: string | null;
+    net: string;
+    vat: string;
+    gross: string;
+  }>;
+  purchaseDocuments: Array<{
+    number: string | null;
+    reference: string;
+    date: string;
+    party: string;
+    taxNumber: string | null;
+    net: string;
+    vat: string;
+    gross: string;
+  }>;
+  notIncluded: { draftSalesCount: number; draftSalesVat: string; draftPurchaseCount: number; draftPurchaseVat: string };
 }
 
 export interface VatReturnReport {

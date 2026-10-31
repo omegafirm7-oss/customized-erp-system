@@ -100,6 +100,7 @@ export const DEFAULT_COA_TEMPLATE: DefaultCoaEntry[] = [
   { code: "5215", name: "Employee Allowances Expense", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT", controlAccountType: "ALLOWANCE_EXPENSE", costCategory: "LABOR" },
   { code: "5216", name: "Employee Food Expense", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT", controlAccountType: "FOOD_EXPENSE", costCategory: "LABOR" },
   { code: "5220", name: "Utilities Expense", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT" },
+  { code: "5225", name: "Mobile Cards & Telephone Expense", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT" },
   { code: "5230", name: "Depreciation Expense", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT", controlAccountType: "DEPRECIATION_EXPENSE" },
   { code: "5240", name: "Office & Administrative Expense", subClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT" },
   // Fines & penalties, split by who levied them so each can be categorised and
