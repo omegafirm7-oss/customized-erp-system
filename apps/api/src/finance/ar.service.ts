@@ -13,7 +13,9 @@ import {
   Prisma,
   SalesDocumentKind,
   StockMovementType,
+  VatCategory,
 } from "@prisma/client";
+import * as XLSX from "xlsx";
 import { ZATCA_INVOICE_TYPE_CODES } from "@erp/shared-constants";
 import { PrismaService } from "../common/prisma/prisma.service";
 import { NumberingService } from "../numbering/numbering.service";
@@ -27,6 +29,38 @@ import { LineBuilderService } from "./line-builder.service";
 import { CreateSalesInvoiceDto } from "./dto/create-sales-invoice.dto";
 
 const OPEN_STATUSES: InvoiceStatus[] = [InvoiceStatus.POSTED, InvoiceStatus.PARTIALLY_PAID];
+
+/** Column order of the sales-invoice import template (one row = one invoice line). */
+const SALES_XLSX_COLUMNS = [
+  "customerCode",
+  "invoiceNumber",
+  "issueDate",
+  "dueDate",
+  "description",
+  "amount",
+  "amountType",
+  "vatCategory",
+  "revenueAccountCode",
+  "costCenterCode",
+] as const;
+
+const SALES_XLSX_SAMPLE_ROW = [
+  "C-001",
+  "INV-2026-0456",
+  "2026-10-15",
+  "2026-11-15",
+  "Scaffolding supply - October",
+  "10000.00",
+  "NET",
+  "STANDARD_15",
+  "4200",
+  "",
+];
+
+export interface SalesImportRowError {
+  row: number;
+  message: string;
+}
 
 @Injectable()
 export class ArService {
@@ -547,6 +581,221 @@ export class ArService {
   }
 
   // ── Cancellation ─────────────────────────────────────────────────────
+
+  // ── Excel import of invoices issued in another system ────────────────
+  // One row = one invoice line. Rows sharing customerCode + invoiceNumber
+  // become one multi-line invoice. The other system's invoice number is kept
+  // in the memo as "[EXT:<number>]" (Universa still assigns its own gapless
+  // number when an invoice is posted) and is what blocks importing the same
+  // invoice twice. Lands as DRAFT unless postImmediately is set.
+
+  salesXlsxTemplate(): Buffer {
+    const sheet = XLSX.utils.aoa_to_sheet([[...SALES_XLSX_COLUMNS], SALES_XLSX_SAMPLE_ROW]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "Sales invoices");
+    return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  }
+
+  async importInvoicesXlsx(companyId: string, userId: string, fileBuffer: Buffer, opts: { postImmediately: boolean }) {
+    const workbook = XLSX.read(fileBuffer, { type: "buffer" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    if (!sheet) {
+      throw new BadRequestException("The uploaded file has no sheets");
+    }
+    const raw = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: false, defval: "" });
+    if (raw.length < 2) {
+      throw new BadRequestException("Expected a header row and at least one data row");
+    }
+    const header = (raw[0] as unknown[]).map((h) => String(h).trim());
+    if (header.join(",") !== SALES_XLSX_COLUMNS.join(",")) {
+      throw new BadRequestException(`Column headers do not match the template. Expected: ${SALES_XLSX_COLUMNS.join(", ")}`);
+    }
+
+    if (opts.postImmediately) {
+      // Posting an invoice submits it to ZATCA when e-invoicing is live for the
+      // company. These invoices were already issued elsewhere, so never do that
+      // silently.
+      const activeDevice = await this.prisma.zatcaDevice.findFirst({ where: { companyId, status: "ACTIVE" } });
+      if (activeDevice) {
+        throw new ConflictException(
+          "ZATCA e-invoicing is active for this company, so posting would submit these invoices to ZATCA again. Import them as drafts instead.",
+        );
+      }
+    }
+
+    const errors: SalesImportRowError[] = [];
+    const vatCategories = Object.values(VatCategory) as string[];
+    interface ParsedLine {
+      row: number;
+      description: string;
+      amount: string;
+      taxMode: "EXCLUSIVE" | "INCLUSIVE";
+      vatCategory?: VatCategory;
+      accountId: string;
+      costCenterId?: string;
+    }
+    interface ParsedInvoice {
+      customerId: string;
+      customerCode: string;
+      invoiceNumber: string;
+      issueDate: string;
+      dueDate: string;
+      lines: ParsedLine[];
+    }
+    const invoices = new Map<string, ParsedInvoice>();
+    const customerCache = new Map<string, { id: string; partnerType: PartnerType } | null>();
+    const accountCache = new Map<string, string | null>();
+    const costCenterCache = new Map<string, string | null>();
+
+    for (let i = 1; i < raw.length; i++) {
+      const rowNum = i + 1;
+      const cells = raw[i] as unknown[];
+      if (cells.length === 0 || cells.every((c) => String(c).trim() === "")) continue;
+      const get = (idx: number) => String(cells[idx] ?? "").trim();
+      const [customerCode, invoiceNumber, issueDate, dueDateRaw, description, amount, amountTypeRaw, vatCategoryRaw, accountCode, costCenterCode] =
+        SALES_XLSX_COLUMNS.map((_, idx) => get(idx));
+      const dueDate = dueDateRaw || issueDate;
+
+      if (!customerCode) errors.push({ row: rowNum, message: "customerCode is required" });
+      if (!invoiceNumber) errors.push({ row: rowNum, message: "invoiceNumber is required" });
+      if (!issueDate || isNaN(Date.parse(issueDate))) errors.push({ row: rowNum, message: "issueDate must be a valid date (YYYY-MM-DD)" });
+      if (dueDate && isNaN(Date.parse(dueDate))) errors.push({ row: rowNum, message: "dueDate must be a valid date (YYYY-MM-DD)" });
+      if (!description) errors.push({ row: rowNum, message: "description is required" });
+      if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) errors.push({ row: rowNum, message: "amount must be a positive number" });
+      const amountType = (amountTypeRaw || "NET").toUpperCase();
+      if (amountType !== "NET" && amountType !== "GROSS") errors.push({ row: rowNum, message: "amountType must be NET or GROSS (blank = NET)" });
+      if (vatCategoryRaw && !vatCategories.includes(vatCategoryRaw)) {
+        errors.push({ row: rowNum, message: `vatCategory must be one of ${vatCategories.join(", ")}` });
+      }
+      if (!accountCode) errors.push({ row: rowNum, message: "revenueAccountCode is required" });
+
+      let customer: { id: string; partnerType: PartnerType } | null = null;
+      if (customerCode) {
+        if (!customerCache.has(customerCode)) {
+          customerCache.set(
+            customerCode,
+            await this.prisma.businessPartner.findFirst({
+              where: { companyId, code: customerCode, isActive: true },
+              select: { id: true, partnerType: true },
+            }),
+          );
+        }
+        customer = customerCache.get(customerCode) ?? null;
+        if (!customer) {
+          errors.push({ row: rowNum, message: `Customer code "${customerCode}" not found or inactive` });
+        } else if (customer.partnerType !== PartnerType.CUSTOMER && customer.partnerType !== PartnerType.BOTH) {
+          errors.push({ row: rowNum, message: `Partner "${customerCode}" is not a customer` });
+          customer = null;
+        }
+      }
+
+      let accountId: string | null = null;
+      if (accountCode) {
+        if (!accountCache.has(accountCode)) {
+          const acc = await this.prisma.account.findFirst({ where: { companyId, code: accountCode, isPostable: true }, select: { id: true } });
+          accountCache.set(accountCode, acc?.id ?? null);
+        }
+        accountId = accountCache.get(accountCode) ?? null;
+        if (!accountId) errors.push({ row: rowNum, message: `Revenue account code "${accountCode}" not found or not postable` });
+      }
+
+      let costCenterId: string | undefined;
+      if (costCenterCode) {
+        if (!costCenterCache.has(costCenterCode)) {
+          const cc = await this.prisma.costCenter.findFirst({ where: { companyId, code: costCenterCode, isActive: true }, select: { id: true } });
+          costCenterCache.set(costCenterCode, cc?.id ?? null);
+        }
+        costCenterId = costCenterCache.get(costCenterCode) ?? undefined;
+        if (!costCenterId) errors.push({ row: rowNum, message: `Cost center code "${costCenterCode}" not found or inactive` });
+      }
+
+      if (!customer || !accountId || !invoiceNumber) continue;
+      const key = `${customerCode}|${invoiceNumber}`;
+      let invoice = invoices.get(key);
+      if (!invoice) {
+        invoice = { customerId: customer.id, customerCode, invoiceNumber, issueDate, dueDate, lines: [] };
+        invoices.set(key, invoice);
+      } else if (invoice.issueDate !== issueDate) {
+        errors.push({ row: rowNum, message: `Invoice ${invoiceNumber} has different issue dates on different rows` });
+      }
+      invoice.lines.push({
+        row: rowNum,
+        description,
+        amount,
+        taxMode: amountType === "GROSS" ? "INCLUSIVE" : "EXCLUSIVE",
+        vatCategory: vatCategoryRaw ? (vatCategoryRaw as VatCategory) : undefined,
+        accountId,
+        costCenterId,
+      });
+    }
+
+    // Already imported earlier? (same customer + same external number, not cancelled)
+    for (const inv of invoices.values()) {
+      const existing = await this.prisma.salesInvoice.findFirst({
+        where: {
+          companyId,
+          businessPartnerId: inv.customerId,
+          status: { not: InvoiceStatus.CANCELLED },
+          memo: { startsWith: `[EXT:${inv.invoiceNumber}]` },
+        },
+        select: { id: true },
+      });
+      if (existing) {
+        errors.push({ row: inv.lines[0].row, message: `Invoice "${inv.invoiceNumber}" for ${inv.customerCode} was already imported` });
+      }
+    }
+
+    if (errors.length > 0) {
+      return { imported: 0, posted: 0, errors };
+    }
+    if (invoices.size === 0) {
+      throw new BadRequestException("No data rows found in the file");
+    }
+
+    const createdIds: string[] = [];
+    let posted = 0;
+    for (const inv of invoices.values()) {
+      const draft = await this.createDraft(companyId, userId, {
+        businessPartnerId: inv.customerId,
+        issueDateTime: inv.issueDate,
+        postingDate: inv.issueDate,
+        dueDate: inv.dueDate,
+        memo: `[EXT:${inv.invoiceNumber}] Imported from another system`,
+        lines: inv.lines.map((l) => ({
+          description: l.description,
+          quantity: "1",
+          unitPrice: l.amount,
+          vatCategory: l.vatCategory,
+          taxMode: l.taxMode,
+          accountId: l.accountId,
+          costCenterId: l.costCenterId,
+        })),
+      });
+      createdIds.push(draft.id);
+      if (opts.postImmediately) {
+        try {
+          await this.postInvoice(companyId, draft.id, userId, false);
+          posted += 1;
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          throw new ConflictException(
+            `Invoice ${inv.invoiceNumber} was created but could not be posted (${reason}). ${createdIds.length - 1} earlier invoice(s) were imported, ${posted} of them posted; the rest of the file was not processed.`,
+          );
+        }
+      }
+    }
+
+    await this.auditService.log({
+      companyId,
+      entityName: "SalesInvoice",
+      entityId: "xlsx-import",
+      action: "CREATE",
+      changedByUserId: userId,
+      afterSnapshot: { importedCount: createdIds.length, postedCount: posted, invoiceIds: createdIds },
+    });
+
+    return { imported: createdIds.length, posted, errors: [] as SalesImportRowError[] };
+  }
 
   async cancelInvoice(companyId: string, invoiceId: string, userId: string) {
     const before = await this.getOwnedInvoice(companyId, invoiceId);

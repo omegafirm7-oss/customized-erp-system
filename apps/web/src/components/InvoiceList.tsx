@@ -77,6 +77,7 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
   const [error, setError] = useState<string | null>(null);
   const [qrView, setQrView] = useState<{ invoiceNumber: string; dataUrl: string } | null>(null);
   const [importResult, setImportResult] = useState<string | null>(null);
+  const [postOnImport, setPostOnImport] = useState(false);
   const [vendors, setVendors] = useState<VendorRef[]>([]);
   const [vendorsRestricted, setVendorsRestricted] = useState(false);
   const [vendorSearch, setVendorSearch] = useState("");
@@ -315,11 +316,13 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
   const title = side === "ar" ? "Sales Invoices" : "Purchase Invoices";
 
   async function downloadExpenseTemplate() {
-    const res = await apiClient.get("/ap/invoices/import/expenses/template", { responseType: "blob" });
+    const res = await apiClient.get(side === "ar" ? "/ar/invoices/import/template" : "/ap/invoices/import/expenses/template", {
+      responseType: "blob",
+    });
     const url = URL.createObjectURL(res.data as Blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = "expenses_import_template.xlsx";
+    anchor.download = side === "ar" ? "sales_invoices_import_template.xlsx" : "expenses_import_template.xlsx";
     anchor.click();
     URL.revokeObjectURL(url);
   }
@@ -357,9 +360,19 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
     try {
       // Do NOT set Content-Type manually — the browser/axios must generate
       // the multipart boundary itself; a hardcoded header here breaks parsing.
-      const res = await apiClient.post("/ap/invoices/import/expenses", formData);
+      const res =
+        side === "ar"
+          ? await apiClient.post(`/ar/invoices/import${postOnImport ? "?post=true" : ""}`, formData)
+          : await apiClient.post("/ap/invoices/import/expenses", formData);
       if (res.data.errors?.length > 0) {
         setError(res.data.errors.map((e: any) => `Row ${e.row}: ${e.message}`).join("; "));
+      } else if (side === "ar") {
+        setImportResult(
+          res.data.posted > 0
+            ? `Imported and posted ${res.data.imported} sales invoices.`
+            : `Imported ${res.data.imported} sales invoices as drafts — review them and press Post on each, or import again with "post immediately" ticked.`,
+        );
+        await load();
       } else {
         setImportResult(`Imported ${res.data.imported} expense invoices (drafts — review and post as usual)`);
         await load();
@@ -374,6 +387,33 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h2>{title}</h2>
         <span>
+          {side === "ar" && canCreate && (
+            <>
+              {canDownload && (
+                <>
+                  <button className="secondary" onClick={downloadExpenseTemplate}>
+                    Download Excel template
+                  </button>{" "}
+                </>
+              )}
+              <label style={{ fontSize: 13, color: "#667085", marginRight: 8 }} title="Posting makes the invoices count in the VAT return straight away">
+                <input type="checkbox" checked={postOnImport} onChange={(e) => setPostOnImport(e.target.checked)} /> post immediately
+              </label>
+              <label className="secondary" style={{ cursor: "pointer", padding: "6px 12px", border: "1px solid #d0d5dd", borderRadius: 6 }}>
+                Import Invoices (Excel)
+                <input
+                  type="file"
+                  accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleImportExpenses(file);
+                    e.target.value = "";
+                  }}
+                />
+              </label>{" "}
+            </>
+          )}
           {side === "ap" && (
             <>
               {canDownload && (

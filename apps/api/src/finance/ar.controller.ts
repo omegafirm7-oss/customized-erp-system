@@ -1,8 +1,27 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
-import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  ForbiddenException,
+  Get,
+  Header,
+  Param,
+  Patch,
+  Post,
+  Query,
+  StreamableFile,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { memoryStorage } from "multer";
+import { ApiBearerAuth, ApiConsumes, ApiTags } from "@nestjs/swagger";
 import { InvoiceStatus, SalesDocumentKind } from "@prisma/client";
 import { PERMISSIONS } from "@erp/shared-constants";
 import { Permissions } from "../common/decorators/permissions.decorator";
+import { PlatformAdminGuard } from "../common/guards/platform-admin.guard";
 import { CurrentCompanyId } from "../common/decorators/current-company-id.decorator";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { JwtPayload } from "../auth/types/jwt-payload.type";
@@ -31,6 +50,36 @@ export class ArController {
   @Permissions(PERMISSIONS.AR_INVOICE_VIEW)
   async listOpen(@CurrentCompanyId() companyId: string, @Query("partnerId") partnerId?: string) {
     return this.arService.listOpen(companyId, partnerId);
+  }
+
+  @Get("import/template")
+  @UseGuards(PlatformAdminGuard)
+  @Permissions(PERMISSIONS.AR_INVOICE_VIEW)
+  @Header("Content-Disposition", 'attachment; filename="sales_invoices_import_template.xlsx"')
+  importTemplate() {
+    return new StreamableFile(this.arService.salesXlsxTemplate(), {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+  }
+
+  @Post("import")
+  @Permissions(PERMISSIONS.AR_INVOICE_CREATE)
+  @ApiConsumes("multipart/form-data")
+  @UseInterceptors(FileInterceptor("file", { storage: memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }))
+  async importInvoices(
+    @CurrentCompanyId() companyId: string,
+    @CurrentUser() user: JwtPayload,
+    @Query("post") post?: string,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException("No file uploaded");
+    }
+    const postImmediately = post === "true";
+    if (postImmediately && !user.permissions.includes(PERMISSIONS.AR_INVOICE_POST)) {
+      throw new ForbiddenException("You don't have permission to post sales invoices");
+    }
+    return this.arService.importInvoicesXlsx(companyId, user.sub, file.buffer, { postImmediately });
   }
 
   @Get(":id")
