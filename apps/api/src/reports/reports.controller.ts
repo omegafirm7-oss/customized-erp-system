@@ -1,7 +1,7 @@
-import { BadRequestException, Controller, Get, Param, Query } from "@nestjs/common";
+import { BadRequestException, Controller, ForbiddenException, Get, Param, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { PERMISSIONS } from "@erp/shared-constants";
-import { Permissions } from "../common/decorators/permissions.decorator";
+import { AnyPermissions, Permissions } from "../common/decorators/permissions.decorator";
 import { CurrentCompanyId } from "../common/decorators/current-company-id.decorator";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { JwtPayload } from "../auth/types/jwt-payload.type";
@@ -37,6 +37,17 @@ const CASH_FLOW_LINES: Record<string, { bucket: string; sign: 1 | -1; label: str
   financingDividends: { bucket: "RETAINED_EARNINGS", sign: 1, label: "Dividends/distributions paid" },
   financingFinanceCostsPaid: { bucket: "FINANCE_COST", sign: 1, label: "Finance costs paid" },
 };
+
+/**
+ * Project viewers (e.g. the read-only Investor role) may open the Statement of Profit or Loss, and drill into
+ * it, but only for a single project: without the full reports permission a projectId is mandatory, so the
+ * company-wide figures stay hidden from them.
+ */
+function assertProjectScopeForNonReportViewers(user: JwtPayload | undefined, projectId?: string) {
+  if (!user?.permissions.includes(PERMISSIONS.REPORTS_VIEW) && !projectId) {
+    throw new ForbiddenException("You can view the profit or loss statement of a project, not the whole company");
+  }
+}
 
 // JwtAuthGuard + PermissionsGuard are registered globally in AppModule.
 @ApiTags("reports")
@@ -105,13 +116,15 @@ export class ReportsController {
   }
 
   @Get("profit-or-loss")
-  @Permissions(PERMISSIONS.REPORTS_VIEW)
+  @AnyPermissions(PERMISSIONS.REPORTS_VIEW, PERMISSIONS.PROJECT_VIEW)
   async profitOrLoss(
     @CurrentCompanyId() companyId: string,
     @Query("fromDate") fromDate: string,
     @Query("toDate") toDate: string,
     @Query("projectId") projectId?: string,
+    @CurrentUser() user?: JwtPayload,
   ) {
+    assertProjectScopeForNonReportViewers(user, projectId);
     const project = projectId ? await this.reportsService.projectCostCenter(companyId, projectId) : undefined;
     const report = await this.reportsService.profitOrLoss(companyId, new Date(fromDate), new Date(toDate), project?.costCenterId);
     return project ? { ...report, project: { id: projectId, code: project.projectCode, name: project.projectName } } : report;
@@ -131,14 +144,16 @@ export class ReportsController {
   }
 
   @Get("profit-or-loss/line-detail")
-  @Permissions(PERMISSIONS.REPORTS_VIEW)
+  @AnyPermissions(PERMISSIONS.REPORTS_VIEW, PERMISSIONS.PROJECT_VIEW)
   async profitOrLossLineDetail(
     @CurrentCompanyId() companyId: string,
     @Query("line") line: string,
     @Query("fromDate") fromDate: string,
     @Query("toDate") toDate: string,
     @Query("projectId") projectId?: string,
+    @CurrentUser() user?: JwtPayload,
   ) {
+    assertProjectScopeForNonReportViewers(user, projectId);
     const def = PROFIT_OR_LOSS_LINES[line];
     if (!def) {
       throw new BadRequestException(`Unknown profit or loss line: ${line}`);
@@ -161,7 +176,7 @@ export class ReportsController {
   }
 
   @Get("accounts/:accountId/transactions")
-  @Permissions(PERMISSIONS.REPORTS_VIEW)
+  @AnyPermissions(PERMISSIONS.REPORTS_VIEW, PERMISSIONS.PROJECT_VIEW)
   async accountTransactions(
     @CurrentCompanyId() companyId: string,
     @Param("accountId") accountId: string,
@@ -171,6 +186,7 @@ export class ReportsController {
     @Query("projectId") projectId?: string,
     @CurrentUser() user?: JwtPayload,
   ) {
+    assertProjectScopeForNonReportViewers(user, projectId);
     const project = projectId ? await this.reportsService.projectCostCenter(companyId, projectId) : undefined;
     // Same rule as the evidence file route: AP invoice viewers see every attachment, project viewers only project-charged ones.
     const permissions = user?.permissions ?? [];

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { useHasPermission } from "../hooks/useHasPermission";
 import { formatAmount, formatSigned } from "../utils/currency";
 
 interface ProfitOrLossReport {
@@ -36,6 +37,8 @@ export function ProfitOrLossPage() {
   const [searchParams] = useSearchParams();
   const [projectId, setProjectId] = useState(searchParams.get("projectId") ?? "");
   const [projects, setProjects] = useState<Array<{ id: string; code: string; name: string }>>([]);
+  // Project-only viewers (e.g. investors) can't see company-wide figures: they get the project picker without "Whole company".
+  const canSeeWholeCompany = useHasPermission("reports.view");
   const projectQuery = projectId ? `&projectId=${projectId}` : "";
 
   useEffect(() => {
@@ -44,6 +47,11 @@ export function ProfitOrLossPage() {
   }, []);
 
   useEffect(() => {
+    if (!canSeeWholeCompany && !projectId && projects.length > 0) setProjectId(projects[0].id);
+  }, [canSeeWholeCompany, projectId, projects]);
+
+  useEffect(() => {
+    if (!canSeeWholeCompany && !projectId) return;
     setLoading(true);
     apiClient
       .get<ProfitOrLossReport>("/reports/profit-or-loss", { params: { fromDate, toDate, projectId: projectId || undefined } })
@@ -62,7 +70,7 @@ export function ProfitOrLossPage() {
             <>
               <label>Project </label>
               <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-                <option value="">Whole company</option>
+                {canSeeWholeCompany && <option value="">Whole company</option>}
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.code} — {p.name}
