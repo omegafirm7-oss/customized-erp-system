@@ -3,6 +3,8 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { PERMISSIONS } from "@erp/shared-constants";
 import { Permissions } from "../common/decorators/permissions.decorator";
 import { CurrentCompanyId } from "../common/decorators/current-company-id.decorator";
+import { CurrentUser } from "../common/decorators/current-user.decorator";
+import { JwtPayload } from "../auth/types/jwt-payload.type";
 import { ReportsService } from "./reports.service";
 
 // Whitelisted P&L line keys, mirroring exactly the amountFor() combinations
@@ -167,15 +169,19 @@ export class ReportsController {
     @Query("toDate") toDate?: string,
     @Query("asOfDate") asOfDate?: string,
     @Query("projectId") projectId?: string,
+    @CurrentUser() user?: JwtPayload,
   ) {
     const project = projectId ? await this.reportsService.projectCostCenter(companyId, projectId) : undefined;
+    // Same rule as the evidence file route: AP invoice viewers see every attachment, project viewers only project-charged ones.
+    const permissions = user?.permissions ?? [];
+    const evidenceScope = permissions.includes(PERMISSIONS.AP_INVOICE_VIEW) ? "all" : permissions.includes(PERMISSIONS.PROJECT_VIEW) ? "project" : "none";
     if (asOfDate) {
-      return this.reportsService.accountTransactions(companyId, accountId, { asOfDate: new Date(asOfDate) }, project?.costCenterId);
+      return this.reportsService.accountTransactions(companyId, accountId, { asOfDate: new Date(asOfDate) }, project?.costCenterId, evidenceScope);
     }
     if (!fromDate || !toDate) {
       throw new BadRequestException("Either asOfDate, or both fromDate and toDate, are required");
     }
-    return this.reportsService.accountTransactions(companyId, accountId, { fromDate: new Date(fromDate), toDate: new Date(toDate) }, project?.costCenterId);
+    return this.reportsService.accountTransactions(companyId, accountId, { fromDate: new Date(fromDate), toDate: new Date(toDate) }, project?.costCenterId, evidenceScope);
   }
 
   @Get("changes-in-equity")

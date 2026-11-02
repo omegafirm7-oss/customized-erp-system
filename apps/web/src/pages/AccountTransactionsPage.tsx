@@ -2,9 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { AttachmentViewer } from "../components/AttachmentViewer";
 import { formatAmount } from "../utils/currency";
 
 interface AccountTransactionRow {
+  supplierInvoice?: string | null;
+  evidence?: Array<{ lineId: string; filename: string; mimeType: string }>;
   journalEntryId: string;
   entryNumber: string | null;
   postingDate: string;
@@ -38,6 +41,7 @@ export function AccountTransactionsPage() {
   const [data, setData] = useState<AccountTransactionsReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reversingId, setReversingId] = useState<string | null>(null);
+  const [viewer, setViewer] = useState<{ lineId: string; filename: string } | null>(null);
 
   const load = useCallback(() => {
     if (!accountId) return;
@@ -102,10 +106,12 @@ export function AccountTransactionsPage() {
             <th>Date</th>
             <th>Entry #</th>
             <th>Partner</th>
+            <th>Supplier invoice</th>
             <th>Description</th>
             <th>Debit</th>
             <th>Credit</th>
             <th>Status</th>
+            <th>Evidence</th>
             {isAdministrator && <th>Correction</th>}
           </tr>
         </thead>
@@ -115,11 +121,19 @@ export function AccountTransactionsPage() {
               <td>{new Date(t.postingDate).toLocaleDateString()}</td>
               <td>{t.entryNumber ?? "—"}</td>
               <td>{t.partnerName ?? "—"}</td>
+              <td>{t.supplierInvoice ?? ""}</td>
               <td>{t.lineDescription ?? t.memo ?? "—"}</td>
               <td>{Number(t.debit) !== 0 ? formatAmount(t.debit) : ""}</td>
               <td>{Number(t.credit) !== 0 ? formatAmount(t.credit) : ""}</td>
               <td>
                 <span className={`badge ${t.status === "REVERSED" ? "reversed" : "posted"}`}>{t.status}</span>
+              </td>
+              <td>
+                {(t.evidence ?? []).map((e) => (
+                  <button key={e.lineId} className="secondary" onClick={() => setViewer({ lineId: e.lineId, filename: e.filename })}>
+                    View
+                  </button>
+                ))}
               </td>
               {isAdministrator && (
                 <td>
@@ -134,13 +148,21 @@ export function AccountTransactionsPage() {
           ))}
           {data.transactions.length === 0 && (
             <tr>
-              <td colSpan={isAdministrator ? 8 : 7} style={{ color: "#98a2b3" }}>
+              <td colSpan={isAdministrator ? 10 : 9} style={{ color: "#98a2b3" }}>
                 No transactions recorded for this period
               </td>
             </tr>
           )}
         </tbody>
       </table>
+
+      {viewer && (
+        <AttachmentViewer
+          filename={viewer.filename}
+          fetchBlob={() => apiClient.get(`/ap/invoices/lines/${viewer.lineId}/attachment`, { responseType: "blob" }).then((res) => res.data as Blob)}
+          onClose={() => setViewer(null)}
+        />
+      )}
     </div>
   );
 }

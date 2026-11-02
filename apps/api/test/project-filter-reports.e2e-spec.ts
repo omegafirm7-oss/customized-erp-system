@@ -75,4 +75,38 @@ describe("Profit or Loss / Financial Position project filter (e2e)", () => {
     // an unknown project is rejected
     await get(ctx.accessToken, `/reports/profit-or-loss?${range}&projectId=00000000-0000-0000-0000-000000000000`).expect(404);
   });
+
+  it("shows the attached evidence and supplier invoice number on the expense transactions behind a statement line", async () => {
+    const ctx = await setupUserWithCompany(app);
+    const vendor = await createPartner(app, ctx.accessToken, "VENDOR");
+    const item = await createItem(app, ctx.accessToken, { defaultPurchaseAccountId: ctx.accountByCode("5240").id });
+    const today = new Date().toISOString();
+
+    const draft = (
+      await request(app.getHttpServer())
+        .post("/ap/invoices")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({
+          businessPartnerId: vendor.id,
+          vendorInvoiceNumber: "SUP-777",
+          postingDate: today,
+          dueDate: today,
+          lines: [{ itemId: item.id, description: "With receipt", quantity: "1", unitPrice: "500" }],
+        })
+        .expect(201)
+    ).body;
+    const lineId = draft.lines[0].id;
+    await request(app.getHttpServer())
+      .post(`/ap/invoices/lines/${lineId}/attachment`)
+      .set("Authorization", `Bearer ${ctx.accessToken}`)
+      .attach("file", Buffer.from("%PDF-1.4 test receipt"), { filename: "receipt.pdf", contentType: "application/pdf" })
+      .expect(201);
+    await request(app.getHttpServer()).post(`/ap/invoices/${draft.id}/post`).set("Authorization", `Bearer ${ctx.accessToken}`).expect(201);
+
+    const range = "fromDate=2020-01-01T00:00:00.000Z&toDate=2099-12-31T00:00:00.000Z";
+    const txns = (await get(ctx.accessToken, `/reports/accounts/${ctx.accountByCode("5240").id}/transactions?${range}`).expect(200)).body;
+    expect(txns.transactions).toHaveLength(1);
+    expect(txns.transactions[0].supplierInvoice).toBe("SUP-777");
+    expect(txns.transactions[0].evidence).toEqual([{ lineId, filename: "receipt.pdf", mimeType: "application/pdf" }]);
+  });
 });

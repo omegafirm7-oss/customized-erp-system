@@ -882,6 +882,8 @@ export class ReportsService {
     accountId: string,
     range: { fromDate: Date; toDate: Date } | { asOfDate: Date },
     costCenterId?: string,
+    // Who may be shown that evidence exists: "all" purchase invoices, only project-charged ones, or none.
+    evidenceScope: "all" | "project" | "none" = "none",
   ): Promise<AccountTransactionsReport> {
     let fromDate: Date;
     let toDate: Date;
@@ -910,11 +912,14 @@ export class ReportsService {
         memo: string | null;
         lineDescription: string | null;
         partnerName: string | null;
+        sourceModule: string;
+        sourceDocumentId: string | null;
         debit: Prisma.Decimal;
         credit: Prisma.Decimal;
       }>
     >`
       SELECT
+        je."sourceModule"::text AS "sourceModule", je."sourceDocumentId" AS "sourceDocumentId",
         je."id" AS "journalEntryId", je."entryNumber" AS "entryNumber", je."postingDate" AS "postingDate",
         je."status"::text AS "status", je."memo" AS "memo", jel."description" AS "lineDescription", bp."name" AS "partnerName",
         jel."debit" AS "debit", jel."credit" AS "credit"
@@ -930,6 +935,35 @@ export class ReportsService {
       ORDER BY je."postingDate" ASC, je."entryNumber" ASC
     `;
 
+    // Evidence for entries that came from a purchase invoice: the scans attached to that invoice's lines on this account.
+    const apInvoiceIds = [...new Set(rows.filter((r) => r.sourceModule === "AP" && r.sourceDocumentId).map((r) => r.sourceDocumentId as string))];
+    const evidenceByInvoice = new Map<string, TransactionEvidence[]>();
+    const supplierRefByInvoice = new Map<string, string>();
+    if (apInvoiceIds.length > 0 && evidenceScope !== "none") {
+      const invoiceLines = await this.prisma.purchaseInvoiceLine.findMany({
+        where: {
+          companyId,
+          purchaseInvoiceId: { in: apInvoiceIds },
+          expenseAccountId: accountId,
+          ...(evidenceScope === "project" ? { projectId: { not: null } } : {}),
+        },
+        select: {
+          id: true,
+          purchaseInvoiceId: true,
+          purchaseInvoice: { select: { vendorInvoiceNumber: true } },
+          attachment: { select: { filename: true, mimeType: true } },
+        },
+      });
+      for (const l of invoiceLines) {
+        supplierRefByInvoice.set(l.purchaseInvoiceId, l.purchaseInvoice.vendorInvoiceNumber);
+        if (l.attachment) {
+          const list = evidenceByInvoice.get(l.purchaseInvoiceId) ?? [];
+          list.push({ lineId: l.id, filename: l.attachment.filename, mimeType: l.attachment.mimeType });
+          evidenceByInvoice.set(l.purchaseInvoiceId, list);
+        }
+      }
+    }
+
     let totalDebit = new Prisma.Decimal(0);
     let totalCredit = new Prisma.Decimal(0);
     const transactions = rows.map((r) => {
@@ -937,7 +971,10 @@ export class ReportsService {
       const credit = new Prisma.Decimal(r.credit);
       totalDebit = totalDebit.add(debit);
       totalCredit = totalCredit.add(credit);
+      const invoiceId = r.sourceModule === "AP" ? r.sourceDocumentId : null;
       return {
+        supplierInvoice: invoiceId ? (supplierRefByInvoice.get(invoiceId) ?? null) : null,
+        evidence: invoiceId ? (evidenceByInvoice.get(invoiceId) ?? []) : [],
         journalEntryId: r.journalEntryId,
         entryNumber: r.entryNumber,
         postingDate: r.postingDate.toISOString(),
@@ -1398,7 +1435,17 @@ export interface LineDetailReport {
   accounts: LineDetailAccount[];
 }
 
+export interface TransactionEvidence {
+  lineId: string;
+  filename: string;
+  mimeType: string;
+}
+
 export interface AccountTransactionRow {
+  /** Supplier's own invoice number, for entries that came from a purchase invoice. */
+  supplierInvoice?: string | null;
+  /** Evidence files (receipt/invoice scans) attached to the purchase invoice line(s) behind this entry. */
+  evidence?: TransactionEvidence[];
   journalEntryId: string;
   entryNumber: string | null;
   postingDate: string;
