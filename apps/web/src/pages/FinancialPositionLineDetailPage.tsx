@@ -20,25 +20,27 @@ export function FinancialPositionLineDetailPage() {
   const { subClassCode } = useParams<{ subClassCode: string }>();
   const [searchParams] = useSearchParams();
   const asOfDate = searchParams.get("asOfDate") ?? "";
+  const projectId = searchParams.get("projectId") ?? "";
+  const projectQuery = projectId ? `&projectId=${projectId}` : "";
   const [data, setData] = useState<LineDetailReport | null>(null);
 
   useEffect(() => {
     if (!subClassCode || !asOfDate) return;
     apiClient
-      .get<LineDetailReport>("/reports/financial-position/line-detail", { params: { subClassCode, asOfDate } })
+      .get<LineDetailReport>("/reports/financial-position/line-detail", { params: { subClassCode, asOfDate, projectId: projectId || undefined } })
       .then((res) => setData(res.data));
-  }, [subClassCode, asOfDate]);
+  }, [subClassCode, asOfDate, projectId]);
 
   if (!data) return <p style={{ padding: 24 }}>Loading…</p>;
 
   const transactionsHref = (accountId: string) =>
-    `/accounts/${accountId}/transactions?asOfDate=${asOfDate}&back=${encodeURIComponent(
-      `/financial-position/line/${subClassCode}?asOfDate=${asOfDate}`,
+    `/accounts/${accountId}/transactions?asOfDate=${asOfDate}${projectQuery}&back=${encodeURIComponent(
+      `/financial-position/line/${subClassCode}?asOfDate=${asOfDate}${projectQuery}`,
     )}`;
 
   return (
     <div className="intelligence-board">
-      <Link to="/financial-position" className="intelligence-crumb">
+      <Link to={`/financial-position${projectId ? `?projectId=${projectId}` : ""}`} className="intelligence-crumb">
         ← Back to Statement of Financial Position
       </Link>
       <div className="intelligence-panel-header">

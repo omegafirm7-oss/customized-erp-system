@@ -32,6 +32,7 @@ export function AccountTransactionsPage() {
   const toDate = searchParams.get("toDate");
   const asOfDate = searchParams.get("asOfDate");
   const back = searchParams.get("back");
+  const projectId = searchParams.get("projectId") ?? undefined;
   const { user } = useAuth();
   const isAdministrator = user?.roleName === "Administrator";
   const [data, setData] = useState<AccountTransactionsReport | null>(null);
@@ -40,9 +41,9 @@ export function AccountTransactionsPage() {
 
   const load = useCallback(() => {
     if (!accountId) return;
-    const params = asOfDate ? { asOfDate } : { fromDate, toDate };
+    const params = asOfDate ? { asOfDate, projectId } : { fromDate, toDate, projectId };
     apiClient.get<AccountTransactionsReport>(`/reports/accounts/${accountId}/transactions`, { params }).then((res) => setData(res.data));
-  }, [accountId, fromDate, toDate, asOfDate]);
+  }, [accountId, fromDate, toDate, asOfDate, projectId]);
 
   useEffect(load, [load]);
 

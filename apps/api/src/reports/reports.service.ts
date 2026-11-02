@@ -1,6 +1,9 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { InvoiceStatus, Prisma } from "@prisma/client";
 import { PrismaService } from "../common/prisma/prisma.service";
+
+/** Restricts journal lines to one cost center (a project's dimension); empty when no project is selected. */
+const costCenterFilter = (costCenterId?: string) => (costCenterId ? Prisma.sql`AND jel."costCenterId" = ${costCenterId}` : Prisma.empty);
 
 // Shared between statementOfCashFlows() and cashFlowLineDetail() — the two
 // must classify accounts into the same buckets or a line-detail breakdown
@@ -556,7 +559,22 @@ export class ReportsService {
    * period bottom line, and one management performance measure (EBITDA)
    * with its mandatory reconciliation.
    */
-  async profitOrLoss(companyId: string, fromDate: Date, toDate: Date): Promise<ProfitOrLossReport> {
+  /** A project's cost center (the dimension its journal lines are stamped with). */
+  async projectCostCenter(companyId: string, projectId: string): Promise<{ costCenterId: string; projectCode: string; projectName: string }> {
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, companyId },
+      select: { code: true, name: true, costCenterId: true },
+    });
+    if (!project) {
+      throw new NotFoundException("Project not found");
+    }
+    if (!project.costCenterId) {
+      throw new BadRequestException("This project has no cost center, so its figures can't be separated");
+    }
+    return { costCenterId: project.costCenterId, projectCode: project.code, projectName: project.name };
+  }
+
+  async profitOrLoss(companyId: string, fromDate: Date, toDate: Date, costCenterId?: string): Promise<ProfitOrLossReport> {
     const rows = await this.prisma.$queryRaw<Array<{
       subClassCode: string;
       subClassName: string;
@@ -582,6 +600,7 @@ export class ReportsService {
         AND je."status" IN ('POSTED', 'REVERSED')
         AND je."postingDate" >= ${fromDate}
         AND je."postingDate" <= ${toDate}
+        ${costCenterFilter(costCenterId)}
       GROUP BY sc."code", sc."name", ac."code", sc."ifrs18Category"
     `;
 
@@ -619,6 +638,7 @@ export class ReportsService {
         AND je."status" IN ('POSTED', 'REVERSED')
         AND je."postingDate" >= ${fromDate}
         AND je."postingDate" <= ${toDate}
+        ${costCenterFilter(costCenterId)}
     `;
     const depreciationExpense = new Prisma.Decimal(depreciationRows[0]?.debit ?? 0).sub(
       new Prisma.Decimal(depreciationRows[0]?.credit ?? 0),
@@ -659,7 +679,7 @@ export class ReportsService {
    * and folded into equity as "Current Year Earnings" so Assets = Liabilities
    * + Equity holds while the year is still open.
    */
-  async financialPosition(companyId: string, asOfDate: Date): Promise<FinancialPositionReport> {
+  async financialPosition(companyId: string, asOfDate: Date, costCenterId?: string): Promise<FinancialPositionReport> {
     const fiscalYear = await this.prisma.fiscalYear.findFirst({
       where: { companyId, startDate: { lte: asOfDate }, endDate: { gte: asOfDate } },
     });
@@ -683,7 +703,7 @@ export class ReportsService {
       FROM "accounts" a
       JOIN "account_sub_classes" sc ON sc."id" = a."accountSubClassId"
       JOIN "account_classes" ac ON ac."id" = a."accountClassId"
-      LEFT JOIN "journal_entry_lines" jel ON jel."accountId" = a."id"
+      LEFT JOIN "journal_entry_lines" jel ON jel."accountId" = a."id" ${costCenterFilter(costCenterId)}
       LEFT JOIN "journal_entries" je
         ON je."id" = jel."journalEntryId"
         AND je."status" IN ('POSTED', 'REVERSED')
@@ -722,6 +742,7 @@ export class ReportsService {
         AND je."status" IN ('POSTED', 'REVERSED')
         AND je."postingDate" >= ${fiscalYearStart}
         AND je."postingDate" <= ${asOfDate}
+        ${costCenterFilter(costCenterId)}
       GROUP BY ac."code"
     `;
     let currentYearEarnings = new Prisma.Decimal(0);
@@ -767,6 +788,7 @@ export class ReportsService {
     label: string,
     fromDate: Date,
     toDate: Date,
+    costCenterId?: string,
   ): Promise<LineDetailReport> {
     const perSubClass = await Promise.all(
       subClassCodes.map((subClassCode) =>
@@ -786,6 +808,7 @@ export class ReportsService {
             AND je."status" IN ('POSTED', 'REVERSED')
             AND je."postingDate" >= ${fromDate}
             AND je."postingDate" <= ${toDate}
+            ${costCenterFilter(costCenterId)}
           GROUP BY a."id", a."code", a."name", ac."code"
         `,
       ),
@@ -799,7 +822,7 @@ export class ReportsService {
    * grouped by account. The synthetic "Current Year Earnings" equity line
    * has no real sub-class, so it simply returns no accounts.
    */
-  async financialPositionLineDetail(companyId: string, subClassCode: string, asOfDate: Date): Promise<LineDetailReport> {
+  async financialPositionLineDetail(companyId: string, subClassCode: string, asOfDate: Date, costCenterId?: string): Promise<LineDetailReport> {
     const rows = await this.prisma.$queryRaw<
       Array<{ accountId: string; code: string; name: string; classCode: string; subClassName: string; debit: Prisma.Decimal; credit: Prisma.Decimal }>
     >`
@@ -811,7 +834,7 @@ export class ReportsService {
       FROM "accounts" a
       JOIN "account_sub_classes" sc ON sc."id" = a."accountSubClassId"
       JOIN "account_classes" ac ON ac."id" = a."accountClassId"
-      LEFT JOIN "journal_entry_lines" jel ON jel."accountId" = a."id"
+      LEFT JOIN "journal_entry_lines" jel ON jel."accountId" = a."id" ${costCenterFilter(costCenterId)}
       LEFT JOIN "journal_entries" je
         ON je."id" = jel."journalEntryId"
         AND je."status" IN ('POSTED', 'REVERSED')
@@ -858,6 +881,7 @@ export class ReportsService {
     companyId: string,
     accountId: string,
     range: { fromDate: Date; toDate: Date } | { asOfDate: Date },
+    costCenterId?: string,
   ): Promise<AccountTransactionsReport> {
     let fromDate: Date;
     let toDate: Date;
@@ -902,6 +926,7 @@ export class ReportsService {
         AND je."status" IN ('POSTED', 'REVERSED')
         AND je."postingDate" >= ${fromDate}
         AND je."postingDate" <= ${toDate}
+        ${costCenterFilter(costCenterId)}
       ORDER BY je."postingDate" ASC, je."entryNumber" ASC
     `;
 

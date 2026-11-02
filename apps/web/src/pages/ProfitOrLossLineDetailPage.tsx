@@ -30,25 +30,27 @@ export function ProfitOrLossLineDetailPage() {
   const [searchParams] = useSearchParams();
   const fromDate = searchParams.get("fromDate") ?? "";
   const toDate = searchParams.get("toDate") ?? "";
+  const projectId = searchParams.get("projectId") ?? "";
+  const projectQuery = projectId ? `&projectId=${projectId}` : "";
   const [data, setData] = useState<LineDetailReport | null>(null);
 
   useEffect(() => {
     if (!line || !fromDate || !toDate) return;
     apiClient
-      .get<LineDetailReport>("/reports/profit-or-loss/line-detail", { params: { line, fromDate, toDate } })
+      .get<LineDetailReport>("/reports/profit-or-loss/line-detail", { params: { line, fromDate, toDate, projectId: projectId || undefined } })
       .then((res) => setData(res.data));
-  }, [line, fromDate, toDate]);
+  }, [line, fromDate, toDate, projectId]);
 
   if (!data) return <p style={{ padding: 24 }}>Loading…</p>;
 
   const transactionsHref = (accountId: string) =>
-    `/accounts/${accountId}/transactions?fromDate=${fromDate}&toDate=${toDate}&back=${encodeURIComponent(
-      `/profit-or-loss/line/${line}?fromDate=${fromDate}&toDate=${toDate}`,
+    `/accounts/${accountId}/transactions?fromDate=${fromDate}&toDate=${toDate}${projectQuery}&back=${encodeURIComponent(
+      `/profit-or-loss/line/${line}?fromDate=${fromDate}&toDate=${toDate}${projectQuery}`,
     )}`;
 
   return (
     <div className="intelligence-board">
-      <Link to="/profit-or-loss" className="intelligence-crumb">
+      <Link to={`/profit-or-loss${projectId ? `?projectId=${projectId}` : ""}`} className="intelligence-crumb">
         ← Back to Statement of Profit or Loss
       </Link>
       <div className="intelligence-panel-header">

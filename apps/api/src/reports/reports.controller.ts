@@ -108,15 +108,24 @@ export class ReportsController {
     @CurrentCompanyId() companyId: string,
     @Query("fromDate") fromDate: string,
     @Query("toDate") toDate: string,
+    @Query("projectId") projectId?: string,
   ) {
-    return this.reportsService.profitOrLoss(companyId, new Date(fromDate), new Date(toDate));
+    const project = projectId ? await this.reportsService.projectCostCenter(companyId, projectId) : undefined;
+    const report = await this.reportsService.profitOrLoss(companyId, new Date(fromDate), new Date(toDate), project?.costCenterId);
+    return project ? { ...report, project: { id: projectId, code: project.projectCode, name: project.projectName } } : report;
   }
 
   @Get("financial-position")
   @Permissions(PERMISSIONS.REPORTS_VIEW)
-  async financialPosition(@CurrentCompanyId() companyId: string, @Query("asOfDate") asOfDate?: string) {
+  async financialPosition(
+    @CurrentCompanyId() companyId: string,
+    @Query("asOfDate") asOfDate?: string,
+    @Query("projectId") projectId?: string,
+  ) {
     const date = asOfDate ? new Date(asOfDate) : new Date();
-    return this.reportsService.financialPosition(companyId, date);
+    const project = projectId ? await this.reportsService.projectCostCenter(companyId, projectId) : undefined;
+    const report = await this.reportsService.financialPosition(companyId, date, project?.costCenterId);
+    return project ? { ...report, project: { id: projectId, code: project.projectCode, name: project.projectName } } : report;
   }
 
   @Get("profit-or-loss/line-detail")
@@ -126,12 +135,14 @@ export class ReportsController {
     @Query("line") line: string,
     @Query("fromDate") fromDate: string,
     @Query("toDate") toDate: string,
+    @Query("projectId") projectId?: string,
   ) {
     const def = PROFIT_OR_LOSS_LINES[line];
     if (!def) {
       throw new BadRequestException(`Unknown profit or loss line: ${line}`);
     }
-    return this.reportsService.profitOrLossLineDetail(companyId, def.subClassCodes, def.label, new Date(fromDate), new Date(toDate));
+    const project = projectId ? await this.reportsService.projectCostCenter(companyId, projectId) : undefined;
+    return this.reportsService.profitOrLossLineDetail(companyId, def.subClassCodes, def.label, new Date(fromDate), new Date(toDate), project?.costCenterId);
   }
 
   @Get("financial-position/line-detail")
@@ -140,9 +151,11 @@ export class ReportsController {
     @CurrentCompanyId() companyId: string,
     @Query("subClassCode") subClassCode: string,
     @Query("asOfDate") asOfDate?: string,
+    @Query("projectId") projectId?: string,
   ) {
     const date = asOfDate ? new Date(asOfDate) : new Date();
-    return this.reportsService.financialPositionLineDetail(companyId, subClassCode, date);
+    const project = projectId ? await this.reportsService.projectCostCenter(companyId, projectId) : undefined;
+    return this.reportsService.financialPositionLineDetail(companyId, subClassCode, date, project?.costCenterId);
   }
 
   @Get("accounts/:accountId/transactions")
@@ -153,14 +166,16 @@ export class ReportsController {
     @Query("fromDate") fromDate?: string,
     @Query("toDate") toDate?: string,
     @Query("asOfDate") asOfDate?: string,
+    @Query("projectId") projectId?: string,
   ) {
+    const project = projectId ? await this.reportsService.projectCostCenter(companyId, projectId) : undefined;
     if (asOfDate) {
-      return this.reportsService.accountTransactions(companyId, accountId, { asOfDate: new Date(asOfDate) });
+      return this.reportsService.accountTransactions(companyId, accountId, { asOfDate: new Date(asOfDate) }, project?.costCenterId);
     }
     if (!fromDate || !toDate) {
       throw new BadRequestException("Either asOfDate, or both fromDate and toDate, are required");
     }
-    return this.reportsService.accountTransactions(companyId, accountId, { fromDate: new Date(fromDate), toDate: new Date(toDate) });
+    return this.reportsService.accountTransactions(companyId, accountId, { fromDate: new Date(fromDate), toDate: new Date(toDate) }, project?.costCenterId);
   }
 
   @Get("changes-in-equity")
