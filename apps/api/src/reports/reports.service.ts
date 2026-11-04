@@ -63,7 +63,7 @@ export interface TrialBalanceReport {
 export class ReportsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async trialBalance(companyId: string, asOfDate: Date): Promise<TrialBalanceReport> {
+  async trialBalance(companyId: string, asOfDate: Date, costCenterId?: string): Promise<TrialBalanceReport> {
     const fiscalYear = await this.prisma.fiscalYear.findFirst({
       where: { companyId, startDate: { lte: asOfDate }, endDate: { gte: asOfDate } },
     });
@@ -78,7 +78,7 @@ export class ReportsService {
         COALESCE(SUM(CASE WHEN je."postingDate" >= ${fiscalYearStart} THEN jel."debit" ELSE 0 END), 0) AS "periodDebit",
         COALESCE(SUM(CASE WHEN je."postingDate" >= ${fiscalYearStart} THEN jel."credit" ELSE 0 END), 0) AS "periodCredit"
       FROM "accounts" a
-      LEFT JOIN "journal_entry_lines" jel ON jel."accountId" = a."id"
+      LEFT JOIN "journal_entry_lines" jel ON jel."accountId" = a."id" ${costCenterFilter(costCenterId)}
       LEFT JOIN "journal_entries" je
         ON je."id" = jel."journalEntryId"
         AND je."status" IN ('POSTED', 'REVERSED')
@@ -1005,11 +1005,11 @@ export class ReportsService {
    * recording a capital injection or dividend distribution), and closing
    * balance, for each equity sub-class.
    */
-  async statementOfChangesInEquity(companyId: string, fromDate: Date, toDate: Date): Promise<EquityChangesReport> {
+  async statementOfChangesInEquity(companyId: string, fromDate: Date, toDate: Date, costCenterId?: string): Promise<EquityChangesReport> {
     const [openingRows, movementRows, profitOrLossReport] = await Promise.all([
-      this.equitySubClassBalances(companyId, fromDate),
-      this.equitySubClassMovements(companyId, fromDate, toDate),
-      this.profitOrLoss(companyId, fromDate, toDate),
+      this.equitySubClassBalances(companyId, fromDate, costCenterId),
+      this.equitySubClassMovements(companyId, fromDate, toDate, costCenterId),
+      this.profitOrLoss(companyId, fromDate, toDate, costCenterId),
     ]);
 
     const openingBySubClass = new Map(openingRows.map((r) => [r.subClassCode, r]));
@@ -1063,14 +1063,14 @@ export class ReportsService {
    * trialBalance()'s CASE expressions reference `je."postingDate"` (NULL for
    * a join miss) instead of summing jel's columns directly.
    */
-  private async equitySubClassBalances(companyId: string, fromDate: Date) {
+  private async equitySubClassBalances(companyId: string, fromDate: Date, costCenterId?: string) {
     return this.prisma.$queryRaw<Array<{ subClassCode: string; subClassName: string; balance: Prisma.Decimal }>>`
       SELECT sc."code" AS "subClassCode", sc."name" AS "subClassName",
         COALESCE(SUM(CASE WHEN je."id" IS NOT NULL THEN jel."credit" - jel."debit" ELSE 0 END), 0) AS "balance"
       FROM "accounts" a
       JOIN "account_sub_classes" sc ON sc."id" = a."accountSubClassId"
       JOIN "account_classes" ac ON ac."id" = a."accountClassId"
-      LEFT JOIN "journal_entry_lines" jel ON jel."accountId" = a."id"
+      LEFT JOIN "journal_entry_lines" jel ON jel."accountId" = a."id" ${costCenterFilter(costCenterId)}
       LEFT JOIN "journal_entries" je
         ON je."id" = jel."journalEntryId" AND je."status" IN ('POSTED', 'REVERSED') AND je."postingDate" < ${fromDate}
       WHERE a."companyId" = ${companyId} AND ac."code" = 'EQUITY'
@@ -1078,7 +1078,7 @@ export class ReportsService {
     `;
   }
 
-  private async equitySubClassMovements(companyId: string, fromDate: Date, toDate: Date) {
+  private async equitySubClassMovements(companyId: string, fromDate: Date, toDate: Date, costCenterId?: string) {
     return this.prisma.$queryRaw<Array<{ subClassCode: string; subClassName: string; balance: Prisma.Decimal }>>`
       SELECT sc."code" AS "subClassCode", sc."name" AS "subClassName",
         COALESCE(SUM(jel."credit" - jel."debit"), 0) AS "balance"
@@ -1089,6 +1089,7 @@ export class ReportsService {
       JOIN "journal_entries" je ON je."id" = jel."journalEntryId"
       WHERE a."companyId" = ${companyId} AND ac."code" = 'EQUITY'
         AND je."status" IN ('POSTED', 'REVERSED') AND je."postingDate" >= ${fromDate} AND je."postingDate" <= ${toDate}
+        ${costCenterFilter(costCenterId)}
       GROUP BY sc."code", sc."name"
     `;
   }
@@ -1113,10 +1114,10 @@ export class ReportsService {
    * they're removing a P&L item's effect rather than reflecting a balance
    * change with an implied cash counterpart.
    */
-  async statementOfCashFlows(companyId: string, fromDate: Date, toDate: Date): Promise<CashFlowReport> {
+  async statementOfCashFlows(companyId: string, fromDate: Date, toDate: Date, costCenterId?: string): Promise<CashFlowReport> {
     const [profitOrLossReport, movementRows, equipmentPurchased, equipmentDisposedProceeds, openingCashRows] =
       await Promise.all([
-        this.profitOrLoss(companyId, fromDate, toDate),
+        this.profitOrLoss(companyId, fromDate, toDate, costCenterId),
         this.prisma.$queryRaw<Array<{ bucket: string | null; debit: Prisma.Decimal; credit: Prisma.Decimal }>>`
           SELECT
             ${CASH_FLOW_BUCKET_CASE} AS "bucket",
@@ -1130,16 +1131,21 @@ export class ReportsService {
             AND je."status" IN ('POSTED', 'REVERSED')
             AND je."postingDate" >= ${fromDate}
             AND je."postingDate" <= ${toDate}
+            ${costCenterFilter(costCenterId)}
           GROUP BY "bucket"
         `,
-        this.prisma.equipment.aggregate({
-          where: { companyId, capitalizationJournalEntryId: { not: null }, acquisitionDate: { gte: fromDate, lte: toDate } },
-          _sum: { acquisitionCost: true },
-        }),
-        this.prisma.equipment.aggregate({
-          where: { companyId, disposalJournalEntryId: { not: null }, disposalDate: { gte: fromDate, lte: toDate } },
-          _sum: { disposalProceeds: true },
-        }),
+        costCenterId
+          ? Promise.resolve({ _sum: { acquisitionCost: null as Prisma.Decimal | null } })
+          : this.prisma.equipment.aggregate({
+              where: { companyId, capitalizationJournalEntryId: { not: null }, acquisitionDate: { gte: fromDate, lte: toDate } },
+              _sum: { acquisitionCost: true },
+            }),
+        costCenterId
+          ? Promise.resolve({ _sum: { disposalProceeds: null as Prisma.Decimal | null } })
+          : this.prisma.equipment.aggregate({
+              where: { companyId, disposalJournalEntryId: { not: null }, disposalDate: { gte: fromDate, lte: toDate } },
+              _sum: { disposalProceeds: true },
+            }),
         this.prisma.$queryRaw<Array<{ balance: Prisma.Decimal }>>`
           SELECT COALESCE(SUM(jel."debit" - jel."credit"), 0) AS "balance"
           FROM "accounts" a
@@ -1149,6 +1155,7 @@ export class ReportsService {
             AND a."controlAccountType" IN ('CASH', 'BANK')
             AND je."status" IN ('POSTED', 'REVERSED')
             AND je."postingDate" < ${fromDate}
+            ${costCenterFilter(costCenterId)}
         `,
       ]);
 
@@ -1234,6 +1241,7 @@ export class ReportsService {
     label: string,
     fromDate: Date,
     toDate: Date,
+    costCenterId?: string,
   ): Promise<LineDetailReport> {
     const rows = await this.prisma.$queryRaw<
       Array<{ accountId: string; code: string; name: string; debit: Prisma.Decimal; credit: Prisma.Decimal }>
@@ -1249,6 +1257,7 @@ export class ReportsService {
         AND je."postingDate" >= ${fromDate}
         AND je."postingDate" <= ${toDate}
         AND (${CASH_FLOW_BUCKET_CASE}) = ${bucket}
+        ${costCenterFilter(costCenterId)}
       GROUP BY a."id", a."code", a."name"
     `;
     const accounts = rows
@@ -1278,6 +1287,7 @@ export class ReportsService {
     column: "opening" | "otherMovements",
     fromDate: Date,
     toDate: Date,
+    costCenterId?: string,
   ): Promise<LineDetailReport> {
     const dateFilter =
       column === "opening"
@@ -1296,6 +1306,7 @@ export class ReportsService {
       WHERE a."companyId" = ${companyId} AND ac."code" = 'EQUITY' AND sc."code" = ${subClassCode}
         AND je."status" IN ('POSTED', 'REVERSED')
         ${dateFilter}
+        ${costCenterFilter(costCenterId)}
       GROUP BY a."id", a."code", a."name", sc."name"
     `;
     const accounts = rows

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { formatSigned } from "../utils/currency";
+import { useProjectFilter, ProjectScopeNote } from "../components/ProjectFilter";
 
 interface CashFlowReport {
   fromDate: string;
@@ -21,6 +22,7 @@ interface CashFlowReport {
   openingCash: string;
   closingCash: string;
   isReconciled: boolean;
+  project?: { id: string; code: string; name: string };
 }
 
 // Maps each drillable display line to the "line" key the backend's
@@ -47,17 +49,18 @@ export function CashFlowPage() {
   const [toDate, setToDate] = useState(new Date().toISOString().slice(0, 10));
   const [report, setReport] = useState<CashFlowReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const { projectId, projectQuery, picker } = useProjectFilter();
 
   useEffect(() => {
     setLoading(true);
     apiClient
-      .get<CashFlowReport>("/reports/cash-flow", { params: { fromDate, toDate } })
+      .get<CashFlowReport>("/reports/cash-flow", { params: { fromDate, toDate, projectId: projectId || undefined } })
       .then((res) => setReport(res.data))
       .finally(() => setLoading(false));
-  }, [fromDate, toDate]);
+  }, [fromDate, toDate, projectId]);
 
   function lineHref(line: string) {
-    return `/cash-flow/line/${line}?fromDate=${fromDate}&toDate=${toDate}`;
+    return `/cash-flow/line/${line}?fromDate=${fromDate}&toDate=${toDate}${projectQuery}`;
   }
 
   return (
@@ -65,12 +68,18 @@ export function CashFlowPage() {
       <div className="form-row" style={{ justifyContent: "space-between" }}>
         <h2>Statement of Cash Flows</h2>
         <div className="form-row">
+          {picker}
           <label>From </label>
           <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
           <label>To </label>
           <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
         </div>
       </div>
+      {projectId && (
+        <ProjectScopeNote project={report?.project}>
+          Bank and cash movements are not tagged to a project, so the cash lines here are mostly empty and the statement will not reconcile. Equipment purchases are not tracked per project. Use the whole-company view for the real cash flow.
+        </ProjectScopeNote>
+      )}
       {loading || !report ? (
         <p>Loading…</p>
       ) : (
@@ -190,7 +199,9 @@ export function CashFlowPage() {
           <p className={report.isReconciled ? "balance-ok" : "balance-bad"}>
             {report.isReconciled
               ? "✓ Net change in cash reconciles to actual cash/bank movement"
-              : "✗ Statement does not reconcile — this should never happen"}
+              : projectId
+                ? "Not reconciled — expected for a single-project view"
+                : "✗ Statement does not reconcile — this should never happen"}
           </p>
         </>
       )}

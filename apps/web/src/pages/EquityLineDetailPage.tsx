@@ -26,14 +26,16 @@ export function EquityLineDetailPage() {
   const [searchParams] = useSearchParams();
   const fromDate = searchParams.get("fromDate") ?? "";
   const toDate = searchParams.get("toDate") ?? "";
+  const projectId = searchParams.get("projectId") ?? "";
+  const projectQuery = projectId ? `&projectId=${projectId}` : "";
   const [data, setData] = useState<LineDetailReport | null>(null);
 
   useEffect(() => {
     if (!subClassCode || !column || !fromDate || !toDate) return;
     apiClient
-      .get<LineDetailReport>("/reports/changes-in-equity/line-detail", { params: { subClassCode, column, fromDate, toDate } })
+      .get<LineDetailReport>("/reports/changes-in-equity/line-detail", { params: { subClassCode, column, fromDate, toDate, projectId: projectId || undefined } })
       .then((res) => setData(res.data));
-  }, [subClassCode, column, fromDate, toDate]);
+  }, [subClassCode, column, fromDate, toDate, projectId]);
 
   if (!data) return <p style={{ padding: 24 }}>Loading…</p>;
 
@@ -45,13 +47,13 @@ export function EquityLineDetailPage() {
   const transactionsTo = isOpening ? new Date(new Date(fromDate).getTime() - 86400000).toISOString().slice(0, 10) : toDate;
 
   const transactionsHref = (accountId: string) =>
-    `/accounts/${accountId}/transactions?fromDate=${transactionsFrom}&toDate=${transactionsTo}&back=${encodeURIComponent(
-      `/changes-in-equity/line/${subClassCode}/${column}?fromDate=${fromDate}&toDate=${toDate}`,
+    `/accounts/${accountId}/transactions?fromDate=${transactionsFrom}&toDate=${transactionsTo}${projectQuery}&back=${encodeURIComponent(
+      `/changes-in-equity/line/${subClassCode}/${column}?fromDate=${fromDate}&toDate=${toDate}${projectQuery}`,
     )}`;
 
   return (
     <div className="intelligence-board">
-      <Link to="/changes-in-equity" className="intelligence-crumb">
+      <Link to={`/changes-in-equity${projectId ? `?projectId=${projectId}` : ""}`} className="intelligence-crumb">
         ← Back to Statement of Changes in Equity
       </Link>
       <div className="intelligence-panel-header">

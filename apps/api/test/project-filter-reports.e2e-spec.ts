@@ -72,8 +72,35 @@ describe("Profit or Loss / Financial Position project filter (e2e)", () => {
     expect(bsScoped.equity.find((l: any) => l.subClassCode === "CURRENT_YEAR_EARNINGS").balance).toBe("-1000.00");
     expect(bsWhole.equity.find((l: any) => l.subClassCode === "CURRENT_YEAR_EARNINGS").balance).toBe("-1300.00");
 
+    // trial balance: the expense account carries only the project's 1,000 (1,300 company-wide)
+    const tbWhole = (await get(ctx.accessToken, `/reports/trial-balance?asOfDate=2099-12-31`).expect(200)).body;
+    const tbScoped = (await get(ctx.accessToken, `/reports/trial-balance?asOfDate=2099-12-31&projectId=${project.id}`).expect(200)).body;
+    const expenseRow = (tb: any) => tb.rows.find((r: any) => r.accountCode === "5240");
+    expect(Number(expenseRow(tbWhole).debit)).toBe(1300);
+    expect(Number(expenseRow(tbScoped).debit)).toBe(1000);
+    expect(tbScoped.project).toMatchObject({ code: "PF-1" });
+    expect(tbWhole.project).toBeUndefined();
+
+    // changes in equity: the project's profit for the period is its own result only
+    const eqWhole = (await get(ctx.accessToken, `/reports/changes-in-equity?${range}`).expect(200)).body;
+    const eqScoped = (await get(ctx.accessToken, `/reports/changes-in-equity?${range}&projectId=${project.id}`).expect(200)).body;
+    expect(Number(eqWhole.totalProfitForPeriod)).toBe(-1300);
+    expect(Number(eqScoped.totalProfitForPeriod)).toBe(-1000);
+    expect(eqScoped.project).toMatchObject({ code: "PF-1" });
+    await get(ctx.accessToken, `/reports/changes-in-equity/line-detail?subClassCode=RETAINED_EARNINGS&column=otherMovements&${range}&projectId=${project.id}`).expect(200);
+
+    // cash flow: starts from the project's profit; equipment isn't tracked per project
+    const cfWhole = (await get(ctx.accessToken, `/reports/cash-flow?${range}`).expect(200)).body;
+    const cfScoped = (await get(ctx.accessToken, `/reports/cash-flow?${range}&projectId=${project.id}`).expect(200)).body;
+    expect(Number(cfWhole.profitForPeriod)).toBe(-1300);
+    expect(Number(cfScoped.profitForPeriod)).toBe(-1000);
+    expect(Number(cfScoped.equipmentPurchases)).toBe(0);
+    expect(cfScoped.project).toMatchObject({ code: "PF-1" });
+    await get(ctx.accessToken, `/reports/cash-flow/line-detail?line=wcTradePayables&${range}&projectId=${project.id}`).expect(200);
+
     // an unknown project is rejected
     await get(ctx.accessToken, `/reports/profit-or-loss?${range}&projectId=00000000-0000-0000-0000-000000000000`).expect(404);
+    await get(ctx.accessToken, `/reports/trial-balance?asOfDate=2099-12-31&projectId=00000000-0000-0000-0000-000000000000`).expect(404);
   });
 
   it("shows the attached evidence and supplier invoice number on the expense transactions behind a statement line", async () => {

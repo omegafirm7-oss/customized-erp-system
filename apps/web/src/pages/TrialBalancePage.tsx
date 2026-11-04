@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { formatAmount } from "../utils/currency";
+import { useProjectFilter, ProjectScopeNote } from "../components/ProjectFilter";
 
 interface TrialBalanceRow {
   accountId: string;
@@ -18,20 +19,22 @@ interface TrialBalanceReport {
   rows: TrialBalanceRow[];
   totalDebit: string;
   totalCredit: string;
+  project?: { id: string; code: string; name: string };
 }
 
 export function TrialBalancePage() {
   const [asOfDate, setAsOfDate] = useState(new Date().toISOString().slice(0, 10));
   const [report, setReport] = useState<TrialBalanceReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const { projectId, projectQuery, picker } = useProjectFilter();
 
   useEffect(() => {
     setLoading(true);
     apiClient
-      .get<TrialBalanceReport>("/reports/trial-balance", { params: { asOfDate } })
+      .get<TrialBalanceReport>("/reports/trial-balance", { params: { asOfDate, projectId: projectId || undefined } })
       .then((res) => setReport(res.data))
       .finally(() => setLoading(false));
-  }, [asOfDate]);
+  }, [asOfDate, projectId]);
 
   const isBalanced = report && report.totalDebit === report.totalCredit;
 
@@ -40,10 +43,16 @@ export function TrialBalancePage() {
       <div className="form-row" style={{ justifyContent: "space-between" }}>
         <h2>Trial Balance</h2>
         <div>
+          {picker}
           <label>As of </label>
           <input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} />
         </div>
       </div>
+      {projectId && (
+        <ProjectScopeNote project={report?.project}>
+          Only the project's own postings are included, so debits and credits will not match on their own. Use the whole-company view for the full trial balance.
+        </ProjectScopeNote>
+      )}
       {loading || !report ? (
         <p>Loading…</p>
       ) : (
@@ -64,7 +73,7 @@ export function TrialBalancePage() {
                 <tr key={row.accountId}>
                   <td>{row.accountCode}</td>
                   <td>
-                    <Link to={`/accounts/${row.accountId}/transactions?asOfDate=${asOfDate}&back=${encodeURIComponent("/trial-balance")}`}>
+                    <Link to={`/accounts/${row.accountId}/transactions?asOfDate=${asOfDate}${projectQuery}&back=${encodeURIComponent(`/trial-balance${projectId ? `?projectId=${projectId}` : ""}`)}`}>
                       {row.accountName}
                     </Link>
                   </td>
@@ -91,7 +100,7 @@ export function TrialBalancePage() {
             </tfoot>
           </table>
           <p className={isBalanced ? "balance-ok" : "balance-bad"}>
-            {isBalanced ? "✓ Total debits equal total credits" : "✗ Totals do not balance — this should never happen"}
+            {isBalanced ? "✓ Total debits equal total credits" : projectId ? "Not balanced — expected for a single-project view" : "✗ Totals do not balance — this should never happen"}
           </p>
         </>
       )}

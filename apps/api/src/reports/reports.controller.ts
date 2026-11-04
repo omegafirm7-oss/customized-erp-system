@@ -58,9 +58,15 @@ export class ReportsController {
 
   @Get("trial-balance")
   @Permissions(PERMISSIONS.REPORTS_VIEW)
-  async trialBalance(@CurrentCompanyId() companyId: string, @Query("asOfDate") asOfDate?: string) {
+  async trialBalance(
+    @CurrentCompanyId() companyId: string,
+    @Query("asOfDate") asOfDate?: string,
+    @Query("projectId") projectId?: string,
+  ) {
     const date = asOfDate ? new Date(asOfDate) : new Date();
-    return this.reportsService.trialBalance(companyId, date);
+    const project = projectId ? await this.reportsService.projectCostCenter(companyId, projectId) : undefined;
+    const report = await this.reportsService.trialBalance(companyId, date, project?.costCenterId);
+    return project ? { ...report, project: { id: projectId, code: project.projectCode, name: project.projectName } } : report;
   }
 
   @Get("ar-aging")
@@ -206,8 +212,11 @@ export class ReportsController {
     @CurrentCompanyId() companyId: string,
     @Query("fromDate") fromDate: string,
     @Query("toDate") toDate: string,
+    @Query("projectId") projectId?: string,
   ) {
-    return this.reportsService.statementOfChangesInEquity(companyId, new Date(fromDate), new Date(toDate));
+    const project = projectId ? await this.reportsService.projectCostCenter(companyId, projectId) : undefined;
+    const report = await this.reportsService.statementOfChangesInEquity(companyId, new Date(fromDate), new Date(toDate), project?.costCenterId);
+    return project ? { ...report, project: { id: projectId, code: project.projectCode, name: project.projectName } } : report;
   }
 
   @Get("cash-flow")
@@ -216,8 +225,11 @@ export class ReportsController {
     @CurrentCompanyId() companyId: string,
     @Query("fromDate") fromDate: string,
     @Query("toDate") toDate: string,
+    @Query("projectId") projectId?: string,
   ) {
-    return this.reportsService.statementOfCashFlows(companyId, new Date(fromDate), new Date(toDate));
+    const project = projectId ? await this.reportsService.projectCostCenter(companyId, projectId) : undefined;
+    const report = await this.reportsService.statementOfCashFlows(companyId, new Date(fromDate), new Date(toDate), project?.costCenterId);
+    return project ? { ...report, project: { id: projectId, code: project.projectCode, name: project.projectName } } : report;
   }
 
   @Get("cash-flow/line-detail")
@@ -227,12 +239,14 @@ export class ReportsController {
     @Query("line") line: string,
     @Query("fromDate") fromDate: string,
     @Query("toDate") toDate: string,
+    @Query("projectId") projectId?: string,
   ) {
     const def = CASH_FLOW_LINES[line];
     if (!def) {
       throw new BadRequestException(`Unknown cash flow line: ${line}`);
     }
-    return this.reportsService.cashFlowLineDetail(companyId, def.bucket, def.sign, def.label, new Date(fromDate), new Date(toDate));
+    const project = projectId ? await this.reportsService.projectCostCenter(companyId, projectId) : undefined;
+    return this.reportsService.cashFlowLineDetail(companyId, def.bucket, def.sign, def.label, new Date(fromDate), new Date(toDate), project?.costCenterId);
   }
 
   @Get("changes-in-equity/line-detail")
@@ -243,11 +257,13 @@ export class ReportsController {
     @Query("column") column: string,
     @Query("fromDate") fromDate: string,
     @Query("toDate") toDate: string,
+    @Query("projectId") projectId?: string,
   ) {
     if (column !== "opening" && column !== "otherMovements") {
       throw new BadRequestException(`Unknown equity column: ${column}`);
     }
-    return this.reportsService.equityLineDetail(companyId, subClassCode, column, new Date(fromDate), new Date(toDate));
+    const project = projectId ? await this.reportsService.projectCostCenter(companyId, projectId) : undefined;
+    return this.reportsService.equityLineDetail(companyId, subClassCode, column, new Date(fromDate), new Date(toDate), project?.costCenterId);
   }
 
   @Get("stock-movements")
