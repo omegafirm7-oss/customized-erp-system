@@ -97,6 +97,15 @@ import { EquipmentContractDetailPage } from "./pages/EquipmentContractDetailPage
 import { UsageLogPage } from "./pages/UsageLogPage";
 import { DepreciationRunsPage } from "./pages/DepreciationRunsPage";
 import { EquipmentProfitabilityPage } from "./pages/EquipmentProfitabilityPage";
+import { TrainingDashboardPage } from "./pages/training/TrainingDashboardPage";
+import { TrainingCoursesPage } from "./pages/training/TrainingCoursesPage";
+import { TraineesPage } from "./pages/training/TraineesPage";
+import { TraineeDetailPage } from "./pages/training/TraineeDetailPage";
+import { TrainingBatchesPage } from "./pages/training/TrainingBatchesPage";
+import { TrainingBatchDetailPage } from "./pages/training/TrainingBatchDetailPage";
+import { TrainingCertificatesPage } from "./pages/training/TrainingCertificatesPage";
+import { TrainingSettingsPage } from "./pages/training/TrainingSettingsPage";
+import { CertificateVerifyPage } from "./pages/training/CertificateVerifyPage";
 
 // The PDF editor pulls in a large PDF engine, so it is only downloaded when someone opens it.
 const PdfEditorPage = lazy(() => import("./pages/PdfEditorPage").then((m) => ({ default: m.PdfEditorPage })));
@@ -170,6 +179,14 @@ const companyRoutes: Array<{ path: string; element: JSX.Element }> = [
   { path: "/crm/opportunities", element: <OpportunitiesPage /> },
   { path: "/crm/lead-research", element: <LeadResearchPage /> },
   { path: "/crm/outreach", element: <OutreachPage /> },
+  { path: "/training", element: <TrainingDashboardPage /> },
+  { path: "/training/courses", element: <TrainingCoursesPage /> },
+  { path: "/training/trainees", element: <TraineesPage /> },
+  { path: "/training/trainees/:id", element: <TraineeDetailPage /> },
+  { path: "/training/batches", element: <TrainingBatchesPage /> },
+  { path: "/training/batches/:id", element: <TrainingBatchDetailPage /> },
+  { path: "/training/certificates", element: <TrainingCertificatesPage /> },
+  { path: "/training/settings", element: <TrainingSettingsPage /> },
   { path: "/payments", element: <PaymentsPage /> },
   { path: "/payments/new", element: <NewPaymentPage /> },
   { path: "/trial-balance", element: <TrialBalancePage /> },
@@ -259,6 +276,7 @@ export default function App() {
       <Route path="/mobile-upload/:token" element={<PhotoUploadMobilePage />} />
       <Route path="/free-pdf-editor" element={<PublicPdfTools />} />
       <Route path="/free-pdf-editor/:toolId" element={<PublicPdfTools />} />
+      <Route path="/verify/:token" element={<CertificateVerifyPage />} />
       <Route
         element={
           <RequireAuth>

@@ -133,6 +133,19 @@ const CRM_SECTION: NavSection = {
   ],
 };
 
+// Same entitlement-gating pattern as PURCHASE_SECTION, keyed on "training".
+const TRAINING_SECTION: NavSection = {
+  label: "Training",
+  items: [
+    { to: "/training", label: "Dashboard" },
+    { to: "/training/courses", label: "Courses" },
+    { to: "/training/trainees", label: "Trainees" },
+    { to: "/training/batches", label: "Batches" },
+    { to: "/training/certificates", label: "Certificates" },
+    { to: "/training/settings", label: "Training Settings" },
+  ],
+};
+
 // Pakistan only (active company countryCode "PK"), entitlement key "fbr".
 const FBR_SECTION: NavSection = {
   label: "FBR (Pakistan)",
@@ -237,6 +250,7 @@ export function Layout() {
     ...(isEntitled("purchase") ? [PURCHASE_SECTION] : []),
     ...(isEntitled("sales") ? [SALES_SECTION] : []),
     ...(isEntitled("crm") ? [CRM_SECTION] : []),
+    ...(isEntitled("training") ? [TRAINING_SECTION] : []),
     ...(isPakistan && isEntitled("fbr") ? [FBR_SECTION] : []),
   ];
   const baseSections = isPakistan

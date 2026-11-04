@@ -552,6 +552,12 @@ model Company {
   fbrSubmissions                    FbrSubmission[]
   posTerminals                      PosTerminal[]
   posSales                          PosSale[]
+  trainingSettings                  TrainingSettings?
+  trainingCourses                   TrainingCourse[]
+  trainees                          Trainee[]
+  trainingBatches                   TrainingBatch[]
+  trainingEnrollments               TrainingEnrollment[]
+  trainingCertificates              TrainingCertificate[]
 
   @@map("companies")
 }
@@ -964,6 +970,7 @@ model BusinessPartner {
   contacts                 Contact[]
   opportunities            Opportunity[]
   crmActivities            CrmActivity[]
+  trainees                 Trainee[]
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -3561,4 +3568,201 @@ model ChatAttachment {
   data      Bytes
 
   @@map("chat_attachments")
+}
+
+// Training / LMS (module key "training") — Phase A: staff-side training
+// management for safety cards (TUV etc.): course catalog, trainees, classroom
+// batches with attendance + marks, and certificates with expiry and a public
+// QR verification token. Trainee self-service portal comes in Phase B.
+// ─────────────────────────────────────────────────────────────────────────
+
+enum TrainingBatchStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum TrainingResult {
+  PENDING
+  PASSED
+  FAILED
+  ABSENT
+}
+
+enum TrainingCertificateStatus {
+  VALID
+  REVOKED
+}
+
+model TrainingSettings {
+  id                    String   @id @default(uuid())
+  companyId             String   @unique
+  company               Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  certificatePrefix     String   @default("CERT")
+  nextCertificateNumber Int      @default(1)
+  nextBatchNumber       Int      @default(1)
+  signatoryName         String?
+  signatoryTitle        String?
+  // Printed under the certificate body, e.g. accreditation / approval wording.
+  certificateFooterText String?
+  updatedAt             DateTime @updatedAt
+
+  @@map("training_settings")
+}
+
+model TrainingCourse {
+  id                   String   @id @default(uuid())
+  companyId            String
+  company              Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  code                 String
+  name                 String
+  category             String?
+  description          String?
+  durationDays         Int      @default(1)
+  durationHours        Int?
+  pricePerTrainee      Decimal? @db.Decimal(18, 2)
+  // How long the issued card/certificate stays valid.
+  validityMonths       Int      @default(24)
+  passMarkPercent      Int      @default(70)
+  theoryMaxMarks       Int      @default(100)
+  // 0 = course has no practical assessment.
+  practicalMaxMarks    Int      @default(100)
+  minAttendancePercent Int      @default(100)
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  batches      TrainingBatch[]
+  certificates TrainingCertificate[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@map("training_courses")
+}
+
+model Trainee {
+  id                String           @id @default(uuid())
+  companyId         String
+  company           Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fullName          String
+  fullNameAr        String?
+  // IQAMA | NATIONAL_ID | PASSPORT | OTHER
+  idType            String           @default("IQAMA")
+  idNumber          String
+  nationality       String?
+  phone             String?
+  email             String?
+  dateOfBirth       DateTime?        @db.Date
+  jobTitle          String?
+  employerPartnerId String?
+  employerPartner   BusinessPartner? @relation(fields: [employerPartnerId], references: [id], onDelete: SetNull)
+  // Free-text employer when the employer isn't a customer in Partners.
+  employerName      String?
+  photo             Bytes?
+  photoMimeType     String?
+  notes             String?
+  isActive          Boolean          @default(true)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  enrollments  TrainingEnrollment[]
+  certificates TrainingCertificate[]
+
+  @@unique([companyId, idNumber])
+  @@index([companyId])
+  @@index([employerPartnerId])
+  @@map("trainees")
+}
+
+model TrainingBatch {
+  id             String              @id @default(uuid())
+  companyId      String
+  company        Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  batchNo        String
+  courseId       String
+  course         TrainingCourse      @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  startDate      DateTime            @db.Date
+  endDate        DateTime            @db.Date
+  venue          String?
+  instructorName String?
+  capacity       Int?
+  status         TrainingBatchStatus @default(SCHEDULED)
+  notes          String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  enrollments TrainingEnrollment[]
+
+  @@unique([companyId, batchNo])
+  @@index([companyId])
+  @@index([courseId])
+  @@map("training_batches")
+}
+
+model TrainingEnrollment {
+  id             String         @id @default(uuid())
+  companyId      String
+  company        Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  batchId        String
+  batch          TrainingBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  traineeId      String
+  trainee        Trainee        @relation(fields: [traineeId], references: [id], onDelete: Restrict)
+  theoryMarks    Decimal?       @db.Decimal(7, 2)
+  practicalMarks Decimal?       @db.Decimal(7, 2)
+  result         TrainingResult @default(PENDING)
+  // True when staff set the result by hand instead of the automatic rule.
+  resultOverride Boolean        @default(false)
+  remarks        String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  attendance  TrainingAttendance[]
+  certificate TrainingCertificate?
+
+  @@unique([batchId, traineeId])
+  @@index([companyId])
+  @@index([traineeId])
+  @@map("training_enrollments")
+}
+
+model TrainingAttendance {
+  id           String             @id @default(uuid())
+  enrollmentId String
+  enrollment   TrainingEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  date         DateTime           @db.Date
+  present      Boolean
+
+  @@unique([enrollmentId, date])
+  @@map("training_attendance")
+}
+
+model TrainingCertificate {
+  id             String                    @id @default(uuid())
+  companyId      String
+  company        Company                   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  enrollmentId   String                    @unique
+  enrollment     TrainingEnrollment        @relation(fields: [enrollmentId], references: [id], onDelete: Restrict)
+  traineeId      String
+  trainee        Trainee                   @relation(fields: [traineeId], references: [id], onDelete: Restrict)
+  courseId       String
+  course         TrainingCourse            @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  certificateNo  String
+  issueDate      DateTime                  @db.Date
+  expiryDate     DateTime                  @db.Date
+  // Card number issued by the external certifying body (e.g. TUV), if any.
+  externalCardNo String?
+  // Random token used in the public QR verify URL (not the guessable cert number).
+  verifyToken    String                    @unique @default(uuid())
+  status         TrainingCertificateStatus @default(VALID)
+  revokedReason  String?
+  revokedAt      DateTime?
+  issuedByUserId String
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+
+  @@unique([companyId, certificateNo])
+  @@index([companyId, expiryDate])
+  @@index([traineeId])
+  @@map("training_certificates")
 }

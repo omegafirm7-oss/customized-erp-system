@@ -12,6 +12,7 @@ const MODULE_LABELS = {
   sales: "Sales & Marketing",
   // Pakistan clients only — the FBR menu appears for PK companies.
   fbr: "FBR (Pakistan)",
+  training: "Training (LMS)",
 } as const;
 const ALL_MODULES = Object.keys(MODULE_LABELS) as (keyof typeof MODULE_LABELS)[];
 

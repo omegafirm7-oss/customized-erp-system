@@ -421,6 +421,8 @@ export const PERMISSIONS = {
   CHAT_USE: "chat.use",
   SETTINGS_TEMPLATES_MANAGE: "settings.templates.manage",
   SETTINGS_ACTIVITY_LOG_VIEW: "settings.activity-log.view",
+  TRAINING_MANAGE: "training.manage",
+  TRAINING_VIEW: "training.view",
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -435,6 +437,8 @@ export const MODULE_KEYS = {
   SALES: "sales",
   // Pakistan FBR Digital Invoicing + POS Integration.
   FBR: "fbr",
+  // Training / LMS for safety cards (TUV etc.).
+  TRAINING: "training",
 } as const;
 
 export type ModuleKey = (typeof MODULE_KEYS)[keyof typeof MODULE_KEYS];

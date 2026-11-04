@@ -35,6 +35,7 @@ import { ConvertModule } from "./convert/convert.module";
 import { SettingsModule } from "./settings/settings.module";
 import { ProcurementModule } from "./procurement/procurement.module";
 import { PhotoUploadModule } from "./photo-upload/photo-upload.module";
+import { TrainingModule } from "./training/training.module";
 
 @Module({
   imports: [
@@ -67,6 +68,7 @@ import { PhotoUploadModule } from "./photo-upload/photo-upload.module";
     SettingsModule,
     ProcurementModule,
     PhotoUploadModule,
+    TrainingModule,
   ],
   providers: [
     // Global by default — every route requires a valid JWT unless explicitly

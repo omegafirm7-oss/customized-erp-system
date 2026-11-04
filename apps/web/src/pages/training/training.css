@@ -1,0 +1,276 @@
+/* Training / LMS pages */
+.badge.trn-blue {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.trn-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(16, 24, 40, 0.45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 16px;
+  z-index: 1000;
+  overflow-y: auto;
+}
+
+.trn-modal {
+  background: #fff;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 620px;
+  padding: 20px 22px;
+  box-shadow: 0 20px 40px rgba(16, 24, 40, 0.2);
+}
+
+.trn-modal-wide {
+  max-width: 880px;
+}
+
+.trn-modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.trn-modal-head h3 {
+  margin: 0;
+}
+
+.trn-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px 14px;
+}
+
+.trn-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #475467;
+}
+
+.trn-form-grid label.trn-span-all {
+  grid-column: 1 / -1;
+}
+
+.trn-form-grid input,
+.trn-form-grid select,
+.trn-form-grid textarea {
+  font-weight: 400;
+}
+
+.trn-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.trn-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.trn-toolbar .trn-grow {
+  flex: 1;
+}
+
+.trn-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.trn-header h2 {
+  margin-bottom: 4px;
+}
+
+.trn-muted {
+  color: #667085;
+  font-size: 13px;
+}
+
+.trn-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 10px 18px;
+  margin: 12px 0 4px;
+}
+
+.trn-facts div span {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #667085;
+  letter-spacing: 0.02em;
+}
+
+.trn-table-wrap {
+  overflow-x: auto;
+}
+
+.trn-att th.trn-day,
+.trn-att td.trn-day {
+  text-align: center;
+  min-width: 52px;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+.trn-att td.trn-day button {
+  width: 34px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.trn-att .trn-p {
+  background: #d1fadf;
+  color: #05603a;
+  border: 1px solid #a6f4c5;
+}
+
+.trn-att .trn-a {
+  background: #fee4e2;
+  color: #912018;
+  border: 1px solid #fecdca;
+}
+
+.trn-att .trn-u {
+  background: #f2f4f7;
+  color: #98a2b3;
+  border: 1px solid #e4e7ec;
+}
+
+.trn-marks input {
+  width: 80px;
+}
+
+.trn-photo {
+  width: 84px;
+  height: 100px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #e4e7ec;
+  background: #f2f4f7;
+}
+
+.trn-photo-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #98a2b3;
+  font-size: 11px;
+}
+
+.trn-pick-list {
+  max-height: 340px;
+  overflow-y: auto;
+  border: 1px solid #e4e7ec;
+  border-radius: 8px;
+}
+
+.trn-pick-list label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #f2f4f7;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.trn-pick-list label:hover {
+  background: #f9fafb;
+}
+
+/* Public verify page */
+.trn-verify-page {
+  min-height: 100vh;
+  background: #f2f4f7;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 16px;
+}
+
+.trn-verify-card {
+  background: #fff;
+  border-radius: 14px;
+  max-width: 480px;
+  width: 100%;
+  box-shadow: 0 10px 30px rgba(16, 24, 40, 0.12);
+  overflow: hidden;
+}
+
+.trn-verify-banner {
+  padding: 22px 24px;
+  color: #fff;
+  text-align: center;
+}
+
+.trn-verify-banner.valid {
+  background: #039855;
+}
+
+.trn-verify-banner.expired {
+  background: #dc6803;
+}
+
+.trn-verify-banner.revoked,
+.trn-verify-banner.notfound {
+  background: #d92d20;
+}
+
+.trn-verify-banner .trn-verify-icon {
+  font-size: 40px;
+  line-height: 1;
+}
+
+.trn-verify-banner h1 {
+  font-size: 20px;
+  margin: 8px 0 0;
+  color: #fff;
+}
+
+.trn-verify-body {
+  padding: 20px 24px 24px;
+}
+
+.trn-verify-person {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.trn-verify-rows div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid #f2f4f7;
+  font-size: 14px;
+}
+
+.trn-verify-rows div span:first-child {
+  color: #667085;
+}
+
+.trn-verify-rows div span:last-child {
+  font-weight: 600;
+  text-align: right;
+}
