@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiClient } from "../../api/client";
 import { AgentStatus } from "./salesAgentConstants";
 import { toWhatsAppNumber, whatsAppLink } from "./whatsapp";
-import { copyFlyerToClipboard, fetchFlyerFile, Flyer, FlyerThumb, isTouchDevice, useFlyers } from "./flyers";
+import { copyFlyerToClipboard, fetchFlyerFile, Flyer, FlyerThumb, useFlyers } from "./flyers";
 
 type ShareNavigator = Navigator & {
   canShare?: (data: { files?: File[]; text?: string }) => boolean;
@@ -315,13 +315,7 @@ export function OutreachComposer({ lead, status, followUpActivityId, initialChan
       )}
       {channel === "WHATSAPP" && flyerIds.length > 0 && (
         <p className="outreach-hint">
-          {shareWithFiles
-            ? isTouchDevice()
-              ? `Your phone's share menu will open with the message and flyers — choose WhatsApp, then +${waNumber}.`
-              : `A share window opens with the message and flyers attached — choose WhatsApp (needs the WhatsApp desktop app), then +${waNumber}. No WhatsApp app on this PC? Use "WhatsApp Web instead".`
-            : isTouchDevice() && selectedFiles.length < flyerIds.length
-              ? "Preparing flyers…"
-              : "WhatsApp Web opens with the message; then copy each flyer here and paste it into the chat (Ctrl+V)."}
+          {`Your chat with +${waNumber} opens with the message already typed. WhatsApp can't attach files from a link, so copy each flyer here afterwards and paste it into that chat (Ctrl+V / long-press, Paste), then press send.`}
         </p>
       )}
 
@@ -359,13 +353,13 @@ export function OutreachComposer({ lead, status, followUpActivityId, initialChan
           </label>
         )}
         <span style={{ flex: 1 }} />
-        {channel === "WHATSAPP" && shareWithFiles && !isTouchDevice() && (
-          <button type="button" className="secondary" onClick={() => send("web")} disabled={!canSend || sending}>
-            WhatsApp Web instead
+        {channel === "WHATSAPP" && shareWithFiles && (
+          <button type="button" className="secondary" onClick={() => send("auto")} disabled={!canSend || sending} title="Opens the share menu, where you pick the contact yourself">
+            Use share menu instead
           </button>
         )}
-        <button type="button" onClick={() => send()} disabled={!canSend || sending}>
-          {sending ? "Sending…" : channel === "WHATSAPP" ? (shareWithFiles ? "Send on WhatsApp with flyers" : "Open in WhatsApp") : "Send email"}
+        <button type="button" onClick={() => send(channel === "WHATSAPP" ? "web" : "auto")} disabled={!canSend || sending}>
+          {sending ? "Sending…" : channel === "WHATSAPP" ? "Open chat in WhatsApp" : "Send email"}
         </button>
       </div>
     </div>
