@@ -30,6 +30,7 @@ import { HiredEquipmentModule } from "./hired-equipment/hired-equipment.module";
 import { EquipmentModule } from "./equipment/equipment.module";
 import { PlatformModule } from "./platform/platform.module";
 import { CrmModule } from "./crm/crm.module";
+import { ChatModule } from "./chat/chat.module";
 import { SettingsModule } from "./settings/settings.module";
 import { ProcurementModule } from "./procurement/procurement.module";
 import { PhotoUploadModule } from "./photo-upload/photo-upload.module";
@@ -60,6 +61,7 @@ import { PhotoUploadModule } from "./photo-upload/photo-upload.module";
     EquipmentModule,
     PlatformModule,
     CrmModule,
+    ChatModule,
     SettingsModule,
     ProcurementModule,
     PhotoUploadModule,

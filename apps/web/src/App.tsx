@@ -13,6 +13,7 @@ import { JournalEntriesPage } from "./pages/JournalEntriesPage";
 import { NewJournalEntryPage } from "./pages/NewJournalEntryPage";
 import { TrialBalancePage } from "./pages/TrialBalancePage";
 import { ProfitOrLossPage } from "./pages/ProfitOrLossPage";
+import { ChatPage } from "./pages/ChatPage";
 import { ProfitOrLossLineDetailPage } from "./pages/ProfitOrLossLineDetailPage";
 import { FinancialPositionPage } from "./pages/FinancialPositionPage";
 import { FinancialPositionLineDetailPage } from "./pages/FinancialPositionLineDetailPage";
@@ -158,6 +159,7 @@ const companyRoutes: Array<{ path: string; element: JSX.Element }> = [
   { path: "/payments/new", element: <NewPaymentPage /> },
   { path: "/trial-balance", element: <TrialBalancePage /> },
   { path: "/profit-or-loss", element: <ProfitOrLossPage /> },
+  { path: "/chat", element: <ChatPage /> },
   { path: "/profit-or-loss/line/:line", element: <ProfitOrLossLineDetailPage /> },
   { path: "/financial-position", element: <FinancialPositionPage /> },
   { path: "/financial-position/line/:subClassCode", element: <FinancialPositionLineDetailPage /> },

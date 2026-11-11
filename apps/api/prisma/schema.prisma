@@ -546,6 +546,7 @@ model Company {
   contacts                          Contact[]
   crmActivities                     CrmActivity[]
   crmAgentSettings                  CrmAgentSettings?
+  chatChannels                      ChatChannel[]
   crmMarketingAssets                CrmMarketingAsset[]
   fbrSettings                       FbrSettings?
   fbrSubmissions                    FbrSubmission[]
@@ -3441,4 +3442,81 @@ model PlatformAlertState {
   updatedAt DateTime @updatedAt
 
   @@map("platform_alert_states")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Team chat (always on for every company): channels, one-to-one chats, files
+// ─────────────────────────────────────────────────────────────────────────
+
+enum ChatChannelKind {
+  CHANNEL
+  DIRECT
+}
+
+model ChatChannel {
+  id              String          @id @default(uuid())
+  companyId       String
+  company         Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  kind            ChatChannelKind @default(CHANNEL)
+  // Null for one-to-one chats (they are titled after the other person).
+  name            String?
+  // Public channels are open to every member of the company; private ones and DMs only to their members.
+  isPrivate       Boolean         @default(false)
+  // "<userIdA>:<userIdB>" (sorted) so a pair of people always shares exactly one DM.
+  dmKey           String?
+  createdByUserId String
+  createdAt       DateTime        @default(now())
+  lastMessageAt   DateTime        @default(now())
+
+  members  ChatMember[]
+  messages ChatMessage[]
+
+  @@unique([companyId, dmKey])
+  @@unique([companyId, name])
+  @@index([companyId, lastMessageAt])
+  @@map("chat_channels")
+}
+
+model ChatMember {
+  id         String      @id @default(uuid())
+  channelId  String
+  channel    ChatChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  userId     String
+  // Everything after this moment, from other people, counts as unread.
+  lastReadAt DateTime    @default(now())
+  joinedAt   DateTime    @default(now())
+
+  @@unique([channelId, userId])
+  @@index([userId])
+  @@map("chat_members")
+}
+
+model ChatMessage {
+  id            String          @id @default(uuid())
+  channelId     String
+  channel       ChatChannel     @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  companyId     String
+  senderUserId  String
+  body          String          @default("") @db.Text
+  createdAt     DateTime        @default(now())
+  // Bumped on delete, so clients polling "changed since" also see removals.
+  updatedAt     DateTime        @default(now()) @updatedAt
+  deletedAt     DateTime?
+  attachment    ChatAttachment?
+
+  @@index([channelId, createdAt])
+  @@index([channelId, updatedAt])
+  @@map("chat_messages")
+}
+
+model ChatAttachment {
+  id        String      @id @default(uuid())
+  messageId String      @unique
+  message   ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  filename  String
+  mimeType  String
+  size      Int
+  data      Bytes
+
+  @@map("chat_attachments")
 }

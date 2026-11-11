@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { apiClient } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { useCompanies } from "../hooks/useCompanies";
 import { IdleTimeoutGuard } from "./IdleTimeoutGuard";
@@ -164,7 +165,11 @@ export function Layout() {
   const { companies } = useCompanies();
   const navigate = useNavigate();
   const routerLocation = useLocation();
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sidebarCollapsed") === "1");
+  // First visit on a phone starts with the menu collapsed, so the page itself gets the width.
+  const [collapsed, setCollapsed] = useState(() => {
+    const stored = localStorage.getItem("sidebarCollapsed");
+    return stored === null ? window.innerWidth <= 800 : stored === "1";
+  });
   const [expandedSections, setExpandedSections] = useState<Set<string>>(loadExpandedSections);
 
   // Cross-tenant SaaS-provider dashboard — visible only to the platform
@@ -172,6 +177,29 @@ export function Layout() {
   // Settings) since it isn't scoped to whichever company happens to be
   // selected right now.
   const isEntitled = (moduleKey: string) => !!user?.isPlatformAdmin || !!user?.enabledModules?.includes(moduleKey);
+
+  // Team chat is on for every company; roles holding chat.use see it. The badge counts messages you haven't read.
+  const canChat = !!user?.permissions?.includes("chat.use");
+  const [chatUnread, setChatUnread] = useState(0);
+  useEffect(() => {
+    if (!canChat) return;
+    let alive = true;
+    const load = () =>
+      apiClient
+        .get<{ unread: number }>("/chat/unread")
+        .then((res) => alive && setChatUnread(res.data.unread))
+        .catch(() => undefined);
+    load();
+    const timer = setInterval(() => {
+      if (!document.hidden) load();
+    }, 20000);
+    window.addEventListener("chat:unread", load);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+      window.removeEventListener("chat:unread", load);
+    };
+  }, [canChat, user?.activeCompanyId]);
 
   const workingCapitalIndex = NAV_SECTIONS.findIndex((s) => s.label === "Working Capital");
   // Pakistan companies report to FBR, never ZATCA — swap the tax-authority
@@ -200,9 +228,13 @@ export function Layout() {
       )
     : sectionsWithModules;
 
-  const sections: NavSection[] = user?.isPlatformAdmin
-    ? [{ label: "Platform", items: [{ to: "/platform", label: "Client Dashboard" }] }, ...sectionsWithActivityLog]
+  const withChat: NavSection[] = canChat
+    ? [{ label: "Team", items: [{ to: "/chat", label: "Team Chat" }] }, ...sectionsWithActivityLog]
     : sectionsWithActivityLog;
+
+  const sections: NavSection[] = user?.isPlatformAdmin
+    ? [{ label: "Platform", items: [{ to: "/platform", label: "Client Dashboard" }] }, ...withChat]
+    : withChat;
 
   function toggleSidebar() {
     setCollapsed((v) => {
@@ -270,6 +302,7 @@ export function Layout() {
                     {section.items.map((item) => (
                       <NavLink key={item.to} to={item.to}>
                         {item.label}
+                        {item.to === "/chat" && chatUnread > 0 && <span className="nav-badge">{chatUnread > 99 ? "99+" : chatUnread}</span>}
                       </NavLink>
                     ))}
                   </div>

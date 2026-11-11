@@ -418,6 +418,7 @@ export const PERMISSIONS = {
   CRM_OPPORTUNITY_VIEW: "crm.opportunity.view",
   CRM_CONTACT_MANAGE: "crm.contact.manage",
   CRM_ACTIVITY_MANAGE: "crm.activity.manage",
+  CHAT_USE: "chat.use",
   SETTINGS_TEMPLATES_MANAGE: "settings.templates.manage",
   SETTINGS_ACTIVITY_LOG_VIEW: "settings.activity-log.view",
 } as const;
