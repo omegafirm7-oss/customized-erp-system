@@ -2897,3 +2897,6 @@ button.crm-menu-btn {
   .chat-shell:not(.show-list) .chat-sidebar { display: none; }
   .chat-back { display: inline-block; }
 }
+.chat-side-head { display: flex; justify-content: space-between; align-items: center; }
+.chat-credentials { white-space: pre-wrap; overflow-wrap: anywhere; background: #f2f4f7; border: 1px solid #e4e7ec; border-radius: 8px; padding: 10px 12px; font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; user-select: all; }
+.chat-mailto { display: inline-flex; align-items: center; padding: 6px 12px; border: 1px solid #d0d5dd; border-radius: 6px; color: #344054; text-decoration: none; }

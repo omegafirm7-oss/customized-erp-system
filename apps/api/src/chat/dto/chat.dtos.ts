@@ -1,5 +1,5 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { ArrayMaxSize, IsArray, IsBoolean, IsOptional, IsString, IsUUID, Length, MaxLength } from "class-validator";
+import { ArrayMaxSize, IsArray, IsBoolean, IsEmail, IsOptional, IsString, IsUUID, Length, MaxLength } from "class-validator";
 
 export class CreateChannelDto {
   @ApiProperty()
@@ -19,6 +19,19 @@ export class CreateChannelDto {
   @ArrayMaxSize(200)
   @IsUUID("all", { each: true })
   memberUserIds?: string[];
+}
+
+export class InvitePersonDto {
+  @ApiProperty()
+  @IsEmail()
+  email!: string;
+
+  /** Needed only when this email has no Universa account yet. */
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  fullName?: string;
 }
 
 export class DirectChannelDto {

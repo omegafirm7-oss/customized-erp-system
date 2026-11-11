@@ -143,6 +143,35 @@ describe("Team chat (e2e)", () => {
     expect((await get(outsider.accessToken, "/chat/channels").expect(200)).body.some((c: any) => c.id === general.id)).toBe(false);
   });
 
+  it("lets an admin add a colleague by email with chat-only access, and nobody else", async () => {
+    const { owner, bea } = await setup();
+    const email = uniqueEmail("newbie");
+
+    // a brand-new email needs a name so an account can be created
+    await post(owner.token, "/chat/invite").send({ email }).expect(400);
+    const invited = (await post(owner.token, "/chat/invite").send({ email, fullName: "Nora Newcomer" }).expect(201)).body;
+    expect(invited).toMatchObject({ email, alreadyMember: false, existingAccount: false });
+    expect(invited.tempPassword).toHaveLength(12);
+
+    // she can sign in and use chat, but nothing else in the company
+    const nora = (await request(app.getHttpServer()).post("/auth/login").send({ email, password: invited.tempPassword }).expect(201)).body.accessToken;
+    expect((await get(nora, "/chat/channels").expect(200)).body.some((c: any) => c.name === "general")).toBe(true);
+    await get(nora, "/partners").expect(403);
+    expect((await get(owner.token, "/chat/people").expect(200)).body.some((p: any) => p.email === email)).toBe(true);
+
+    // inviting the same address again just reports she is already in
+    const again = (await post(owner.token, "/chat/invite").send({ email: email.toUpperCase() }).expect(201)).body;
+    expect(again).toMatchObject({ alreadyMember: true, tempPassword: null });
+
+    // someone who already has a Universa login elsewhere keeps it: no new password
+    const other = await setupUserWithCompany(app);
+    const existing = (await post(owner.token, "/chat/invite").send({ email: other.email }).expect(201)).body;
+    expect(existing).toMatchObject({ existingAccount: true, alreadyMember: false, tempPassword: null });
+
+    // only someone who can manage users may add people
+    await post(bea.token, "/chat/invite").send({ email: uniqueEmail("x"), fullName: "Xavier Yu" }).expect(403);
+  });
+
   it("only lets roles that hold chat.use in", async () => {
     const { owner } = await setup();
     const noChat = await addMember(owner.companyId, ["projects.project.view"], "Read Only");

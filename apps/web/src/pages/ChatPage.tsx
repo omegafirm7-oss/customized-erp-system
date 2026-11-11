@@ -1,6 +1,7 @@
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 import { apiClient } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { useHasPermission } from "../hooks/useHasPermission";
 import { AttachmentViewer } from "../components/AttachmentViewer";
 
 interface Channel {
@@ -38,6 +39,15 @@ interface Message {
   createdAt: string;
   updatedAt: string;
   attachment: Attachment | null;
+}
+
+interface InviteResult {
+  userId: string;
+  email: string;
+  fullName: string;
+  alreadyMember: boolean;
+  existingAccount: boolean;
+  tempPassword: string | null;
 }
 
 interface Details {
@@ -134,7 +144,13 @@ export function ChatPage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showList, setShowList] = useState(true);
-  const [modal, setModal] = useState<null | "channel" | "direct" | "members">(null);
+  const [modal, setModal] = useState<null | "channel" | "direct" | "members" | "invite">(null);
+  const canInvite = useHasPermission("iam.user.manage");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteName, setInviteName] = useState("");
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [invited, setInvited] = useState<InviteResult | null>(null);
+  const [copied, setCopied] = useState(false);
   const [viewer, setViewer] = useState<Attachment | null>(null);
   const [newName, setNewName] = useState("");
   const [newPrivate, setNewPrivate] = useState(false);
@@ -316,7 +332,11 @@ export function ChatPage() {
     URL.revokeObjectURL(url);
   }
 
-  function openModal(kind: "channel" | "direct" | "members") {
+  function openModal(kind: "channel" | "direct" | "members" | "invite") {
+    setInviteEmail("");
+    setInviteName("");
+    setInvited(null);
+    setCopied(false);
     setNewName("");
     setNewPrivate(false);
     setPicked(new Set());
@@ -343,6 +363,34 @@ export function ChatPage() {
       openChannel(res.data.id);
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "Couldn't create the channel");
+    }
+  }
+
+  async function sendInvite(e: FormEvent) {
+    e.preventDefault();
+    setInviteBusy(true);
+    setError(null);
+    try {
+      const res = await apiClient.post<InviteResult>("/chat/invite", { email: inviteEmail.trim(), fullName: inviteName.trim() || undefined });
+      setInvited(res.data);
+      apiClient.get<Person[]>("/chat/people").then((p) => setPeople(p.data)).catch(() => undefined);
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Couldn't add this person");
+    } finally {
+      setInviteBusy(false);
+    }
+  }
+
+  function signInDetails(r: InviteResult) {
+    return `Hi ${r.fullName.split(" ")[0]},\n\nYou've been added to our team chat on Universa Centrix.\n\nSign in: ${window.location.origin}\nEmail: ${r.email}\nTemporary password: ${r.tempPassword}\n\nPlease change your password after you sign in.`;
+  }
+
+  async function copyDetails(r: InviteResult) {
+    try {
+      await navigator.clipboard.writeText(signInDetails(r));
+      setCopied(true);
+    } catch {
+      setError("Couldn't copy. Select the details and copy them by hand.");
     }
   }
 
@@ -414,6 +462,11 @@ export function ChatPage() {
       <aside className="chat-sidebar">
         <div className="chat-side-head">
           <strong>Team Chat</strong>
+          {canInvite && (
+            <button type="button" className="secondary" onClick={() => openModal("invite")}>
+              Invite
+            </button>
+          )}
         </div>
         <div className="chat-side-scroll">
           <div className="chat-section-title">
@@ -575,9 +628,77 @@ export function ChatPage() {
                       <span className="chat-row-icon">{initials(p.name)}</span> {p.name} <span>{p.email}</span>
                     </button>
                   ))}
-                  {filteredPeople.length === 0 && <p className="chat-empty-note">No one else is in this company yet. Invite people from Users.</p>}
+                  {filteredPeople.length === 0 && (
+                    <p className="chat-empty-note">{canInvite ? "No one else is in this company yet. Invite them by email." : "No one else is in this company yet."}</p>
+                  )}
                 </div>
+                {canInvite && (
+                  <button type="button" className="secondary" onClick={() => openModal("invite")}>
+                    Invite someone by email
+                  </button>
+                )}
                 {error && <div className="error-banner">{error}</div>}
+              </div>
+            )}
+
+            {modal === "invite" && (
+              <div>
+                <h3>Invite a colleague by email</h3>
+                {!invited ? (
+                  <form onSubmit={sendInvite}>
+                    <p className="chat-empty-note" style={{ padding: 0 }}>
+                      They get chat access only. They won't see any accounting data. If they already have a Universa login they keep it.
+                    </p>
+                    <input type="email" placeholder="Their email address" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} required autoFocus style={{ width: "100%", marginBottom: 8 }} />
+                    <input placeholder="Their name (needed if they don't have a Universa login yet)" value={inviteName} onChange={(e) => setInviteName(e.target.value)} maxLength={100} style={{ width: "100%" }} />
+                    {error && <div className="error-banner">{error}</div>}
+                    <div className="form-row" style={{ justifyContent: "flex-end", marginTop: 12 }}>
+                      <button type="button" className="secondary" onClick={() => setModal(null)}>
+                        Cancel
+                      </button>
+                      <button type="submit" disabled={inviteBusy || !inviteEmail.trim()}>
+                        {inviteBusy ? "Adding…" : "Add to chat"}
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div>
+                    {invited.alreadyMember && <p><strong>{invited.fullName}</strong> is already in this company, so you can chat with them now.</p>}
+                    {!invited.alreadyMember && invited.existingAccount && (
+                      <p>
+                        <strong>{invited.fullName}</strong> was added. They already have a Universa login, so they sign in as usual and pick this company from the company list.
+                      </p>
+                    )}
+                    {invited.tempPassword && (
+                      <>
+                        <p>
+                          <strong>{invited.fullName}</strong> was added. Send them these sign-in details privately. The password is shown only now.
+                        </p>
+                        <pre className="chat-credentials">{signInDetails(invited)}</pre>
+                        <div className="form-row">
+                          <button type="button" onClick={() => copyDetails(invited)}>
+                            {copied ? "Copied" : "Copy details"}
+                          </button>
+                          <a
+                            className="chat-mailto"
+                            href={`mailto:${invited.email}?subject=${encodeURIComponent("You're invited to our team chat on Universa Centrix")}&body=${encodeURIComponent(signInDetails(invited))}`}
+                          >
+                            Open in my email app
+                          </a>
+                        </div>
+                      </>
+                    )}
+                    {error && <div className="error-banner">{error}</div>}
+                    <div className="form-row" style={{ justifyContent: "space-between", marginTop: 12 }}>
+                      <button type="button" className="secondary" onClick={() => openModal("invite")}>
+                        Invite another
+                      </button>
+                      <button type="button" onClick={() => startDirect(invited.userId)}>
+                        Start a chat with them
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

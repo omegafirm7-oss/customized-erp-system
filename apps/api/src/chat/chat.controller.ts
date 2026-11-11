@@ -17,12 +17,12 @@ import { ApiBearerAuth, ApiConsumes, ApiTags } from "@nestjs/swagger";
 import { memoryStorage } from "multer";
 import { Response } from "express";
 import { PERMISSIONS } from "@erp/shared-constants";
-import { Permissions } from "../common/decorators/permissions.decorator";
+import { Permissions, SensitivePermission } from "../common/decorators/permissions.decorator";
 import { CurrentCompanyId } from "../common/decorators/current-company-id.decorator";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { JwtPayload } from "../auth/types/jwt-payload.type";
 import { ChatService } from "./chat.service";
-import { AddMembersDto, CreateChannelDto, DirectChannelDto, PostMessageDto } from "./dto/chat.dtos";
+import { AddMembersDto, CreateChannelDto, DirectChannelDto, InvitePersonDto, PostMessageDto } from "./dto/chat.dtos";
 
 // Team chat is on for every company; the chat.use permission decides which roles may use it.
 @ApiTags("chat")
@@ -35,6 +35,14 @@ export class ChatController {
   @Get("people")
   people(@CurrentCompanyId() companyId: string) {
     return this.chatService.listPeople(companyId);
+  }
+
+  /** Adds a colleague by email with chat-only access. Needs the same right as adding a user under Users. */
+  @Post("invite")
+  @Permissions(PERMISSIONS.CHAT_USE, PERMISSIONS.IAM_USER_MANAGE)
+  @SensitivePermission()
+  invite(@CurrentCompanyId() companyId: string, @CurrentUser() user: JwtPayload, @Body() dto: InvitePersonDto) {
+    return this.chatService.invitePerson(companyId, user.sub, dto);
   }
 
   @Get("channels")

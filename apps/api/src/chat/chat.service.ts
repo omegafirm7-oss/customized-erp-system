@@ -1,6 +1,10 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { ChatChannelKind } from "@prisma/client";
+import { randomInt } from "crypto";
+import * as argon2 from "argon2";
+import { PERMISSIONS } from "@erp/shared-constants";
 import { PrismaService } from "../common/prisma/prisma.service";
+import { AuditService } from "../audit/audit.service";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const PAGE_SIZE = 50;
@@ -8,6 +12,14 @@ const PAGE_SIZE = 50;
 const BLOCKED_EXTENSIONS = new Set([
   "exe", "bat", "cmd", "com", "msi", "scr", "ps1", "vbs", "vbe", "js", "jse", "jar", "sh", "app", "apk", "dll", "lnk", "reg", "hta", "wsf",
 ]);
+
+/** 12 characters from an unambiguous alphabet (no 0/O, 1/l/I), drawn from a cryptographic source. */
+function randomPassword(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+  let out = "";
+  for (let i = 0; i < 12; i++) out += chars[randomInt(chars.length)];
+  return out;
+}
 
 export interface ChatFileInput {
   originalname: string;
@@ -18,7 +30,10 @@ export interface ChatFileInput {
 
 @Injectable()
 export class ChatService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+  ) {}
 
   // ── people ──────────────────────────────────────────────────────────
 
@@ -31,6 +46,62 @@ export class ChatService {
     return members
       .map((m) => ({ id: m.user.id, name: m.user.fullName, email: m.user.email }))
       .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /**
+   * Adds someone to the company by email so they can be chatted with. They get a "Chat Only" role (chat.use and
+   * nothing else), so a colleague abroad can join the conversation without seeing any accounting data. A person who
+   * already has a Universa login keeps it; a new person gets a temporary password the admin hands over.
+   */
+  async invitePerson(companyId: string, invitedByUserId: string, dto: { email: string; fullName?: string }) {
+    const email = dto.email.trim().toLowerCase();
+    const existing = await this.prisma.user.findUnique({ where: { email } });
+
+    if (existing) {
+      const membership = await this.prisma.companyUser.findUnique({ where: { userId_companyId: { userId: existing.id, companyId } } });
+      if (membership) {
+        if (membership.status !== "ACTIVE") {
+          throw new ConflictException("This person's access to the company is suspended. Reactivate them under Users.");
+        }
+        return { userId: existing.id, email, fullName: existing.fullName, alreadyMember: true, existingAccount: true, tempPassword: null as string | null };
+      }
+    } else if (!dto.fullName?.trim() || dto.fullName.trim().length < 2) {
+      throw new BadRequestException("This email has no Universa account yet. Enter their name so one can be created.");
+    }
+
+    const role = await this.chatOnlyRole(companyId);
+    let userId = existing?.id;
+    let fullName = existing?.fullName ?? dto.fullName!.trim();
+    let tempPassword: string | null = null;
+    if (!existing) {
+      tempPassword = randomPassword();
+      const passwordHash = await argon2.hash(tempPassword, { type: argon2.argon2id });
+      const created = await this.prisma.user.create({ data: { email, fullName, passwordHash } });
+      userId = created.id;
+    }
+    await this.prisma.companyUser.create({
+      data: { userId: userId!, companyId, roleId: role.id, status: "ACTIVE", joinedAt: new Date() },
+    });
+    await this.auditService.log({
+      companyId,
+      entityName: "CompanyUser",
+      entityId: userId!,
+      action: "CREATE",
+      changedByUserId: invitedByUserId,
+      afterSnapshot: { email, roleName: role.name, via: "team chat invite", newAccount: !existing },
+    });
+    return { userId: userId!, email, fullName, alreadyMember: false, existingAccount: !!existing, tempPassword };
+  }
+
+  /** The company's role that carries only chat.use, created the first time someone is invited. */
+  private async chatOnlyRole(companyId: string) {
+    const found = await this.prisma.role.findFirst({ where: { companyId, name: "Chat Only" } });
+    if (found) return found;
+    const permission = await this.prisma.permission.findUnique({ where: { key: PERMISSIONS.CHAT_USE } });
+    if (!permission) throw new BadRequestException("The chat permission hasn't been set up on this server yet");
+    return this.prisma.role.create({
+      data: { companyId, name: "Chat Only", rolePermissions: { create: [{ permissionId: permission.id }] } },
+    });
   }
 
   private async nameMap(userIds: string[]) {
