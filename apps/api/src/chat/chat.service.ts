@@ -294,7 +294,18 @@ export class ChatService {
     throw new ForbiddenException("You are not in this conversation");
   }
 
-  async channelDetails(companyId: string, channelId: string, userId: string) {
+  /**
+   * The channel for a management action (add/remove people, rename, delete). Members and anyone for a public
+   * channel as usual; an admin may also manage a private channel they are not in, without being able to read it.
+   */
+  private async channelForManage(companyId: string, channelId: string, userId: string, isAdmin: boolean) {
+    const channel = await this.prisma.chatChannel.findFirst({ where: { id: channelId, companyId } });
+    if (!channel) throw new NotFoundException("Channel not found");
+    if (isAdmin && channel.kind === ChatChannelKind.CHANNEL) return channel;
+    return (await this.accessibleChannel(companyId, channelId, userId)).channel;
+  }
+
+  async channelDetails(companyId: string, channelId: string, userId: string, isAdmin = false) {
     const { channel } = await this.accessibleChannel(companyId, channelId, userId);
     const members = await this.prisma.chatMember.findMany({ where: { channelId }, select: { userId: true } });
     const names = await this.nameMap(members.map((m) => m.userId));
@@ -304,23 +315,53 @@ export class ChatService {
       name: channel.kind === ChatChannelKind.DIRECT ? (names.get(members.find((m) => m.userId !== userId)?.userId ?? "") ?? "Direct message") : channel.name,
       isPrivate: channel.isPrivate,
       createdByMe: channel.createdByUserId === userId,
+      // The creator, or an admin who can manage users, may rename, add or remove people, and delete the channel.
+      canManage: channel.kind === ChatChannelKind.CHANNEL && (channel.createdByUserId === userId || isAdmin),
       members: members.map((m) => ({ id: m.userId, name: names.get(m.userId) ?? "" })).sort((a, b) => a.name.localeCompare(b.name)),
     };
   }
 
-  async addMembers(companyId: string, channelId: string, userId: string, userIds: string[]) {
-    const { channel } = await this.accessibleChannel(companyId, channelId, userId);
+  async addMembers(companyId: string, channelId: string, userId: string, userIds: string[], isAdmin = false) {
+    const channel = await this.channelForManage(companyId, channelId, userId, isAdmin);
     if (channel.kind === ChatChannelKind.DIRECT) throw new BadRequestException("A direct message is between two people");
+    if (channel.createdByUserId !== userId && !isAdmin) throw new ForbiddenException("Only the channel's creator or an admin can add people");
     if (!channel.isPrivate) throw new BadRequestException("Everyone in the company is already in a public channel");
     await this.assertCompanyMembers(companyId, userIds);
     await this.prisma.chatMember.createMany({ data: userIds.map((id) => ({ channelId, userId: id })), skipDuplicates: true });
     return { added: userIds.length };
   }
 
-  async deleteChannel(companyId: string, channelId: string, userId: string) {
-    const { channel } = await this.accessibleChannel(companyId, channelId, userId);
+  async renameChannel(companyId: string, channelId: string, userId: string, rawName: string, isAdmin = false) {
+    const channel = await this.channelForManage(companyId, channelId, userId, isAdmin);
+    if (channel.kind === ChatChannelKind.DIRECT) throw new BadRequestException("A direct message has no name to change");
+    if (channel.createdByUserId !== userId && !isAdmin) throw new ForbiddenException("Only the channel's creator or an admin can rename it");
+    const name = rawName.trim().replace(/^#+/, "").replace(/\s+/g, "-").toLowerCase();
+    if (!name) throw new BadRequestException("Give the channel a name");
+    if (name === channel.name) return { id: channel.id, name };
+    const clash = await this.prisma.chatChannel.findFirst({ where: { companyId, name, NOT: { id: channelId } }, select: { id: true } });
+    if (clash) throw new ConflictException(`A channel called #${name} already exists`);
+    await this.prisma.chatChannel.update({ where: { id: channelId }, data: { name } });
+    return { id: channel.id, name };
+  }
+
+  /** Takes someone out of a private channel. A person can always remove themselves (leave). */
+  async removeMember(companyId: string, channelId: string, userId: string, targetUserId: string, isAdmin = false) {
+    const channel = await this.channelForManage(companyId, channelId, userId, isAdmin);
+    if (channel.kind === ChatChannelKind.DIRECT) throw new BadRequestException("You can't remove someone from a direct message");
+    if (!channel.isPrivate) throw new BadRequestException("Everyone in the company is in a public channel");
+    const leaving = targetUserId === userId;
+    if (!leaving && channel.createdByUserId !== userId && !isAdmin) {
+      throw new ForbiddenException("Only the channel's creator or an admin can remove people");
+    }
+    const removed = await this.prisma.chatMember.deleteMany({ where: { channelId, userId: targetUserId } });
+    if (removed.count === 0) throw new NotFoundException("That person isn't in this channel");
+    return { removed: true };
+  }
+
+  async deleteChannel(companyId: string, channelId: string, userId: string, isAdmin = false) {
+    const channel = await this.channelForManage(companyId, channelId, userId, isAdmin);
     if (channel.kind === ChatChannelKind.DIRECT) throw new BadRequestException("A direct message can't be deleted");
-    if (channel.createdByUserId !== userId) throw new ForbiddenException("Only the person who created the channel can delete it");
+    if (channel.createdByUserId !== userId && !isAdmin) throw new ForbiddenException("Only the channel's creator or an admin can delete it");
     await this.prisma.chatChannel.delete({ where: { id: channelId } });
     return { deleted: true };
   }

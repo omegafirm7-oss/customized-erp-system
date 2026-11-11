@@ -5,6 +5,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Res,
@@ -22,7 +23,10 @@ import { CurrentCompanyId } from "../common/decorators/current-company-id.decora
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { JwtPayload } from "../auth/types/jwt-payload.type";
 import { ChatService } from "./chat.service";
-import { AddMembersDto, CreateChannelDto, DirectChannelDto, InvitePersonDto, PostMessageDto } from "./dto/chat.dtos";
+import { AddMembersDto, CreateChannelDto, DirectChannelDto, InvitePersonDto, PostMessageDto, RenameChannelDto } from "./dto/chat.dtos";
+
+/** Admins (anyone who can manage users) may manage every channel, not just the ones they created. */
+const isAdmin = (user: JwtPayload) => user.permissions.includes(PERMISSIONS.IAM_USER_MANAGE);
 
 // Team chat is on for every company; the chat.use permission decides which roles may use it.
 @ApiTags("chat")
@@ -67,7 +71,7 @@ export class ChatController {
 
   @Get("channels/:id")
   channel(@CurrentCompanyId() companyId: string, @CurrentUser() user: JwtPayload, @Param("id") id: string) {
-    return this.chatService.channelDetails(companyId, id, user.sub);
+    return this.chatService.channelDetails(companyId, id, user.sub, isAdmin(user));
   }
 
   @Post("channels/:id/members")
@@ -77,12 +81,32 @@ export class ChatController {
     @Param("id") id: string,
     @Body() dto: AddMembersDto,
   ) {
-    return this.chatService.addMembers(companyId, id, user.sub, dto.userIds);
+    return this.chatService.addMembers(companyId, id, user.sub, dto.userIds, isAdmin(user));
+  }
+
+  @Patch("channels/:id")
+  rename(
+    @CurrentCompanyId() companyId: string,
+    @CurrentUser() user: JwtPayload,
+    @Param("id") id: string,
+    @Body() dto: RenameChannelDto,
+  ) {
+    return this.chatService.renameChannel(companyId, id, user.sub, dto.name, isAdmin(user));
+  }
+
+  @Delete("channels/:id/members/:userId")
+  removeMember(
+    @CurrentCompanyId() companyId: string,
+    @CurrentUser() user: JwtPayload,
+    @Param("id") id: string,
+    @Param("userId") targetUserId: string,
+  ) {
+    return this.chatService.removeMember(companyId, id, user.sub, targetUserId, isAdmin(user));
   }
 
   @Delete("channels/:id")
   deleteChannel(@CurrentCompanyId() companyId: string, @CurrentUser() user: JwtPayload, @Param("id") id: string) {
-    return this.chatService.deleteChannel(companyId, id, user.sub);
+    return this.chatService.deleteChannel(companyId, id, user.sub, isAdmin(user));
   }
 
   @Get("channels/:id/messages")

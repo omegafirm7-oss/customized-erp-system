@@ -143,6 +143,49 @@ describe("Team chat (e2e)", () => {
     expect((await get(outsider.accessToken, "/chat/channels").expect(200)).body.some((c: any) => c.id === general.id)).toBe(false);
   });
 
+  it("lets the creator or an admin rename, add, remove and delete a channel, and members leave on their own", async () => {
+    const { owner, bea, cai } = await setup();
+    const del = (token: string, url: string) => request(app.getHttpServer()).delete(url).set(auth(token));
+    const patch = (token: string, url: string) => request(app.getHttpServer()).patch(url).set(auth(token));
+    await get(owner.token, "/chat/channels").expect(200); // opening the chat creates #general
+
+    const ch = (await post(bea.token, "/chat/channels").send({ name: "Ops Team", isPrivate: true, memberUserIds: [cai.userId] }).expect(201)).body;
+    expect((await get(bea.token, `/chat/channels/${ch.id}`).expect(200)).body.canManage).toBe(true);
+    expect((await get(cai.token, `/chat/channels/${ch.id}`).expect(200)).body.canManage).toBe(false);
+
+    // a plain member can't manage it
+    await patch(cai.token, `/chat/channels/${ch.id}`).send({ name: "mine-now" }).expect(403);
+    await post(cai.token, `/chat/channels/${ch.id}/members`).send({ userIds: [owner.userId] }).expect(403);
+    await del(cai.token, `/chat/channels/${ch.id}/members/${bea.userId}`).expect(403);
+    await del(cai.token, `/chat/channels/${ch.id}`).expect(403);
+
+    // the creator renames it; a name already taken is refused
+    expect((await patch(bea.token, `/chat/channels/${ch.id}`).send({ name: "Ops Central" }).expect(200)).body.name).toBe("ops-central");
+    await patch(bea.token, `/chat/channels/${ch.id}`).send({ name: "general" }).expect(409);
+
+    // removing someone cuts their access
+    await del(bea.token, `/chat/channels/${ch.id}/members/${cai.userId}`).expect(200);
+    await get(cai.token, `/chat/channels/${ch.id}/messages`).expect(403);
+    await del(bea.token, `/chat/channels/${ch.id}/members/${cai.userId}`).expect(404);
+
+    // a member can leave on their own
+    await post(bea.token, `/chat/channels/${ch.id}/members`).send({ userIds: [cai.userId] }).expect(201);
+    await get(cai.token, `/chat/channels/${ch.id}/messages`).expect(200);
+    await del(cai.token, `/chat/channels/${ch.id}/members/${cai.userId}`).expect(200);
+    await get(cai.token, `/chat/channels/${ch.id}/messages`).expect(403);
+
+    // an admin who isn't in the channel can still manage it, but can't read it
+    await get(owner.token, `/chat/channels/${ch.id}/messages`).expect(403);
+    expect((await patch(owner.token, `/chat/channels/${ch.id}`).send({ name: "ops-hq" }).expect(200)).body.name).toBe("ops-hq");
+    await del(owner.token, `/chat/channels/${ch.id}`).expect(200);
+    await get(bea.token, `/chat/channels/${ch.id}/messages`).expect(404);
+
+    // direct messages can't be renamed or deleted
+    const dm = (await post(bea.token, "/chat/direct").send({ userId: cai.userId }).expect(201)).body;
+    await patch(bea.token, `/chat/channels/${dm.id}`).send({ name: "x" }).expect(400);
+    await del(bea.token, `/chat/channels/${dm.id}`).expect(400);
+  });
+
   it("lets an admin add a colleague by email with chat-only access, and nobody else", async () => {
     const { owner, bea } = await setup();
     const email = uniqueEmail("newbie");

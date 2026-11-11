@@ -21,6 +21,13 @@ export class CreateChannelDto {
   memberUserIds?: string[];
 }
 
+export class RenameChannelDto {
+  @ApiProperty()
+  @IsString()
+  @Length(1, 40)
+  name!: string;
+}
+
 export class InvitePersonDto {
   @ApiProperty()
   @IsEmail()

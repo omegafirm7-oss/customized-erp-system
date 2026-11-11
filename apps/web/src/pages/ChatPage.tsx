@@ -56,6 +56,8 @@ interface Details {
   name: string;
   isPrivate: boolean;
   createdByMe: boolean;
+  /** The creator, or an admin, may rename, add/remove people and delete the channel. */
+  canManage: boolean;
   members: Array<{ id: string; name: string }>;
 }
 
@@ -151,6 +153,7 @@ export function ChatPage() {
   const [inviteBusy, setInviteBusy] = useState(false);
   const [invited, setInvited] = useState<InviteResult | null>(null);
   const [copied, setCopied] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
   const [viewer, setViewer] = useState<Attachment | null>(null);
   const [newName, setNewName] = useState("");
   const [newPrivate, setNewPrivate] = useState(false);
@@ -337,6 +340,7 @@ export function ChatPage() {
     setInviteName("");
     setInvited(null);
     setCopied(false);
+    setRenameValue(details?.name ?? "");
     setNewName("");
     setNewPrivate(false);
     setPicked(new Set());
@@ -415,6 +419,45 @@ export function ChatPage() {
       loadChannels();
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "Couldn't add them");
+    }
+  }
+
+  async function renameChannel(e: FormEvent) {
+    e.preventDefault();
+    if (!activeId || !renameValue.trim()) return;
+    setError(null);
+    try {
+      await apiClient.patch(`/chat/channels/${activeId}`, { name: renameValue });
+      const det = await apiClient.get<Details>(`/chat/channels/${activeId}`);
+      setDetails(det.data);
+      setRenameValue(det.data.name);
+      loadChannels();
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Couldn't rename the channel");
+    }
+  }
+
+  async function removeMember(userId: string, name: string) {
+    if (!activeId) return;
+    const leaving = userId === me;
+    if (!window.confirm(leaving ? "Leave this channel? You won't see its messages unless someone adds you back." : `Remove ${name} from this channel?`)) return;
+    setError(null);
+    try {
+      await apiClient.delete(`/chat/channels/${activeId}/members/${userId}`);
+      if (leaving) {
+        setModal(null);
+        setActiveId(null);
+        setDetails(null);
+        setMessages([]);
+        setShowList(true);
+      } else {
+        const det = await apiClient.get<Details>(`/chat/channels/${activeId}`);
+        setDetails(det.data);
+      }
+      loadChannels();
+      announceUnread();
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Couldn't remove them");
     }
   }
 
@@ -707,14 +750,31 @@ export function ChatPage() {
                 <h3>
                   {details.isPrivate ? <Lock /> : "#"} {details.name}: members
                 </h3>
+
+                {details.canManage && details.kind === "CHANNEL" && (
+                  <form onSubmit={renameChannel} className="form-row" style={{ marginBottom: 8 }}>
+                    <input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} maxLength={40} style={{ flex: 1 }} aria-label="Channel name" />
+                    <button type="submit" disabled={!renameValue.trim() || renameValue.trim().replace(/^#+/, "").replace(/\s+/g, "-").toLowerCase() === details.name}>
+                      Rename
+                    </button>
+                  </form>
+                )}
+
                 <div className="chat-pick-list">
                   {details.members.map((m) => (
                     <div key={m.id} className="chat-person-static">
                       <span className="chat-row-icon">{initials(m.name)}</span> {m.name}
+                      {m.id === me && <span className="chat-you">you</span>}
+                      {details.isPrivate && (details.canManage || m.id === me) && (
+                        <button type="button" className="secondary chat-remove" onClick={() => removeMember(m.id, m.name)}>
+                          {m.id === me ? "Leave" : "Remove"}
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
-                {details.isPrivate && notInChannel.length > 0 && (
+
+                {details.isPrivate && details.canManage && notInChannel.length > 0 && (
                   <>
                     <h4 style={{ marginBottom: 4 }}>Add people</h4>
                     <div className="chat-pick-list">
@@ -730,9 +790,15 @@ export function ChatPage() {
                   </>
                 )}
                 {!details.isPrivate && <p className="chat-empty-note">This is a public channel: everyone in the company is in it.</p>}
+                {canInvite && (
+                  <p className="chat-empty-note">
+                    To add someone new, use <strong>Invite</strong> in the sidebar. To change a person's name or role, or remove them from the company, use{" "}
+                    <a href="/admin/users">Users</a>.
+                  </p>
+                )}
                 {error && <div className="error-banner">{error}</div>}
                 <div className="form-row" style={{ justifyContent: "space-between", marginTop: 12 }}>
-                  {details.createdByMe && details.kind === "CHANNEL" ? (
+                  {details.canManage && details.kind === "CHANNEL" ? (
                     <button type="button" className="danger" onClick={deleteChannel}>
                       Delete channel
                     </button>
