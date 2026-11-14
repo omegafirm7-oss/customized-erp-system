@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { AttachButton } from "../components/AttachButton";
 import { AttachmentViewer } from "../components/AttachmentViewer";
+import { SalaryChangePanel } from "../components/SalaryChangePanel";
 import { useHasPermission } from "../hooks/useHasPermission";
 import { uploadEvidenceFile } from "../utils/uploadEvidence";
 
@@ -80,6 +81,7 @@ interface EmployeeDetail {
   otherAllowance: string;
   gosiExempt: boolean;
   costCenter: { id: string; code: string; name: string } | null;
+  salaryRevisions?: Array<{ id: string; effectiveFrom: string; basicSalary: string }>;
   loans: Loan[];
   finalSettlement: {
     id: string;
@@ -652,7 +654,15 @@ export function EmployeeDetailPage() {
           <div className="form-row">
             <div>
               <label>Basic </label>
-              <input type="number" min="0" step="0.01" value={detailsForm.basicSalary} onChange={set("basicSalary")} disabled={!active} />
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={detailsForm.basicSalary}
+                onChange={set("basicSalary")}
+                disabled
+                title="Use Salary changes below to change the basic salary from a date"
+              />
             </div>
             <div>
               <label>Housing </label>
@@ -672,6 +682,14 @@ export function EmployeeDetailPage() {
           </div>
         </form>
       </div>
+
+      <SalaryChangePanel
+        employeeId={employee.id}
+        employeeCode={employee.code}
+        currentSalary={employee.basicSalary}
+        canEdit={canEditHr && active}
+        onChanged={load}
+      />
 
       <div className="card">
         <h3>Loans &amp; advances</h3>

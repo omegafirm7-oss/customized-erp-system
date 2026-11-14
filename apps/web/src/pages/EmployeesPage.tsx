@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { useCanDownload } from "../hooks/useCanDownload";
+import { useHasPermission } from "../hooks/useHasPermission";
 
 interface Employee {
   id: string;
@@ -56,6 +57,10 @@ export function EmployeesPage() {
         : employees,
     [employees, nameQuery],
   );
+  const canManageHr = useHasPermission("hr.employee.manage");
+  const [raise, setRaise] = useState({ effectiveFrom: "", basicSalary: "", codes: "" });
+  const [raiseBusy, setRaiseBusy] = useState(false);
+  const [raiseMessage, setRaiseMessage] = useState<string | null>(null);
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -123,6 +128,35 @@ export function EmployeesPage() {
       setError(err?.response?.data?.message ?? "Failed to create employee");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function applyRaise(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setRaiseMessage(null);
+    const employeeCodes = raise.codes.split(/[\s,;]+/).filter(Boolean);
+    if (
+      !window.confirm(
+        `Set basic salary to ${raise.basicSalary} SAR from ${raise.effectiveFrom} for ${employeeCodes.length} employee(s)? Timesheet days before that date keep their old salary.`,
+      )
+    ) {
+      return;
+    }
+    setRaiseBusy(true);
+    try {
+      const res = await apiClient.post<{ results: Array<{ code: string }> }>("/hr/employees/salary-revisions", {
+        effectiveFrom: raise.effectiveFrom,
+        basicSalary: raise.basicSalary,
+        employeeCodes,
+      });
+      setRaiseMessage(`Salary change recorded for ${res.data.results.length} employee(s) from ${raise.effectiveFrom}.`);
+      setRaise({ effectiveFrom: "", basicSalary: "", codes: "" });
+      await load();
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to record the salary change");
+    } finally {
+      setRaiseBusy(false);
     }
   }
 
@@ -259,6 +293,52 @@ export function EmployeesPage() {
           </>
         )}
       </div>
+
+      {canManageHr && (
+        <div className="card">
+          <h3>Change salary from a date</h3>
+          <p style={{ color: "#667085", fontSize: 13 }}>
+            Sets a new basic salary that applies to timesheet days from the chosen date onward. Days before that date keep
+            the salary they had, so earlier labor cost and pending amounts don't change.
+          </p>
+          {raiseMessage && <p style={{ color: "#027a48" }}>{raiseMessage}</p>}
+          <form onSubmit={applyRaise}>
+            <div className="form-row">
+              <div>
+                <label>Effective from </label>
+                <input type="date" value={raise.effectiveFrom} onChange={(e) => setRaise({ ...raise, effectiveFrom: e.target.value })} required />
+              </div>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="New basic salary"
+                value={raise.basicSalary}
+                onChange={(e) => setRaise({ ...raise, basicSalary: e.target.value })}
+                required
+                style={{ width: 150 }}
+              />
+              <input
+                placeholder="Employee codes, e.g. RD-01 RD-02 RD-03"
+                value={raise.codes}
+                onChange={(e) => setRaise({ ...raise, codes: e.target.value })}
+                required
+                style={{ flex: 1, minWidth: 260 }}
+              />
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setRaise({ ...raise, codes: employees.filter((x) => x.status === "ACTIVE").map((x) => x.code).join(" ") })}
+              >
+                Use all active
+              </button>
+              <button type="submit" disabled={raiseBusy}>
+                {raiseBusy ? "Saving…" : "Apply salary change"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       <div className="card">
         <h3>New employee</h3>

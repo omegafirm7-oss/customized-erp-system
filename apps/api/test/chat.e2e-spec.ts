@@ -54,7 +54,10 @@ describe("Team chat (e2e)", () => {
 
     const beaChannels = (await get(bea.token, "/chat/channels").expect(200)).body;
     expect(beaChannels.find((c: any) => c.id === general.id).unread).toBe(1);
-    expect((await get(bea.token, "/chat/unread").expect(200)).body.unread).toBe(1);
+    const unreadBody = (await get(bea.token, "/chat/unread").expect(200)).body;
+    expect(unreadBody.unread).toBe(1);
+    expect(unreadBody.latest.title).toBeTruthy();
+    expect(unreadBody.latest.preview.length).toBeGreaterThan(0);
     // the sender never has their own message unread
     expect((await get(owner.token, "/chat/unread").expect(200)).body.unread).toBe(0);
 

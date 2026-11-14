@@ -370,6 +370,19 @@ export function ChatPage() {
     }
   }
 
+  const [notifPerm, setNotifPerm] = useState<NotificationPermission | "unsupported">(
+    typeof Notification === "undefined" ? "unsupported" : Notification.permission,
+  );
+  async function enableNotifications() {
+    try {
+      const result = await Notification.requestPermission();
+      setNotifPerm(result);
+      if (result === "granted") new Notification("Notifications are on", { body: "You'll get an alert here when a teammate messages you.", icon: "/favicon.ico" });
+    } catch {
+      setNotifPerm("denied");
+    }
+  }
+
   async function sendInvite(e: FormEvent) {
     e.preventDefault();
     setInviteBusy(true);
@@ -511,6 +524,14 @@ export function ChatPage() {
             </button>
           )}
         </div>
+        {notifPerm === "default" && (
+          <button type="button" className="chat-notify-btn" onClick={enableNotifications}>
+            Turn on desktop notifications
+          </button>
+        )}
+        {notifPerm === "denied" && (
+          <p className="chat-notify-note">Notifications are blocked. Click the padlock beside the address bar and allow Notifications for this site.</p>
+        )}
         <div className="chat-side-scroll">
           <div className="chat-section-title">
             <span>Channels</span>

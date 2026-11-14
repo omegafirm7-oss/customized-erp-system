@@ -15,6 +15,7 @@ import {
   TimesheetStatus,
 } from "@prisma/client";
 import { PrismaService } from "../common/prisma/prisma.service";
+import { costForEntries, hourlyRateOn, SALARY_REVISIONS_SELECT } from "../hr/salary-rate";
 import { AuditService } from "../audit/audit.service";
 import { AccountResolutionService } from "../finance/account-resolution.service";
 import { computeAssignmentBilling, EntrySummary, RateBasisKind } from "../manpower/manpower-math";
@@ -216,7 +217,6 @@ export class ProjectsService {
       GROUP BY pil."projectId", a."costCategory"
     `;
 
-    const HOURLY_DIVISOR = new Prisma.Decimal(260);
     const costCenterIds = [...new Set(projects.map((p) => p.costCenterId).filter((x): x is string => !!x))];
     const employees = costCenterIds.length
       ? await this.prisma.employee.findMany({
@@ -225,7 +225,8 @@ export class ProjectsService {
             costCenterId: true,
             basicSalary: true,
             otherAllowance: true,
-            employeeTimesheetEntries: { where: { date: { gte: start, lte: end } }, select: { hoursWorked: true } },
+            salaryRevisions: SALARY_REVISIONS_SELECT,
+            employeeTimesheetEntries: { where: { date: { gte: start, lte: end } }, select: { date: true, hoursWorked: true } },
           },
         })
       : [];
@@ -233,13 +234,10 @@ export class ProjectsService {
     const laborByCostCenter = new Map<string, Prisma.Decimal>();
     for (const e of employees) {
       if (!e.costCenterId || e.employeeTimesheetEntries.length === 0) continue;
-      const hourlyRate = e.basicSalary.div(HOURLY_DIVISOR).toDecimalPlaces(4);
-      const workedHours = e.employeeTimesheetEntries.reduce((sum, t) => sum.add(t.hoursWorked), new Prisma.Decimal(0));
       const workedAnyDay = e.employeeTimesheetEntries.some((t) => t.hoursWorked.gt(0));
-      const cost = hourlyRate
-        .mul(workedHours)
-        .toDecimalPlaces(2)
-        .add(workedAnyDay ? e.otherAllowance : new Prisma.Decimal(0));
+      const cost = costForEntries(e.basicSalary, e.salaryRevisions, e.employeeTimesheetEntries).add(
+        workedAnyDay ? e.otherAllowance : new Prisma.Decimal(0),
+      );
       laborByCostCenter.set(e.costCenterId, (laborByCostCenter.get(e.costCenterId) ?? new Prisma.Decimal(0)).add(cost));
     }
 
@@ -315,13 +313,13 @@ export class ProjectsService {
       GROUP BY 1, 2
     `;
 
-    const HOURLY_DIVISOR = new Prisma.Decimal(260);
     const employees = project.costCenterId
       ? await this.prisma.employee.findMany({
           where: { companyId, costCenterId: project.costCenterId },
           select: {
             basicSalary: true,
             otherAllowance: true,
+            salaryRevisions: SALARY_REVISIONS_SELECT,
             employeeTimesheetEntries: { select: { date: true, hoursWorked: true } },
           },
         })
@@ -329,15 +327,16 @@ export class ProjectsService {
 
     const laborByMonth = new Map<string, Prisma.Decimal>();
     for (const e of employees) {
-      const hourlyRate = e.basicSalary.div(HOURLY_DIVISOR).toDecimalPlaces(4);
-      const hoursByMonth = new Map<string, Prisma.Decimal>();
+      const entriesByMonth = new Map<string, Array<{ date: Date; hoursWorked: Prisma.Decimal }>>();
       for (const t of e.employeeTimesheetEntries) {
         if (t.hoursWorked.lte(0)) continue;
         const m = t.date.toISOString().slice(0, 7);
-        hoursByMonth.set(m, (hoursByMonth.get(m) ?? new Prisma.Decimal(0)).add(t.hoursWorked));
+        const list = entriesByMonth.get(m) ?? [];
+        list.push(t);
+        entriesByMonth.set(m, list);
       }
-      for (const [m, hours] of hoursByMonth) {
-        const cost = hourlyRate.mul(hours).toDecimalPlaces(2).add(e.otherAllowance);
+      for (const [m, monthEntries] of entriesByMonth) {
+        const cost = costForEntries(e.basicSalary, e.salaryRevisions, monthEntries).add(e.otherAllowance);
         laborByMonth.set(m, (laborByMonth.get(m) ?? new Prisma.Decimal(0)).add(cost));
       }
     }
@@ -400,9 +399,10 @@ export class ProjectsService {
               nameEn: true,
               basicSalary: true,
               otherAllowance: true,
+              salaryRevisions: SALARY_REVISIONS_SELECT,
               employeeTimesheetEntries: {
                 where: { date: { gte: monthStart, lt: monthEnd } },
-                select: { hoursWorked: true },
+                select: { date: true, hoursWorked: true },
               },
             },
           })
@@ -410,10 +410,10 @@ export class ProjectsService {
 
       const rows = employees
         .map((e) => {
-          const hourlyRate = e.basicSalary.div(HOURLY_DIVISOR).toDecimalPlaces(4);
           const hoursWorked = e.employeeTimesheetEntries.reduce((sum, t) => sum.add(t.hoursWorked), new Prisma.Decimal(0));
           const workedAnyDay = e.employeeTimesheetEntries.some((t) => t.hoursWorked.gt(0));
-          const salaryCost = hourlyRate.mul(hoursWorked).toDecimalPlaces(2);
+          const salaryCost = costForEntries(e.basicSalary, e.salaryRevisions, e.employeeTimesheetEntries);
+          const hourlyRate = hoursWorked.gt(0) ? salaryCost.div(hoursWorked).toDecimalPlaces(4) : e.basicSalary.div(HOURLY_DIVISOR).toDecimalPlaces(4);
           const foodCost = workedAnyDay ? e.otherAllowance : new Prisma.Decimal(0);
           return {
             employeeId: e.id,
@@ -640,7 +640,6 @@ export class ProjectsService {
     // actually made — mirroring salary's own hourlyRate-times-hours accrual,
     // just monthly instead of hourly. This makes a month's food obligation
     // show as Pending until it's actually paid, then move to Paid.
-    const HOURLY_DIVISOR = new Prisma.Decimal(260);
     const costCenterEmployees = project.costCenterId
       ? await this.prisma.employee.findMany({
           where: { companyId, costCenterId: project.costCenterId },
@@ -648,6 +647,7 @@ export class ProjectsService {
             id: true,
             basicSalary: true,
             otherAllowance: true,
+            salaryRevisions: SALARY_REVISIONS_SELECT,
             employeeTimesheetEntries: { select: { date: true, hoursWorked: true } },
             payments: {
               where: { reversedAt: null, category: { in: [EmployeePaymentCategory.SALARY, EmployeePaymentCategory.FOOD] } },
@@ -665,9 +665,8 @@ export class ProjectsService {
       : [];
     let pendingLabor = new Prisma.Decimal(0);
     for (const e of costCenterEmployees) {
-      const hourlyRate = e.basicSalary.div(HOURLY_DIVISOR).toDecimalPlaces(4);
       const accruedSalary = e.employeeTimesheetEntries.reduce(
-        (sum, t) => sum.add(hourlyRate.mul(t.hoursWorked).toDecimalPlaces(2)),
+        (sum, t) => sum.add(hourlyRateOn(e.basicSalary, e.salaryRevisions, t.date).mul(t.hoursWorked).toDecimalPlaces(2)),
         new Prisma.Decimal(0),
       );
       const workedMonths = new Set(

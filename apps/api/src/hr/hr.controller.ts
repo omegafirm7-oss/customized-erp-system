@@ -36,6 +36,7 @@ import { HrReportsService } from "./hr-reports.service";
 import { AttendanceService } from "./attendance.service";
 import { EmployeePaymentsService } from "./employee-payments.service";
 import {
+  ApplySalaryRevisionDto,
   CreateEmployeeDto,
   CreateEmployeePaymentDto,
   CreateLoanDto,
@@ -141,6 +142,48 @@ export class HrController {
     @Body() dto: CreateEmployeeDto,
   ) {
     return this.employeesService.create(companyId, user.sub, dto);
+  }
+
+  @Post("employees/salary-revisions")
+  @Permissions(PERMISSIONS.HR_EMPLOYEE_MANAGE)
+  async applySalaryRevision(
+    @CurrentCompanyId() companyId: string,
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: ApplySalaryRevisionDto,
+  ) {
+    return this.employeesService.applySalaryRevision(companyId, user.sub, dto);
+  }
+
+  @Get("employees/:id/salary-history")
+  @Permissions(PERMISSIONS.HR_EMPLOYEE_VIEW)
+  async salaryHistory(@CurrentCompanyId() companyId: string, @Param("id") employeeId: string) {
+    return this.employeesService.salaryHistory(companyId, employeeId);
+  }
+
+  @Post("salary-revisions/:revisionId/evidence")
+  @Permissions(PERMISSIONS.HR_EMPLOYEE_MANAGE)
+  @ApiConsumes("multipart/form-data")
+  @UseInterceptors(FileInterceptor("file", { storage: memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }))
+  async uploadSalaryEvidence(
+    @CurrentCompanyId() companyId: string,
+    @Param("revisionId") revisionId: string,
+    @CurrentUser() user: JwtPayload,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (!file) throw new BadRequestException("No file uploaded");
+    return this.employeesService.uploadSalaryEvidence(companyId, revisionId, user.sub, file);
+  }
+
+  @Get("salary-revisions/:revisionId/evidence")
+  @Permissions(PERMISSIONS.HR_EMPLOYEE_VIEW)
+  async getSalaryEvidence(
+    @CurrentCompanyId() companyId: string,
+    @Param("revisionId") revisionId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const a = await this.employeesService.getSalaryEvidence(companyId, revisionId);
+    res.set({ "Content-Type": a.mimeType, "Content-Disposition": `inline; filename="${a.filename}"` });
+    return new StreamableFile(a.data);
   }
 
   @Post("employees/import")

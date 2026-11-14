@@ -3,6 +3,7 @@ import { EmployeeStatus, Prisma, TimesheetDayType } from "@prisma/client";
 import { PrismaService } from "../common/prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { UpsertTimesheetEntryDto } from "./dto/hr.dtos";
+import { hourlyRateOn, SALARY_REVISIONS_SELECT } from "./salary-rate";
 
 const ZERO_HOURS = new Prisma.Decimal(0);
 const STANDARD_WORKDAY_HOURS = new Prisma.Decimal(10);
@@ -96,7 +97,14 @@ export class AttendanceService {
     const HOURLY_DIVISOR = new Prisma.Decimal(260);
     const employee = await this.prisma.employee.findFirst({
       where: { id: employeeId, companyId },
-      select: { id: true, code: true, nameEn: true, basicSalary: true, status: true },
+      select: {
+        id: true,
+        code: true,
+        nameEn: true,
+        basicSalary: true,
+        status: true,
+        salaryRevisions: SALARY_REVISIONS_SELECT,
+      },
     });
     if (!employee) {
       throw new NotFoundException("Employee not found");
@@ -132,7 +140,7 @@ export class AttendanceService {
     const rows = entries.map((e) => {
       // Cost deliberately ignores overtimeHours — overtime is recorded for
       // reporting only and is paid through the payroll run, not accrued here.
-      const cost = hourlyRate.mul(e.hoursWorked).toDecimalPlaces(2);
+      const cost = hourlyRateOn(employee.basicSalary, employee.salaryRevisions, e.date).mul(e.hoursWorked).toDecimalPlaces(2);
       totalHours = totalHours.add(e.hoursWorked);
       totalOvertimeHours = totalOvertimeHours.add(e.overtimeHours);
       totalCost = totalCost.add(cost);

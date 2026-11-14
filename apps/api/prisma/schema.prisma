@@ -2352,6 +2352,7 @@ model Employee {
   manpowerAssignments      ManpowerAssignment[]
   timesheetEntries         TimesheetEntry[]
   employeeTimesheetEntries EmployeeTimesheetEntry[]
+  salaryRevisions          SalaryRevision[]
   payments                 EmployeePayment[]
 
   @@unique([companyId, code])
@@ -2532,6 +2533,47 @@ model SettlementPayment {
 // from HrSettings.daysPerMonth, which drives statutory payroll math, and
 // from the manpower Timesheet/TimesheetEntry models, which are client-
 // billing documents tied to a ManpowerContract and customer invoice.
+// A dated change to an employee's basic salary. Timesheet days are priced
+// from the revision in force on each day (latest effectiveFrom <= day), so
+// a raise never reprices earlier days. Employee.basicSalary always mirrors
+// the revision currently in force (what payroll and the forms use); the
+// first revision for an employee also stores their previous salary as a
+// baseline row effective from 1970-01-01.
+model SalaryRevision {
+  id              String   @id @default(uuid())
+  companyId       String
+  employeeId      String
+  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  effectiveFrom   DateTime
+  basicSalary     Decimal  @db.Decimal(18, 4)
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  // Why the salary changed (raise, promotion, contract renewal...), for the audit trail.
+  note            String?
+  evidence        SalaryRevisionAttachment?
+
+  @@unique([employeeId, effectiveFrom])
+  @@index([companyId])
+  @@map("salary_revisions")
+}
+
+// Evidence for a salary change (signed letter, contract addendum...): one
+// file per revision, stored as bytes like the other HR attachments.
+model SalaryRevisionAttachment {
+  id               String         @id @default(uuid())
+  companyId        String
+  salaryRevisionId String         @unique
+  salaryRevision   SalaryRevision @relation(fields: [salaryRevisionId], references: [id], onDelete: Cascade)
+  filename         String
+  mimeType         String
+  size             Int
+  data             Bytes
+  uploadedByUserId String
+  createdAt        DateTime       @default(now())
+
+  @@map("salary_revision_attachments")
+}
+
 model EmployeeTimesheetEntry {
   id              String           @id @default(uuid())
   companyId       String

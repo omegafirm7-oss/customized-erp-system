@@ -213,7 +213,10 @@ export class ChatService {
       .sort((a, b) => b.lastMessageAt.getTime() - a.lastMessageAt.getTime());
   }
 
-  async unreadTotal(companyId: string, userId: string): Promise<{ unread: number }> {
+  async unreadTotal(
+    companyId: string,
+    userId: string,
+  ): Promise<{ unread: number; latest: { id: string; title: string; preview: string } | null }> {
     const rows = await this.prisma.$queryRaw<Array<{ unread: number }>>`
       SELECT COUNT(*)::int AS "unread"
       FROM "chat_messages" m
@@ -223,7 +226,38 @@ export class ChatService {
         AND m."deletedAt" IS NULL
         AND m."createdAt" > cm."lastReadAt"
     `;
-    return { unread: rows[0]?.unread ?? 0 };
+    const unread = rows[0]?.unread ?? 0;
+
+    // The newest unread message, so the browser can show a desktop notification ("Sara in #ops: ...").
+    let latest: { id: string; title: string; preview: string } | null = null;
+    if (unread > 0) {
+      const newest = await this.prisma.$queryRaw<Array<{ id: string; channelId: string; senderUserId: string; body: string }>>`
+        SELECT m."id", m."channelId", m."senderUserId", m."body"
+        FROM "chat_messages" m
+        JOIN "chat_members" cm ON cm."channelId" = m."channelId" AND cm."userId" = ${userId}
+        WHERE m."companyId" = ${companyId}
+          AND m."senderUserId" <> ${userId}
+          AND m."deletedAt" IS NULL
+          AND m."createdAt" > cm."lastReadAt"
+        ORDER BY m."createdAt" DESC
+        LIMIT 1
+      `;
+      const m = newest[0];
+      if (m) {
+        const [sender, channel, file] = await Promise.all([
+          this.prisma.user.findUnique({ where: { id: m.senderUserId }, select: { fullName: true } }),
+          this.prisma.chatChannel.findUnique({ where: { id: m.channelId }, select: { kind: true, name: true } }),
+          this.prisma.chatAttachment.findFirst({ where: { messageId: m.id }, select: { filename: true } }),
+        ]);
+        const who = sender?.fullName ?? "Someone";
+        latest = {
+          id: m.id,
+          title: channel?.kind === ChatChannelKind.CHANNEL && channel.name ? `${who} in #${channel.name}` : who,
+          preview: m.body ? m.body.slice(0, 120) : file ? `Sent a file: ${file.filename}` : "",
+        };
+      }
+    }
+    return { unread, latest };
   }
 
   async createChannel(companyId: string, userId: string, dto: { name: string; isPrivate?: boolean; memberUserIds?: string[] }) {

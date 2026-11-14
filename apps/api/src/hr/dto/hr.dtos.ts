@@ -1,12 +1,15 @@
 import { ApiProperty, PartialType } from "@nestjs/swagger";
 import { ContractType, EmployeePaymentCategory, EosbBasis, SettlementReason, TimesheetDayType } from "@prisma/client";
 import {
+  ArrayNotEmpty,
+  IsArray,
   IsBoolean,
   IsDateString,
   IsEnum,
   IsNumberString,
   IsOptional,
   IsString,
+  MaxLength,
   IsUUID,
   MinLength,
 } from "class-validator";
@@ -216,6 +219,24 @@ export class CreateEmployeeDto {
   @IsOptional()
   @IsBoolean()
   gosiExempt?: boolean;
+}
+
+export class ApplySalaryRevisionDto {
+  @IsDateString()
+  effectiveFrom!: string;
+
+  @IsNumberString()
+  basicSalary!: string;
+
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  employeeCodes!: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
 }
 
 export class UpdateEmployeeDto extends PartialType(CreateEmployeeDto) {}

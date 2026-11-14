@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { EmployeePaymentCategory, EmployeeStatus, PayrollRunStatus, Prisma, TimesheetDayType } from "@prisma/client";
 import { PrismaService } from "../common/prisma/prisma.service";
 import { HrSettingsService } from "./hr-settings.service";
+import { costForEntries, hourlyRateOn, SALARY_REVISIONS_SELECT } from "./salary-rate";
 import {
   computeEosbEntitlement,
   computeLeaveAccruedDays,
@@ -239,6 +240,7 @@ export class HrReportsService {
             where: dateFilter ? { date: dateFilter } : undefined,
             select: { date: true, hoursWorked: true },
           },
+          salaryRevisions: SALARY_REVISIONS_SELECT,
           payments: {
             where: {
               reversedAt: null,
@@ -271,7 +273,7 @@ export class HrReportsService {
       let employeeCost = ZERO;
       const workedMonths = new Set<string>();
       for (const entry of employee.employeeTimesheetEntries) {
-        const cost = hourlyRate.mul(entry.hoursWorked).toDecimalPlaces(2);
+        const cost = hourlyRateOn(employee.basicSalary, employee.salaryRevisions, entry.date).mul(entry.hoursWorked).toDecimalPlaces(2);
         employeeHours = employeeHours.add(entry.hoursWorked);
         employeeCost = employeeCost.add(cost);
         const dateKey = entry.date.toISOString().slice(0, 10);
@@ -348,6 +350,7 @@ export class HrReportsService {
         designation: true,
         basicSalary: true,
         otherAllowance: true,
+        salaryRevisions: SALARY_REVISIONS_SELECT,
         employeeTimesheetEntries: {
           where: dateFilter ? { date: dateFilter } : undefined,
           select: { date: true, hoursWorked: true },
@@ -370,8 +373,10 @@ export class HrReportsService {
     const releasedTradeRows: Array<{ employeeId: string; code: string; nameEn: string; designation: string | null; cost: Prisma.Decimal }> =
       [];
     for (const e of releasedEmployeesRaw) {
-      const hourlyRate = e.basicSalary.div(HOURLY_DIVISOR).toDecimalPlaces(4);
-      const cost = e.employeeTimesheetEntries.reduce((sum, t) => sum.add(hourlyRate.mul(t.hoursWorked).toDecimalPlaces(2)), ZERO);
+      const cost = e.employeeTimesheetEntries.reduce(
+        (sum, t) => sum.add(hourlyRateOn(e.basicSalary, e.salaryRevisions, t.date).mul(t.hoursWorked).toDecimalPlaces(2)),
+        ZERO,
+      );
       releasedGrandTotal = releasedGrandTotal.add(cost);
       const workedMonths = new Set(
         e.employeeTimesheetEntries.filter((t) => t.hoursWorked.gt(0)).map((t) => t.date.toISOString().slice(0, 7)),
@@ -558,7 +563,6 @@ export class HrReportsService {
    * it's attributed to.
    */
   async pendingAccrual(companyId: string) {
-    const HOURLY_DIVISOR = new Prisma.Decimal(260);
     const employees = await this.prisma.employee.findMany({
       where: { companyId, status: { in: [EmployeeStatus.ACTIVE, EmployeeStatus.TERMINATED] } },
       select: {
@@ -568,6 +572,7 @@ export class HrReportsService {
         status: true,
         basicSalary: true,
         otherAllowance: true,
+        salaryRevisions: SALARY_REVISIONS_SELECT,
         employeeTimesheetEntries: { select: { date: true, hoursWorked: true } },
         payments: {
           where: { reversedAt: null, category: { in: [EmployeePaymentCategory.SALARY, EmployeePaymentCategory.FOOD] } },
@@ -596,12 +601,14 @@ export class HrReportsService {
     let totalPendingFood = ZERO;
 
     for (const e of employees) {
-      const hourlyRate = e.basicSalary.div(HOURLY_DIVISOR).toDecimalPlaces(4);
       const salaryByMonth = new Map<string, Prisma.Decimal>();
       const foodMonths = new Set<string>();
       for (const t of e.employeeTimesheetEntries) {
         const month = t.date.toISOString().slice(0, 7);
-        salaryByMonth.set(month, (salaryByMonth.get(month) ?? ZERO).add(hourlyRate.mul(t.hoursWorked).toDecimalPlaces(2)));
+        salaryByMonth.set(
+          month,
+          (salaryByMonth.get(month) ?? ZERO).add(hourlyRateOn(e.basicSalary, e.salaryRevisions, t.date).mul(t.hoursWorked).toDecimalPlaces(2)),
+        );
         if (t.hoursWorked.gt(0)) foodMonths.add(month);
       }
 
@@ -654,7 +661,6 @@ export class HrReportsService {
    * employeesDashboard's own grandTotal + releasedGrandTotal.
    */
   async laborCostByDateRange(companyId: string, fromDate: string, toDate: string, trades?: string[]) {
-    const HOURLY_DIVISOR = new Prisma.Decimal(260);
     const start = new Date(`${fromDate}T00:00:00.000Z`);
     const end = new Date(`${toDate}T23:59:59.999Z`);
     // "Unspecified" is a display label for a null/blank designation, not a real
@@ -678,9 +684,10 @@ export class HrReportsService {
         nameEn: true,
         designation: true,
         basicSalary: true,
+        salaryRevisions: SALARY_REVISIONS_SELECT,
         employeeTimesheetEntries: {
           where: { date: { gte: start, lte: end } },
-          select: { hoursWorked: true },
+          select: { date: true, hoursWorked: true },
         },
       },
     });
@@ -692,9 +699,8 @@ export class HrReportsService {
 
     for (const employee of employees) {
       if (employee.employeeTimesheetEntries.length === 0) continue;
-      const hourlyRate = employee.basicSalary.div(HOURLY_DIVISOR).toDecimalPlaces(4);
       const hours = employee.employeeTimesheetEntries.reduce((sum, t) => sum.add(t.hoursWorked), ZERO);
-      const cost = hourlyRate.mul(hours).toDecimalPlaces(2);
+      const cost = costForEntries(employee.basicSalary, employee.salaryRevisions, employee.employeeTimesheetEntries);
 
       totalCost = totalCost.add(cost);
       totalHours = totalHours.add(hours);
@@ -742,6 +748,7 @@ export class HrReportsService {
           where: dateFilter ? { date: dateFilter } : undefined,
           orderBy: { date: "asc" },
         },
+        salaryRevisions: SALARY_REVISIONS_SELECT,
         payments: { where: { reversedAt: null }, select: { category: true, amount: true, recoveredAmount: true } },
       },
     });
@@ -755,7 +762,7 @@ export class HrReportsService {
       // instead would drift a few cents from the dashboard for the same
       // employee/period.
       const cost = employee.employeeTimesheetEntries.reduce(
-        (sum, t) => sum.add(hourlyRate.mul(t.hoursWorked).toDecimalPlaces(2)),
+        (sum, t) => sum.add(hourlyRateOn(employee.basicSalary, employee.salaryRevisions, t.date).mul(t.hoursWorked).toDecimalPlaces(2)),
         ZERO,
       );
       const allowancesPaid = employee.payments

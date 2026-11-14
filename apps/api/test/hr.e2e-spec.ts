@@ -2057,6 +2057,88 @@ describe("HR & Saudi Payroll (e2e)", () => {
       .expect(404);
   });
 
+  it("a dated salary change reprices only the days from its effective date; earlier days keep the old salary", async () => {
+    const ctx = await setupUserWithCompany(app);
+    const { period, periods } = await currentPeriod(ctx);
+    const dateA = new Date(period.startDate).toISOString().slice(0, 10);
+    const otherPeriod = periods.find((p: any) => p.id !== period.id);
+    const dateB = new Date(otherPeriod.startDate).toISOString().slice(0, 10);
+    const [early, late] = dateA < dateB ? [dateA, dateB] : [dateB, dateA];
+    const csv = [CSV_HEADER, `EMPREV,Salary Revision,,Helper,SA,true,,,,,,${early},UNLIMITED,,,,21,2600,0,0,0,false`].join("\n");
+    await request(app.getHttpServer()).post("/hr/employees/import").set(auth(ctx.accessToken)).send({ csv }).expect(201);
+    const employee = (await request(app.getHttpServer()).get("/hr/employees").set(auth(ctx.accessToken)).expect(200)).body[0];
+
+    for (const [date, hours] of [[early, "8"], [late, "5"]]) {
+      await request(app.getHttpServer())
+        .post("/hr/employee-timesheet/entry")
+        .set(auth(ctx.accessToken))
+        .send({ employeeId: employee.id, date, dayType: "WORKED", hoursWorked: hours })
+        .expect(201);
+    }
+    const detail = async () =>
+      (await request(app.getHttpServer()).get(`/hr/employees/${employee.id}/timesheet-detail`).set(auth(ctx.accessToken)).expect(200)).body;
+    expect(Number((await detail()).totalCost)).toBe(130); // 13h x 10
+
+    // 2600 -> 5200 (20/h) from the later day
+    await request(app.getHttpServer())
+      .post("/hr/employees/salary-revisions")
+      .set(auth(ctx.accessToken))
+      .send({ effectiveFrom: late, basicSalary: "5200", employeeCodes: ["EMPREV"] })
+      .expect(201);
+
+    const after = await detail();
+    expect(after.entries.map((e: any) => Number(e.cost))).toEqual([80, 100]); // 8h x 10, 5h x 20
+    expect(Number(after.totalCost)).toBe(180);
+
+    // Summary (accrued labor) agrees, and the stored salary is the one now in force
+    const summary = (await request(app.getHttpServer()).get(`/hr/employees/${employee.id}/summary`).set(auth(ctx.accessToken)).expect(200)).body;
+    expect(Number(summary.pendingLaborAccrual)).toBe(180);
+    const emp = (await request(app.getHttpServer()).get(`/hr/employees/${employee.id}`).set(auth(ctx.accessToken)).expect(200)).body;
+    expect(Number(emp.basicSalary)).toBe(late <= new Date().toISOString().slice(0, 10) ? 5200 : 2600);
+    expect(emp.salaryRevisions).toHaveLength(2);
+
+    // Editing the salary directly would silently reprice history, so it is refused
+    await request(app.getHttpServer())
+      .patch(`/hr/employees/${employee.id}`)
+      .set(auth(ctx.accessToken))
+      .send({ basicSalary: "9999" })
+      .expect(409);
+
+    // Footprint: who/when/why, previous -> new, and an evidence file per change
+    const rev = (
+      await request(app.getHttpServer())
+        .post("/hr/employees/salary-revisions")
+        .set(auth(ctx.accessToken))
+        .send({ effectiveFrom: late, basicSalary: "5200", employeeCodes: ["EMPREV"], note: "Annual raise" })
+        .expect(201)
+    ).body.results[0];
+    await request(app.getHttpServer())
+      .post(`/hr/salary-revisions/${rev.revisionId}/evidence`)
+      .set(auth(ctx.accessToken))
+      .attach("file", Buffer.from("signed letter"), { filename: "letter.pdf", contentType: "application/pdf" })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/hr/salary-revisions/${rev.revisionId}/evidence`)
+      .set(auth(ctx.accessToken))
+      .attach("file", Buffer.from("x"), { filename: "x.exe", contentType: "application/octet-stream" })
+      .expect(400);
+    const history = (await request(app.getHttpServer()).get(`/hr/employees/${employee.id}/salary-history`).set(auth(ctx.accessToken)).expect(200)).body;
+    expect(history).toHaveLength(2);
+    expect(history[0].isOriginal).toBe(true);
+    expect(history[1]).toMatchObject({ previousSalary: "2600.00", basicSalary: "5200.00", note: "Annual raise", evidence: { filename: "letter.pdf" } });
+    expect(history[1].changedBy).toBeTruthy();
+    const file = await request(app.getHttpServer()).get(`/hr/salary-revisions/${rev.revisionId}/evidence`).set(auth(ctx.accessToken)).expect(200);
+    expect(file.body.toString()).toBe("signed letter");
+
+    // Unknown codes change nothing
+    await request(app.getHttpServer())
+      .post("/hr/employees/salary-revisions")
+      .set(auth(ctx.accessToken))
+      .send({ effectiveFrom: late, basicSalary: "1", employeeCodes: ["EMPREV", "NOPE"] })
+      .expect(400);
+    expect(Number((await detail()).totalCost)).toBe(180);
+  });
+
   it("timesheet period attachment: one file per fiscal period, replacing not accumulating, distinct across periods", async () => {
     const ctx = await setupUserWithCompany(app);
     const { periods } = await currentPeriod(ctx);

@@ -24,6 +24,7 @@ import { GlPostingService, PostedEntryLineInput } from "../gl/gl-posting.service
 import { NumberingService } from "../numbering/numbering.service";
 import { AccountResolutionService } from "../finance/account-resolution.service";
 import { RecordSettlementPaymentDto } from "./dto/hr.dtos";
+import { costForEntries } from "./salary-rate";
 import {
   computeEosbPayable,
   computeLeaveAccruedDays,
@@ -499,8 +500,7 @@ export class TerminationService {
       // employees.service.ts::getSummary, HOURLY_DIVISOR = 26 days x 10h).
       settlementEosbAmount = ZERO;
       leavePayoutAmount = ZERO;
-      const HOURLY_DIVISOR = new Prisma.Decimal(260);
-      const [workedAgg, paidSalaryAgg, paidSalaryDirectAgg] = await Promise.all([
+      const [workedAgg, paidSalaryAgg, paidSalaryDirectAgg, workedEntries, salaryRevisions] = await Promise.all([
         client.employeeTimesheetEntry.aggregate({
           where: { employeeId, dayType: TimesheetDayType.WORKED },
           _sum: { hoursWorked: true },
@@ -514,10 +514,13 @@ export class TerminationService {
           where: { employeeId, category: EmployeePaymentCategory.SALARY, reversedAt: null },
           _sum: { amount: true },
         }),
+        client.employeeTimesheetEntry.findMany({
+          where: { employeeId, dayType: TimesheetDayType.WORKED },
+          select: { date: true, hoursWorked: true },
+        }),
+        client.salaryRevision.findMany({ where: { employeeId }, select: { effectiveFrom: true, basicSalary: true } }),
       ]);
-      const workedHours = workedAgg._sum.hoursWorked ?? ZERO;
-      const hourlyRate = employee.basicSalary.div(HOURLY_DIVISOR).toDecimalPlaces(4);
-      const accruedLaborCost = hourlyRate.mul(workedHours).toDecimalPlaces(2);
+      const accruedLaborCost = costForEntries(employee.basicSalary, salaryRevisions, workedEntries);
       const paidSalary = (paidSalaryAgg._sum.netPay ?? ZERO).add(paidSalaryDirectAgg._sum.amount ?? ZERO);
       finalSalaryAmount = Prisma.Decimal.max(ZERO, accruedLaborCost.sub(paidSalary));
       finalSalaryDays = workedAgg._count._all;

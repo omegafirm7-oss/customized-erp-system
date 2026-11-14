@@ -184,19 +184,47 @@ export function Layout() {
   useEffect(() => {
     if (!canChat) return;
     let alive = true;
+    let lastNotified: string | null | undefined; // undefined = first load, never notify for what was already waiting
+    const baseTitle = document.title.replace(/^\(\d+\)\s*/, "");
     const load = () =>
       apiClient
-        .get<{ unread: number }>("/chat/unread")
-        .then((res) => alive && setChatUnread(res.data.unread))
+        .get<{ unread: number; latest: { id: string; title: string; preview: string } | null }>("/chat/unread")
+        .then((res) => {
+          if (!alive) return;
+          const { unread, latest } = res.data;
+          setChatUnread(unread);
+          document.title = unread > 0 ? `(${unread}) ${baseTitle}` : baseTitle;
+          const fresh = latest?.id ?? null;
+          if (lastNotified !== undefined && latest && fresh !== lastNotified) {
+            const watching = !document.hidden && window.location.pathname.startsWith("/chat");
+            if (!watching && typeof Notification !== "undefined" && Notification.permission === "granted") {
+              try {
+                const n = new Notification(latest.title, {
+                  body: unread > 1 ? `${latest.preview}\n(${unread} unread messages)` : latest.preview,
+                  tag: "universa-chat", // a newer message replaces the older popup instead of stacking
+                  icon: "/favicon.ico",
+                });
+                n.onclick = () => {
+                  window.focus();
+                  window.location.assign("/chat");
+                  n.close();
+                };
+              } catch {
+                /* some browsers only allow notifications through a service worker */
+              }
+            }
+          }
+          lastNotified = fresh;
+        })
         .catch(() => undefined);
     load();
-    const timer = setInterval(() => {
-      if (!document.hidden) load();
-    }, 20000);
+    // Keeps polling when the tab is in the background (browsers slow it to about once a minute), so alerts still arrive.
+    const timer = setInterval(load, 20000);
     window.addEventListener("chat:unread", load);
     return () => {
       alive = false;
       clearInterval(timer);
+      document.title = baseTitle;
       window.removeEventListener("chat:unread", load);
     };
   }, [canChat, user?.activeCompanyId]);

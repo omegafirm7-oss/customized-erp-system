@@ -17,6 +17,7 @@ import { PrismaService } from "../common/prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { HrSettingsService } from "./hr-settings.service";
 import { CreateEmployeeDto, UpdateEmployeeDto } from "./dto/hr.dtos";
+import { costForEntries } from "./salary-rate";
 
 /**
  * Column order of the CSV import template. Kept flat and WPS-shaped on
@@ -103,12 +104,144 @@ export class EmployeesService {
         costCenter: { select: { id: true, code: true, name: true, project: { select: { id: true, code: true, name: true } } } },
         loans: { orderBy: { createdAt: "desc" } },
         finalSettlement: { include: { payments: { orderBy: { paymentDate: "desc" } } } },
+        salaryRevisions: { orderBy: { effectiveFrom: "asc" } },
       },
     });
     if (!employee) {
       throw new NotFoundException("Employee not found");
     }
     return employee;
+  }
+
+  /**
+   * Dated salary change for one or more employees (by code). Timesheet days
+   * from effectiveFrom onward are priced at the new salary; earlier days keep
+   * the salary they had. The first revision of an employee also records their
+   * previous salary as a baseline effective from the beginning of time, and
+   * Employee.basicSalary is then re-pointed at the revision currently in
+   * force so payroll, forms and WPS keep reading the live figure.
+   */
+  async applySalaryRevision(
+    companyId: string,
+    userId: string,
+    dto: { effectiveFrom: string; basicSalary: string; employeeCodes: string[]; note?: string },
+  ) {
+    const effectiveFrom = new Date(`${dto.effectiveFrom}T00:00:00.000Z`);
+    if (Number.isNaN(effectiveFrom.getTime())) {
+      throw new BadRequestException("effectiveFrom must be a valid date (YYYY-MM-DD)");
+    }
+    const basicSalary = new Prisma.Decimal(dto.basicSalary);
+    if (basicSalary.lt(0)) {
+      throw new BadRequestException("Basic salary can't be negative");
+    }
+    const codes = [...new Set(dto.employeeCodes.map((c) => c.trim()).filter(Boolean))];
+    if (codes.length === 0) {
+      throw new BadRequestException("Give at least one employee code");
+    }
+    const employees = await this.prisma.employee.findMany({
+      where: { companyId, code: { in: codes } },
+      include: { salaryRevisions: true },
+    });
+    const missing = codes.filter((c) => !employees.some((e) => e.code === c));
+    if (missing.length > 0) {
+      throw new BadRequestException(`Unknown employee code(s): ${missing.join(", ")}. Nothing was changed.`);
+    }
+
+    const baselineDate = new Date("1970-01-01T00:00:00.000Z");
+    const today = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00.000Z");
+    const results = await this.prisma.$transaction(async (tx) => {
+      const out: Array<{ employeeId: string; revisionId: string; code: string; previousSalary: string; currentSalary: string }> = [];
+      for (const e of employees) {
+        if (e.salaryRevisions.length === 0) {
+          await tx.salaryRevision.create({
+            data: { companyId, employeeId: e.id, effectiveFrom: baselineDate, basicSalary: e.basicSalary, createdByUserId: userId },
+          });
+        }
+        const note = dto.note?.trim() || null;
+        const revision = await tx.salaryRevision.upsert({
+          where: { employeeId_effectiveFrom: { employeeId: e.id, effectiveFrom } },
+          create: { companyId, employeeId: e.id, effectiveFrom, basicSalary, createdByUserId: userId, note },
+          update: { basicSalary, createdByUserId: userId, note },
+        });
+        const all = await tx.salaryRevision.findMany({ where: { employeeId: e.id }, orderBy: { effectiveFrom: "asc" } });
+        const inForce = [...all].reverse().find((r) => r.effectiveFrom.getTime() <= today.getTime()) ?? all[0];
+        await tx.employee.update({ where: { id: e.id }, data: { basicSalary: inForce.basicSalary, updatedByUserId: userId } });
+        out.push({ employeeId: e.id, revisionId: revision.id, code: e.code, previousSalary: e.basicSalary.toFixed(2), currentSalary: inForce.basicSalary.toFixed(2) });
+      }
+      return out;
+    });
+
+    // One audit entry per employee, so each person's own history shows who changed their salary, when and why.
+    for (const r of results) {
+      await this.auditService.log({
+        companyId,
+        entityName: "Employee",
+        entityId: r.employeeId,
+        action: "UPDATE",
+        changedByUserId: userId,
+        beforeSnapshot: { basicSalary: r.previousSalary },
+        afterSnapshot: { basicSalary: dto.basicSalary, effectiveFrom: dto.effectiveFrom, note: dto.note ?? null, revisionId: r.revisionId },
+      });
+    }
+    return { effectiveFrom: dto.effectiveFrom, basicSalary: basicSalary.toFixed(2), results };
+  }
+
+  private static readonly EVIDENCE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"]);
+
+  /** Salary change history for one employee, oldest first, with who/when/why and whether evidence is attached. */
+  async salaryHistory(companyId: string, employeeId: string) {
+    await this.get(companyId, employeeId);
+    const rows = await this.prisma.salaryRevision.findMany({
+      where: { employeeId, companyId },
+      orderBy: { effectiveFrom: "asc" },
+      include: { evidence: { select: { filename: true, mimeType: true, size: true } } },
+    });
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: [...new Set(rows.map((r) => r.createdByUserId))] } },
+      select: { id: true, fullName: true },
+    });
+    const names = new Map(users.map((u) => [u.id, u.fullName]));
+    return rows.map((r, i) => ({
+      id: r.id,
+      isOriginal: r.effectiveFrom.getUTCFullYear() < 1980,
+      effectiveFrom: r.effectiveFrom.toISOString().slice(0, 10),
+      previousSalary: i > 0 ? rows[i - 1].basicSalary.toFixed(2) : null,
+      basicSalary: r.basicSalary.toFixed(2),
+      changedBy: names.get(r.createdByUserId) ?? null,
+      changedAt: r.createdAt,
+      note: r.note,
+      evidence: r.evidence,
+    }));
+  }
+
+  async uploadSalaryEvidence(companyId: string, revisionId: string, userId: string, file: Express.Multer.File) {
+    if (!EmployeesService.EVIDENCE_MIME_TYPES.has(file.mimetype)) {
+      throw new BadRequestException("Evidence must be an image (JPEG/PNG/WEBP/GIF) or a PDF");
+    }
+    const revision = await this.prisma.salaryRevision.findFirst({ where: { id: revisionId, companyId } });
+    if (!revision) throw new NotFoundException("Salary change not found");
+    const data = { filename: file.originalname, mimeType: file.mimetype, size: file.size, data: file.buffer, uploadedByUserId: userId };
+    const saved = await this.prisma.salaryRevisionAttachment.upsert({
+      where: { salaryRevisionId: revisionId },
+      create: { companyId, salaryRevisionId: revisionId, ...data },
+      update: data,
+      select: { filename: true, mimeType: true, size: true },
+    });
+    await this.auditService.log({
+      companyId,
+      entityName: "Employee",
+      entityId: revision.employeeId,
+      action: "UPDATE",
+      changedByUserId: userId,
+      afterSnapshot: { salaryChangeEvidence: saved.filename, revisionId },
+    });
+    return saved;
+  }
+
+  async getSalaryEvidence(companyId: string, revisionId: string) {
+    const a = await this.prisma.salaryRevisionAttachment.findFirst({ where: { salaryRevisionId: revisionId, companyId } });
+    if (!a) throw new NotFoundException("No evidence attached to this salary change");
+    return a;
   }
 
   async create(companyId: string, userId: string, dto: CreateEmployeeDto) {
@@ -139,6 +272,12 @@ export class EmployeesService {
     }
     if (dto.costCenterId) {
       await this.assertCostCenter(this.prisma, companyId, dto.costCenterId);
+    }
+
+    if (dto.basicSalary !== undefined && !new Prisma.Decimal(dto.basicSalary).equals(before.basicSalary)) {
+      throw new ConflictException(
+        'Basic salary is changed with an effective date, so earlier work keeps the old salary. Use "Change salary" on the employee page instead of editing it here.',
+      );
     }
 
     const dec = (v?: string) => (v !== undefined ? new Prisma.Decimal(v) : undefined);
@@ -240,10 +379,9 @@ export class EmployeesService {
    */
   async getSummary(companyId: string, employeeId: string) {
     const ZERO = new Prisma.Decimal(0);
-    const HOURLY_DIVISOR = new Prisma.Decimal(260); // 26 days x 10 hours/day — matches hr-reports.service.ts employeesDashboard
     const employee = await this.get(companyId, employeeId);
 
-    const [payments, timesheetAgg, actualWorkedDays, paidSalaryAgg] = await Promise.all([
+    const [payments, timesheetAgg, actualWorkedDays, paidSalaryAgg, salaryRevisions, workedEntries] = await Promise.all([
       this.prisma.employeePayment.findMany({
         where: { employeeId, reversedAt: null },
         select: { category: true, amount: true, recoveredAmount: true },
@@ -264,6 +402,11 @@ export class EmployeesService {
       this.prisma.payrollRunLine.aggregate({
         where: { employeeId, run: { status: PayrollRunStatus.POSTED } },
         _sum: { netPay: true },
+      }),
+      this.prisma.salaryRevision.findMany({ where: { employeeId }, select: { effectiveFrom: true, basicSalary: true } }),
+      this.prisma.employeeTimesheetEntry.findMany({
+        where: { employeeId, dayType: TimesheetDayType.WORKED },
+        select: { date: true, hoursWorked: true },
       }),
     ]);
 
@@ -297,8 +440,7 @@ export class EmployeesService {
     const absentAgg = timesheetAgg.find((t) => t.dayType === TimesheetDayType.ABSENT);
     const unpaidLeaveAgg = timesheetAgg.find((t) => t.dayType === TimesheetDayType.UNPAID_LEAVE);
     const workedHours = workedAgg?._sum.hoursWorked ?? ZERO;
-    const hourlyRate = employee.basicSalary.div(HOURLY_DIVISOR).toDecimalPlaces(4);
-    const accruedLaborCost = hourlyRate.mul(workedHours).toDecimalPlaces(2);
+    const accruedLaborCost = costForEntries(employee.basicSalary, salaryRevisions, workedEntries);
     // Wages accrued via logged hours that haven't been covered by a posted
     // payroll run yet — floored at zero so a payroll run that already
     // covers (or exceeds) the accrued cost never shows negative "pending".
