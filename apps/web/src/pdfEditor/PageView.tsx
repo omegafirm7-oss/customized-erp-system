@@ -1,7 +1,7 @@
 import { CSSProperties, PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { PageViewport } from "pdfjs-dist";
 import { Util } from "pdfjs-dist";
-import { Ann, FONT_STACK, LINE_HEIGHT, PageRef, PdfSource, Tool } from "./types";
+import { Ann, FONT_STACK, LINE_HEIGHT, PageRef, PdfSource, SERIF_STACK, Tool } from "./types";
 import { annBox, newId } from "./draw";
 
 interface TextRun {
@@ -10,6 +10,7 @@ interface TextRun {
   baseline: number;
   size: number;
   width: number;
+  fontName: string;
 }
 
 export interface ToolStyle {
@@ -97,15 +98,29 @@ export function PageView({ page, source, anns, zoom, tool, style, selectedId, on
     const viewport = geo.viewport;
     geo.js.getTextContent().then((content: any) => {
       if (!alive) return;
-      const list: TextRun[] = [];
+      const raw: TextRun[] = [];
       for (const it of content.items) {
-        if (!it.str || !it.str.trim()) continue;
+        if (!it.str) continue;
         const t = Util.transform(viewport.transform, it.transform) as number[];
         if (Math.abs(t[1]) > 0.01 || t[0] <= 0) continue; // only horizontal text can be edited
         const size = Math.hypot(t[0], t[1]);
-        list.push({ str: it.str, x: t[4], baseline: t[5], size, width: it.width * viewport.scale });
+        raw.push({ str: it.str, x: t[4], baseline: t[5], size, width: it.width * viewport.scale, fontName: it.fontName });
       }
-      setRuns(list);
+      // PDFs store text in small pieces (often one per word). Join the pieces that sit on one line in the same
+      // font and size, so a whole phrase is edited at once and keeps its look.
+      const list: TextRun[] = [];
+      for (const r of raw) {
+        const last = list[list.length - 1];
+        const gap = last ? r.x - (last.x + last.width) : 0;
+        if (last && last.fontName === r.fontName && Math.abs(last.size - r.size) < 0.4 && Math.abs(last.baseline - r.baseline) < 0.8 && gap > -r.size * 0.3 && gap < r.size * 0.9) {
+          const needSpace = gap > r.size * 0.12 && !last.str.endsWith(" ") && !r.str.startsWith(" ");
+          last.str += (needSpace ? " " : "") + r.str;
+          last.width = r.x + r.width - last.x;
+        } else {
+          list.push({ ...r });
+        }
+      }
+      setRuns(list.filter((r) => r.str.trim().length > 0));
     });
     return () => {
       alive = false;
@@ -158,7 +173,7 @@ export function PageView({ page, source, anns, zoom, tool, style, selectedId, on
       return;
     }
     if (tool === "text") {
-      const a: Ann = { id: newId(), kind: "text", x: p.x, y: p.y, text: "Text", size: style.size, color: style.color, bold: false };
+      const a: Ann = { id: newId(), kind: "text", x: p.x, y: p.y, text: "Text", size: style.size, color: style.color, bold: false, italic: false, serif: false };
       onAdd([a], a.id);
       return;
     }
@@ -193,29 +208,61 @@ export function PageView({ page, source, anns, zoom, tool, style, selectedId, on
   /** Clicking an existing line of text: cover it and put an editable copy in its place. */
   function editRun(run: TextRun) {
     const canvas = canvasRef.current;
+    const box = { x: run.x - 1.5, y: run.baseline - run.size * 0.92, w: run.width + 3, h: run.size * 1.2 };
     let bg = "#ffffff";
-    let dark = true;
+    let fg = "#000000";
     if (canvas) {
+      // The most common colour inside the box is the page background; the colour furthest from it is the text.
       const dpr = window.devicePixelRatio || 1;
-      const px = Math.max(0, Math.floor((run.x - 2) * zoom * dpr));
-      const py = Math.max(0, Math.floor((run.baseline - run.size * 0.3) * zoom * dpr));
+      const sx = Math.max(0, Math.floor(box.x * zoom * dpr));
+      const sy = Math.max(0, Math.floor(box.y * zoom * dpr));
+      const sw = Math.max(1, Math.min(canvas.width - sx, Math.ceil(box.w * zoom * dpr)));
+      const sh = Math.max(1, Math.min(canvas.height - sy, Math.ceil(box.h * zoom * dpr)));
       try {
-        const d = canvas.getContext("2d")!.getImageData(px, py, 1, 1).data;
-        bg = `#${[d[0], d[1], d[2]].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
-        dark = 0.299 * d[0] + 0.587 * d[1] + 0.114 * d[2] > 110;
+        const data = canvas.getContext("2d")!.getImageData(sx, sy, sw, sh).data;
+        const buckets = new Map<number, { n: number; r: number; g: number; b: number }>();
+        for (let i = 0; i < data.length; i += 4) {
+          const key = ((data[i] >> 4) << 8) | ((data[i + 1] >> 4) << 4) | (data[i + 2] >> 4);
+          const e = buckets.get(key) ?? { n: 0, r: 0, g: 0, b: 0 };
+          e.n++;
+          e.r += data[i];
+          e.g += data[i + 1];
+          e.b += data[i + 2];
+          buckets.set(key, e);
+        }
+        let top = { n: 0, r: 255, g: 255, b: 255 };
+        for (const e of buckets.values()) if (e.n > top.n) top = e;
+        const br = Math.round(top.r / Math.max(1, top.n));
+        const bgc = Math.round(top.g / Math.max(1, top.n));
+        const bb = Math.round(top.b / Math.max(1, top.n));
+        let far = { d: -1, r: 0, g: 0, b: 0 };
+        for (let i = 0; i < data.length; i += 4) {
+          const d = Math.abs(data[i] - br) + Math.abs(data[i + 1] - bgc) + Math.abs(data[i + 2] - bb);
+          if (d > far.d) far = { d, r: data[i], g: data[i + 1], b: data[i + 2] };
+        }
+        const hex = (r: number, g: number, b: number) => "#" + [r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("");
+        bg = hex(br, bgc, bb);
+        const lum = 0.299 * br + 0.587 * bgc + 0.114 * bb;
+        fg = far.d > 60 ? hex(far.r, far.g, far.b) : lum > 110 ? "#000000" : "#ffffff";
       } catch {
-        /* keep white */
+        /* keep the defaults */
       }
     }
-    const cover: Ann = {
-      id: newId(),
-      kind: "cover",
-      x: run.x - 1.5,
-      y: run.baseline - run.size * 0.92,
-      w: run.width + 3,
-      h: run.size * 1.2,
-      color: bg,
-    };
+    // Match the original font style where the PDF tells us.
+    let bold = false;
+    let italic = false;
+    let serif = false;
+    try {
+      const f: any = geo?.js?.commonObjs.has(run.fontName) ? geo.js.commonObjs.get(run.fontName) : null;
+      const name = String(f?.name ?? run.fontName ?? "");
+      bold = !!f?.bold || /bold|black|heavy|semibold|demi/i.test(name);
+      italic = !!f?.italic || /italic|oblique/i.test(name);
+      serif = !!f?.isSerifFont || /times|serif|georgia|cambria|garamond|palatino|book/i.test(name);
+      if (/sans|arial|helvet|calibri|verdana|tahoma/i.test(name)) serif = false;
+    } catch {
+      /* default look */
+    }
+    const cover: Ann = { id: newId(), kind: "cover", x: box.x, y: box.y, w: box.w, h: box.h, color: bg };
     const text: Ann = {
       id: newId(),
       kind: "text",
@@ -223,8 +270,10 @@ export function PageView({ page, source, anns, zoom, tool, style, selectedId, on
       y: run.baseline - run.size * 0.9465,
       text: run.str,
       size: Math.round(run.size * 10) / 10,
-      color: dark ? "#000000" : "#ffffff",
-      bold: false,
+      color: fg,
+      bold,
+      italic,
+      serif,
     };
     onAdd([cover, text], text.id);
   }
@@ -275,7 +324,8 @@ export function PageView({ page, source, anns, zoom, tool, style, selectedId, on
                   lineHeight: LINE_HEIGHT,
                   color: a.color,
                   fontWeight: a.bold ? 700 : 400,
-                  fontFamily: FONT_STACK,
+                  fontStyle: a.italic ? "italic" : "normal",
+                  fontFamily: a.serif ? SERIF_STACK : FONT_STACK,
                   pointerEvents: tool === "select" ? "auto" : "none",
                 }}
               >

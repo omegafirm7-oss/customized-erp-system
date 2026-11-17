@@ -27,7 +27,7 @@ export interface PageRef {
  * don't depend on the zoom level.
  */
 export type Ann =
-  | { id: string; kind: "text"; x: number; y: number; text: string; size: number; color: string; bold: boolean }
+  | { id: string; kind: "text"; x: number; y: number; text: string; size: number; color: string; bold: boolean; italic: boolean; serif: boolean }
   | { id: string; kind: "cover"; x: number; y: number; w: number; h: number; color: string }
   | { id: string; kind: "rect"; x: number; y: number; w: number; h: number; color: string; width: number }
   | { id: string; kind: "highlight"; x: number; y: number; w: number; h: number; color: string }
@@ -47,3 +47,4 @@ export const LINE_HEIGHT = 1.2;
 export const BASELINE = 0.9465;
 
 export const FONT_STACK = 'Helvetica, Arial, "Noto Naskh Arabic", "Segoe UI", sans-serif';
+export const SERIF_STACK = '"Times New Roman", Times, "Noto Naskh Arabic", serif';

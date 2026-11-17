@@ -38,7 +38,7 @@ export async function exportPdf(
 ): Promise<Uint8Array> {
   const out = await PDFDocument.create();
   const loaded = new Map<number, PDFDocument>();
-  const fonts: { regular?: PDFFont; bold?: PDFFont } = {};
+  const fonts = new Map<string, PDFFont>();
 
   async function srcDoc(id: number) {
     let d = loaded.get(id);
@@ -125,7 +125,18 @@ export async function exportPdf(
         const clean = a.text.replace(/\r/g, "").replace(/\t/g, "    ");
         if (!clean.trim()) continue;
         if (geo.rotation === 0 && isWinAnsi(clean)) {
-          const font = a.bold ? (fonts.bold ??= await out.embedFont(StandardFonts.HelveticaBold)) : (fonts.regular ??= await out.embedFont(StandardFonts.Helvetica));
+          const std = a.serif
+            ? a.bold
+              ? a.italic ? StandardFonts.TimesRomanBoldItalic : StandardFonts.TimesRomanBold
+              : a.italic ? StandardFonts.TimesRomanItalic : StandardFonts.TimesRoman
+            : a.bold
+              ? a.italic ? StandardFonts.HelveticaBoldOblique : StandardFonts.HelveticaBold
+              : a.italic ? StandardFonts.HelveticaOblique : StandardFonts.Helvetica;
+          let font = fonts.get(std);
+          if (!font) {
+            font = await out.embedFont(std);
+            fonts.set(std, font);
+          }
           clean.split("\n").forEach((line, i) => {
             const [ux, uy] = geo.toUser(a.x, a.y + a.size * BASELINE + i * a.size * LINE_HEIGHT);
             if (line) pdfPage.drawText(line, { x: ux, y: uy, size: a.size, font, color: hexColor(a.color) });

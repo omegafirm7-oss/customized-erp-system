@@ -582,6 +582,12 @@ export function PdfEditorPage() {
               <label className="pdfed-inline">
                 <input type="checkbox" checked={selected.bold} onChange={(e) => updateSelected({ bold: e.target.checked })} /> Bold
               </label>
+              <label className="pdfed-inline">
+                <input type="checkbox" checked={selected.italic} onChange={(e) => updateSelected({ italic: e.target.checked })} /> Italic
+              </label>
+              <label className="pdfed-inline">
+                <input type="checkbox" checked={selected.serif} onChange={(e) => updateSelected({ serif: e.target.checked })} /> Serif font
+              </label>
             </>
           )}
           {selected && selected.kind !== "image" && (
