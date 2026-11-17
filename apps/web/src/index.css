@@ -2904,3 +2904,46 @@ button.crm-menu-btn {
 .chat-you { color: #667085; font-size: 12px; border: 1px solid #e4e7ec; border-radius: 10px; padding: 0 7px; }
 .chat-notify-btn { margin: 0 10px 8px; padding: 6px 10px; border: 1px dashed #98a2b3; border-radius: 6px; background: #f9fafb; color: #344054; cursor: pointer; font-size: 13px; }
 .chat-notify-note { margin: 0 10px 8px; font-size: 12px; color: #b42318; }
+
+/* ── PDF editor ───────────────────────────────────────────────────── */
+.pdfed-empty { max-width: 520px; margin: 60px auto; text-align: center; border: 2px dashed #d0d5dd; border-radius: 14px; padding: 40px 24px; }
+.pdfed-note { color: #667085; font-size: 13px; }
+.pdfed-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pdfed-bar button { padding: 5px 10px; }
+.pdfed-sep { width: 1px; height: 24px; background: #d0d5dd; margin: 0 4px; }
+.pdfed-zoom { min-width: 44px; text-align: center; font-size: 13px; }
+.pdfed-flat { font-size: 13px; display: flex; align-items: center; gap: 4px; }
+.pdfed-hint { margin: 6px 0; min-height: 2.6em; color: #475467; font-size: 13px; }
+.pdfed-body { display: flex; gap: 12px; align-items: flex-start; min-width: 0; }
+.pdfed-side { width: 150px; flex: none; }
+.pdfed-side-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.pdfed-side-actions button { padding: 3px 7px; font-size: 12px; }
+.pdfed-thumbs { display: flex; flex-direction: column; gap: 8px; max-height: 72vh; overflow-y: auto; padding-right: 4px; }
+.pdfed-thumb { position: relative; border: 2px solid #e4e7ec; border-radius: 6px; cursor: pointer; background: #fff; padding: 2px; }
+.pdfed-thumb.on { border-color: #2e90fa; }
+.pdfed-thumb canvas { width: 100%; height: auto; display: block; }
+.pdfed-thumb span { position: absolute; bottom: 4px; right: 6px; font-size: 11px; background: rgba(16, 24, 40, 0.7); color: #fff; border-radius: 8px; padding: 0 6px; }
+.pdfed-main { flex: 1; min-width: 0; overflow: auto; max-height: 76vh; background: #eaecf0; border-radius: 8px; padding: 16px; }
+.pdfed-page { position: relative; margin: 0 auto; box-shadow: 0 2px 10px rgba(16, 24, 40, 0.25); background: #fff; }
+.pdfed-page canvas { display: block; }
+.pdfed-overlay { position: absolute; inset: 0; touch-action: none; user-select: none; }
+.pdfed-run { position: absolute; outline: 1px dashed #2e90fa; background: rgba(46, 144, 250, 0.08); cursor: pointer; }
+.pdfed-run:hover { background: rgba(46, 144, 250, 0.25); }
+.pdfed-text { position: absolute; white-space: pre; cursor: move; }
+.pdfed-shape, .pdfed-img { position: absolute; box-sizing: border-box; cursor: move; }
+.pdfed-pen { position: absolute; left: 0; top: 0; pointer-events: none; }
+.pdfed-sel { position: absolute; border: 1px dashed #2e90fa; pointer-events: none; }
+.pdfed-handle { position: absolute; right: -6px; bottom: -6px; width: 11px; height: 11px; background: #2e90fa; border: 1px solid #fff; border-radius: 2px; cursor: nwse-resize; pointer-events: auto; }
+.pdfed-pager { display: flex; gap: 12px; align-items: center; justify-content: center; margin-top: 12px; position: sticky; left: 0; }
+.pdfed-props { width: 200px; flex: none; display: flex; flex-direction: column; gap: 6px; }
+.pdfed-props label { font-size: 12px; color: #475467; margin-top: 4px; }
+.pdfed-props textarea { width: 100%; box-sizing: border-box; }
+.pdfed-props input[type="number"] { width: 100%; box-sizing: border-box; }
+.pdfed-inline { display: flex; align-items: center; gap: 6px; }
+.pdfed-sigpad { width: 100%; height: auto; border: 1px solid #d0d5dd; border-radius: 8px; background: #fff; touch-action: none; cursor: crosshair; }
+@media (max-width: 800px) {
+  .pdfed-body { flex-direction: column; }
+  .pdfed-side, .pdfed-props { width: 100%; }
+  .pdfed-thumbs { flex-direction: row; max-height: none; overflow-x: auto; }
+  .pdfed-thumb { width: 90px; flex: none; }
+}

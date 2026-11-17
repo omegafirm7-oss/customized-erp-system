@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth/AuthContext";
 import { Layout } from "./components/Layout";
@@ -97,6 +98,9 @@ import { UsageLogPage } from "./pages/UsageLogPage";
 import { DepreciationRunsPage } from "./pages/DepreciationRunsPage";
 import { EquipmentProfitabilityPage } from "./pages/EquipmentProfitabilityPage";
 
+// The PDF editor pulls in a large PDF engine, so it is only downloaded when someone opens it.
+const PdfEditorPage = lazy(() => import("./pages/PdfEditorPage").then((m) => ({ default: m.PdfEditorPage })));
+
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth();
   if (loading) return <p style={{ padding: 24 }}>Loading…</p>;
@@ -160,6 +164,14 @@ const companyRoutes: Array<{ path: string; element: JSX.Element }> = [
   { path: "/trial-balance", element: <TrialBalancePage /> },
   { path: "/profit-or-loss", element: <ProfitOrLossPage /> },
   { path: "/chat", element: <ChatPage /> },
+  {
+    path: "/pdf-editor",
+    element: (
+      <Suspense fallback={<p>Loading the PDF editor…</p>}>
+        <PdfEditorPage />
+      </Suspense>
+    ),
+  },
   { path: "/profit-or-loss/line/:line", element: <ProfitOrLossLineDetailPage /> },
   { path: "/financial-position", element: <FinancialPositionPage /> },
   { path: "/financial-position/line/:subClassCode", element: <FinancialPositionLineDetailPage /> },

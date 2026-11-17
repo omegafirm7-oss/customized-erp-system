@@ -256,9 +256,8 @@ export function Layout() {
       )
     : sectionsWithModules;
 
-  const withChat: NavSection[] = canChat
-    ? [{ label: "Team", items: [{ to: "/chat", label: "Team Chat" }] }, ...sectionsWithActivityLog]
-    : sectionsWithActivityLog;
+  const teamItems = [...(canChat ? [{ to: "/chat", label: "Team Chat" }] : []), { to: "/pdf-editor", label: "PDF Editor" }];
+  const withChat: NavSection[] = [{ label: "Team & Tools", items: teamItems }, ...sectionsWithActivityLog];
 
   const sections: NavSection[] = user?.isPlatformAdmin
     ? [{ label: "Platform", items: [{ to: "/platform", label: "Client Dashboard" }] }, ...withChat]
