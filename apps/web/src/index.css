@@ -2959,3 +2959,14 @@ button.crm-menu-btn {
 .pdfed-sel-cover { border-style: solid; border-color: #12b76a; }
 .pdfed-sel-cover .pdfed-h { background: #12b76a; }
 .pdfed-marquee { position: absolute; border: 1px dashed #2e90fa; background: rgba(46, 144, 250, 0.15); pointer-events: none; }
+
+/* ── Public PDF editor page ───────────────────────────────────────── */
+.pdfed-public { min-height: 100vh; background: #f2f4f7; }
+.pdfed-public-head { display: flex; align-items: center; gap: 12px; padding: 12px 20px; background: #101828; color: #fff; }
+.pdfed-public-brand { color: #fff; font-weight: 700; text-decoration: none; }
+.pdfed-public-tag { background: rgba(255, 255, 255, 0.15); border-radius: 12px; padding: 2px 10px; font-size: 13px; }
+.pdfed-public-signin { color: #fff; border: 1px solid rgba(255, 255, 255, 0.5); border-radius: 6px; padding: 5px 12px; text-decoration: none; font-size: 14px; }
+.pdfed-public-body { padding: 16px 20px; max-width: 1500px; margin: 0 auto; }
+.auth-tool-link { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; padding: 9px 12px; border: 1px solid rgba(255, 255, 255, 0.55); border-radius: 8px; color: #fff; text-decoration: none; font-weight: 600; font-size: 14px; }
+.auth-tool-link span { font-weight: 400; font-size: 12px; opacity: 0.8; }
+.auth-tool-link:hover { background: rgba(255, 255, 255, 0.12); }

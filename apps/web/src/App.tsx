@@ -1,5 +1,5 @@
-import { Suspense, lazy } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Suspense, lazy, useEffect } from "react";
+import { Link, Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth/AuthContext";
 import { Layout } from "./components/Layout";
 import { LoginPage } from "./pages/LoginPage";
@@ -100,6 +100,38 @@ import { EquipmentProfitabilityPage } from "./pages/EquipmentProfitabilityPage";
 
 // The PDF editor pulls in a large PDF engine, so it is only downloaded when someone opens it.
 const PdfEditorPage = lazy(() => import("./pages/PdfEditorPage").then((m) => ({ default: m.PdfEditorPage })));
+
+// The PDF editor also lives on its own public page: it runs entirely in the browser and touches no company data,
+// so anyone can use it without signing in.
+function PublicPdfEditor() {
+  const { user } = useAuth();
+  useEffect(() => {
+    const before = document.title;
+    document.title = "Free PDF Editor | Universa Centrix";
+    return () => {
+      document.title = before;
+    };
+  }, []);
+  return (
+    <div className="pdfed-public">
+      <header className="pdfed-public-head">
+        <Link to={user ? "/companies" : "/login"} className="pdfed-public-brand">
+          Universa Centrix
+        </Link>
+        <span className="pdfed-public-tag">Free PDF Editor</span>
+        <span style={{ flex: 1 }} />
+        <Link to={user ? "/companies" : "/login"} className="pdfed-public-signin">
+          {user ? "Back to Universa" : "Sign in"}
+        </Link>
+      </header>
+      <main className="pdfed-public-body">
+        <Suspense fallback={<p>Loading the PDF editor…</p>}>
+          <PdfEditorPage />
+        </Suspense>
+      </main>
+    </div>
+  );
+}
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth();
@@ -246,6 +278,11 @@ export default function App() {
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/mobile-upload/:token" element={<PhotoUploadMobilePage />} />
+<<<<<<< ours
+=======
+      <Route path="/verify/:token" element={<CertificateVerifyPage />} />
+      <Route path="/free-pdf-editor" element={<PublicPdfEditor />} />
+>>>>>>> theirs
       <Route
         element={
           <RequireAuth>

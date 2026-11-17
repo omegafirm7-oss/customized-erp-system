@@ -81,6 +81,9 @@ export function LoginPage() {
             <p style={{ fontSize: 13, marginTop: 10, textAlign: "center" }}>
               Not registered yet? <Link to="/register">Create an Account</Link>
             </p>
+            <Link to="/free-pdf-editor" className="auth-tool-link">
+              Free PDF Editor <span>No sign-in needed</span>
+            </Link>
           </form>
         </div>
 
