@@ -1,12 +1,13 @@
 import { ChangeEvent, DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as pdfjs from "pdfjs-dist";
-import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+// Bundled as a normal .js worker so it works whatever MIME type the web server gives .mjs files.
+import PdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?worker";
 import { exportPdf } from "../pdfEditor/exportPdf";
 import { newId } from "../pdfEditor/draw";
 import { PageView, ToolStyle, usePageViewport } from "../pdfEditor/PageView";
 import { Ann, DocState, PageRef, PdfSource, Tool } from "../pdfEditor/types";
 
-pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+pdfjs.GlobalWorkerOptions.workerPort = new PdfWorker();
 
 const TOOLS: Array<{ id: Tool; label: string; hint: string }> = [
   { id: "select", label: "Select", hint: "Click to select, drag to move, drag the corner to resize" },
@@ -217,7 +218,8 @@ export function PdfEditorPage() {
       if (err?.name === "PasswordException") {
         throw new Error(`${file.name} is password-protected. Remove the password first, then upload it again.`);
       }
-      throw new Error(`${file.name} could not be opened as a PDF.`);
+      console.error("PDF open failed", err);
+      throw new Error(`${file.name} could not be opened as a PDF${err?.message ? ": " + err.message : "."}`);
     }
   }
 
