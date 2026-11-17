@@ -11,7 +11,7 @@ pdfjs.GlobalWorkerOptions.workerPort = new PdfWorker();
 
 const TOOLS: Array<{ id: Tool; label: string; hint: string }> = [
   { id: "select", label: "Select", hint: "Click to select, drag to move, drag the corner to resize" },
-  { id: "edit", label: "Edit text", hint: "Click any line of existing text to change it" },
+  { id: "edit", label: "Edit text", hint: "Click a line to change it, or drag a box over several lines to edit them together. Drag the handles to widen or narrow the covered area" },
   { id: "text", label: "Add text", hint: "Click on the page where the text should go" },
   { id: "cover", label: "Whiteout", hint: "Drag over anything you want to hide" },
   { id: "highlight", label: "Highlight", hint: "Drag over text to highlight it" },

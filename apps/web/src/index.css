@@ -2933,7 +2933,6 @@ button.crm-menu-btn {
 .pdfed-shape, .pdfed-img { position: absolute; box-sizing: border-box; cursor: move; }
 .pdfed-pen { position: absolute; left: 0; top: 0; pointer-events: none; }
 .pdfed-sel { position: absolute; border: 1px dashed #2e90fa; pointer-events: none; }
-.pdfed-handle { position: absolute; right: -6px; bottom: -6px; width: 11px; height: 11px; background: #2e90fa; border: 1px solid #fff; border-radius: 2px; cursor: nwse-resize; pointer-events: auto; }
 .pdfed-pager { display: flex; gap: 12px; align-items: center; justify-content: center; margin-top: 12px; position: sticky; left: 0; }
 .pdfed-props { width: 200px; flex: none; display: flex; flex-direction: column; gap: 6px; }
 .pdfed-props label { font-size: 12px; color: #475467; margin-top: 4px; }
@@ -2947,3 +2946,16 @@ button.crm-menu-btn {
   .pdfed-thumbs { flex-direction: row; max-height: none; overflow-x: auto; }
   .pdfed-thumb { width: 90px; flex: none; }
 }
+
+.pdfed-h { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; background: #2e90fa; border: 1px solid #fff; border-radius: 2px; pointer-events: auto; }
+.pdfed-h-n { left: 50%; top: 0; cursor: ns-resize; }
+.pdfed-h-s { left: 50%; top: 100%; cursor: ns-resize; }
+.pdfed-h-e { left: 100%; top: 50%; cursor: ew-resize; }
+.pdfed-h-w { left: 0; top: 50%; cursor: ew-resize; }
+.pdfed-h-ne { left: 100%; top: 0; cursor: nesw-resize; }
+.pdfed-h-nw { left: 0; top: 0; cursor: nwse-resize; }
+.pdfed-h-se { left: 100%; top: 100%; cursor: nwse-resize; }
+.pdfed-h-sw { left: 0; top: 100%; cursor: nesw-resize; }
+.pdfed-sel-cover { border-style: solid; border-color: #12b76a; }
+.pdfed-sel-cover .pdfed-h { background: #12b76a; }
+.pdfed-marquee { position: absolute; border: 1px dashed #2e90fa; background: rgba(46, 144, 250, 0.15); pointer-events: none; }

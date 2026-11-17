@@ -20,6 +20,16 @@ export interface ToolStyle {
   lineWidth: number;
 }
 
+type Dir = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
+const DIRS: Dir[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+const runBox = (r: TextRun): Box => ({ x: r.x - 1, y: r.baseline - r.size * 0.92, w: r.width + 2, h: r.size * 1.2 });
+
 interface Props {
   page: PageRef;
   source: PdfSource | undefined;
@@ -66,6 +76,7 @@ export function PageView({ page, source, anns, zoom, tool, style, selectedId, on
   const overlayRef = useRef<HTMLDivElement>(null);
   const [runs, setRuns] = useState<TextRun[]>([]);
   const [draft, setDraft] = useState<Ann | null>(null);
+  const [marquee, setMarquee] = useState<Box | null>(null);
   const probe = useMemo(() => document.createElement("canvas").getContext("2d")!, []);
 
   useEffect(() => {
@@ -133,12 +144,12 @@ export function PageView({ page, source, anns, zoom, tool, style, selectedId, on
     return { x: (e.clientX - r.left) / zoom, y: (e.clientY - r.top) / zoom };
   };
 
-  /** Starts moving or resizing an existing annotation. */
-  function startDrag(e: ReactPointerEvent, a: Ann, mode: "move" | "resize") {
-    if (tool !== "select") return;
+  /** Starts moving an existing annotation, or dragging one of its edges/corners to resize it. */
+  function startDrag(e: ReactPointerEvent, a: Ann, mode: "move" | Dir, keepSelection = false) {
+    if (tool !== "select" && tool !== "edit") return;
     e.stopPropagation();
     e.preventDefault();
-    onSelect(a.id);
+    if (!keepSelection) onSelect(a.id);
     onGestureStart();
     const start = point(e);
     const move = (ev: PointerEvent) => {
@@ -148,8 +159,19 @@ export function PageView({ page, source, anns, zoom, tool, style, selectedId, on
       onLive((list) =>
         list.map((x) => {
           if (x.id !== a.id) return x;
-          if (mode === "resize" && (a.kind === "cover" || a.kind === "rect" || a.kind === "highlight" || a.kind === "image")) {
-            return { ...(x as typeof a), w: Math.max(4, a.w + dx), h: Math.max(4, a.h + dy) };
+          if (mode !== "move" && (a.kind === "cover" || a.kind === "rect" || a.kind === "highlight" || a.kind === "image")) {
+            let { x: nx, y: ny, w: nw, h: nh } = a;
+            if (mode.includes("e")) nw = Math.max(4, a.w + dx);
+            if (mode.includes("s")) nh = Math.max(4, a.h + dy);
+            if (mode.includes("w")) {
+              nw = Math.max(4, a.w - dx);
+              nx = a.x + a.w - nw;
+            }
+            if (mode.includes("n")) {
+              nh = Math.max(4, a.h - dy);
+              ny = a.y + a.h - nh;
+            }
+            return { ...(x as typeof a), x: nx, y: ny, w: nw, h: nh };
           }
           if (a.kind === "pen") return { ...(x as typeof a), points: a.points.map(([px, py]) => [px + dx, py + dy] as [number, number]) };
           if ("x" in a) return { ...(x as typeof a), x: a.x + dx, y: a.y + dy };
@@ -165,11 +187,53 @@ export function PageView({ page, source, anns, zoom, tool, style, selectedId, on
     window.addEventListener("pointerup", up);
   }
 
+  /**
+   * Edit-text tool: a click edits the line under the pointer; dragging a box
+   * edits everything inside it as one piece of text, so the area can be made
+   * as wide or as narrow as needed.
+   */
+  function startMarquee(e: ReactPointerEvent, hit: TextRun | null) {
+    e.preventDefault();
+    e.stopPropagation();
+    onSelect(null);
+    const origin = point(e);
+    let rect: Box = { x: origin.x, y: origin.y, w: 0, h: 0 };
+    const move = (ev: PointerEvent) => {
+      const q = point(ev);
+      rect = { x: Math.min(origin.x, q.x), y: Math.min(origin.y, q.y), w: Math.abs(q.x - origin.x), h: Math.abs(q.y - origin.y) };
+      setMarquee(rect);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setMarquee(null);
+      if (rect.w < 4 && rect.h < 4) {
+        if (hit) void editRuns([hit]);
+        return;
+      }
+      const inside = runs.filter((r) => {
+        const b = runBox(r);
+        const ow = Math.min(b.x + b.w, rect.x + rect.w) - Math.max(b.x, rect.x);
+        const oh = Math.min(b.y + b.h, rect.y + rect.h) - Math.max(b.y, rect.y);
+        return ow > b.w * 0.25 && oh > b.h * 0.4;
+      });
+      if (inside.length === 0) return;
+      inside.sort((a, b) => (Math.abs(a.baseline - b.baseline) > Math.min(a.size, b.size) * 0.6 ? a.baseline - b.baseline : a.x - b.x));
+      void editRuns(inside, rect);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
   /** Pointer down on the empty page: starts drawing with the active tool. */
   function onOverlayDown(e: ReactPointerEvent) {
     if (e.target !== overlayRef.current && e.target !== e.currentTarget) return;
     const p = point(e);
-    if (tool === "select" || tool === "edit") {
+    if (tool === "edit") {
+      startMarquee(e, null);
+      return;
+    }
+    if (tool === "select") {
       onSelect(null);
       return;
     }
@@ -206,10 +270,27 @@ export function PageView({ page, source, anns, zoom, tool, style, selectedId, on
     window.addEventListener("pointerup", up);
   }
 
-  /** Clicking an existing line of text: cover it and put an editable copy in its place. */
-  async function editRun(run: TextRun) {
+  /** Cover existing text (one line, or everything inside a dragged box) and put an editable copy in its place. */
+  async function editRuns(list: TextRun[], region?: Box) {
+    const run = list[0];
     const canvas = canvasRef.current;
-    const box = { x: run.x - 1.5, y: run.baseline - run.size * 0.92, w: run.width + 3, h: run.size * 1.2 };
+    const box = region ?? { x: run.x - 1.5, y: run.baseline - run.size * 0.92, w: run.width + 3, h: run.size * 1.2 };
+    const lines: string[] = [];
+    let current = "";
+    let prev: TextRun | null = null;
+    for (const r of list) {
+      if (!prev) current = r.str;
+      else if (Math.abs(r.baseline - prev.baseline) > prev.size * 0.6) {
+        lines.push(current);
+        current = r.str;
+      } else {
+        const gap = r.x - (prev.x + prev.width);
+        current += (gap > r.size * 0.12 && !current.endsWith(" ") && !r.str.startsWith(" ") ? " " : "") + r.str;
+      }
+      prev = r;
+    }
+    lines.push(current);
+    const joined = lines.join("\n");
     let bg = "#ffffff";
     let fg = "#000000";
     if (canvas) {
@@ -272,9 +353,10 @@ export function PageView({ page, source, anns, zoom, tool, style, selectedId, on
     const text: Ann = {
       id: newId(),
       kind: "text",
+      coverId: cover.id,
       x: run.x,
       y: run.baseline - run.size * 0.9465,
-      text: run.str,
+      text: joined,
       size: Math.round(run.size * 10) / 10,
       color: fg,
       // The real font already is bold or italic where it should be, so don't style it a second time.
@@ -300,11 +382,12 @@ export function PageView({ page, source, anns, zoom, tool, style, selectedId, on
             <div
               key={i}
               className="pdfed-run"
-              title="Click to edit this text"
+              title="Click to edit this text, or drag a box over several lines to edit them together"
               style={{ left: (r.x - 1) * zoom, top: (r.baseline - r.size * 0.92) * zoom, width: (r.width + 2) * zoom, height: r.size * 1.2 * zoom }}
-              onClick={() => void editRun(r)}
+              onPointerDown={(e) => startMarquee(e, r)}
             />
           ))}
+        {marquee && <div className="pdfed-marquee" style={{ left: marquee.x * zoom, top: marquee.y * zoom, width: marquee.w * zoom, height: marquee.h * zoom }} />}
 
         {all.map((a) => {
           const sel = a.id === selectedId;
@@ -312,12 +395,25 @@ export function PageView({ page, source, anns, zoom, tool, style, selectedId, on
           const common = {
             onPointerDown: (e: ReactPointerEvent) => startDrag(e, a, "move"),
           };
+          const resizable = a.kind === "cover" || a.kind === "rect" || a.kind === "highlight" || a.kind === "image";
+          // Edited text carries its whiteout along: show its handles too, so the covered area can be widened or narrowed.
+          const pairedCover = sel && a.kind === "text" && a.coverId ? anns.find((c) => c.id === a.coverId) : undefined;
           const frame = sel ? (
-            <div className="pdfed-sel" style={{ left: box.x * zoom - 2, top: box.y * zoom - 2, width: box.w * zoom + 4, height: box.h * zoom + 4 }}>
-              {(a.kind === "cover" || a.kind === "rect" || a.kind === "highlight" || a.kind === "image") && (
-                <span className="pdfed-handle" onPointerDown={(e) => startDrag(e, a, "resize")} />
+            <>
+              <div className="pdfed-sel" style={{ left: box.x * zoom - 2, top: box.y * zoom - 2, width: box.w * zoom + 4, height: box.h * zoom + 4 }}>
+                {resizable && DIRS.map((d) => <span key={d} className={`pdfed-h pdfed-h-${d}`} onPointerDown={(e) => startDrag(e, a, d)} />)}
+              </div>
+              {pairedCover && pairedCover.kind === "cover" && (
+                <div
+                  className="pdfed-sel pdfed-sel-cover"
+                  style={{ left: pairedCover.x * zoom - 1, top: pairedCover.y * zoom - 1, width: pairedCover.w * zoom + 2, height: pairedCover.h * zoom + 2 }}
+                >
+                  {DIRS.map((d) => (
+                    <span key={d} className={`pdfed-h pdfed-h-${d}`} onPointerDown={(e) => startDrag(e, pairedCover, d, true)} />
+                  ))}
+                </div>
               )}
-            </div>
+            </>
           ) : null;
           let body: JSX.Element | null = null;
           if (a.kind === "text") {
@@ -334,7 +430,7 @@ export function PageView({ page, source, anns, zoom, tool, style, selectedId, on
                   fontWeight: a.bold ? 700 : 400,
                   fontStyle: a.italic ? "italic" : "normal",
                   fontFamily: fontFamily(a.serif, a.fontKey),
-                  pointerEvents: tool === "select" ? "auto" : "none",
+                  pointerEvents: tool === "select" || tool === "edit" ? "auto" : "none",
                 }}
               >
                 {a.text}
@@ -351,7 +447,7 @@ export function PageView({ page, source, anns, zoom, tool, style, selectedId, on
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
-                {tool === "select" && (
+                {(tool === "select" || tool === "edit") && (
                   <polyline
                     {...common}
                     points={a.points.map(([x, y]) => `${x * zoom},${y * zoom}`).join(" ")}
@@ -371,11 +467,11 @@ export function PageView({ page, source, anns, zoom, tool, style, selectedId, on
                 alt=""
                 draggable={false}
                 className="pdfed-img"
-                style={{ left: a.x * zoom, top: a.y * zoom, width: a.w * zoom, height: a.h * zoom, pointerEvents: tool === "select" ? "auto" : "none" }}
+                style={{ left: a.x * zoom, top: a.y * zoom, width: a.w * zoom, height: a.h * zoom, pointerEvents: tool === "select" || tool === "edit" ? "auto" : "none" }}
               />
             );
           } else {
-            const css: CSSProperties = { left: a.x * zoom, top: a.y * zoom, width: a.w * zoom, height: a.h * zoom, pointerEvents: tool === "select" ? "auto" : "none" };
+            const css: CSSProperties = { left: a.x * zoom, top: a.y * zoom, width: a.w * zoom, height: a.h * zoom, pointerEvents: tool === "select" || tool === "edit" ? "auto" : "none" };
             if (a.kind === "cover") css.background = a.color;
             else if (a.kind === "highlight") {
               css.background = a.color;
