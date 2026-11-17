@@ -278,11 +278,7 @@ export default function App() {
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/mobile-upload/:token" element={<PhotoUploadMobilePage />} />
-<<<<<<< ours
-=======
-      <Route path="/verify/:token" element={<CertificateVerifyPage />} />
       <Route path="/free-pdf-editor" element={<PublicPdfEditor />} />
->>>>>>> theirs
       <Route
         element={
           <RequireAuth>
