@@ -569,7 +569,7 @@ export function PdfEditorPage() {
           {!selected && (tool === "select" || tool === "edit") && (
             <p className="pdfed-note">
               {tool === "edit"
-                ? "Click a line of text on the page to change it. The old text is covered and replaced. Scanned pages have no real text, so use Whiteout and Add text instead."
+                ? "Click a line of text on the page to change it. The old text is covered and replaced. Scanned pages have no real text, so use Whiteout and Add text instead. To match the original font exactly, click Allow when your browser asks to see the fonts installed on this computer (Chrome or Edge)."
                 : "Pick a tool above, or click something on the page to change it."}
             </p>
           )}

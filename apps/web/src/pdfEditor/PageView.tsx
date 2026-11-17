@@ -1,8 +1,9 @@
 import { CSSProperties, PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { PageViewport } from "pdfjs-dist";
 import { Util } from "pdfjs-dist";
-import { Ann, FONT_STACK, LINE_HEIGHT, PageRef, PdfSource, SERIF_STACK, Tool } from "./types";
-import { annBox, newId } from "./draw";
+import { Ann, LINE_HEIGHT, PageRef, PdfSource, Tool } from "./types";
+import { annBox, fontFamily, newId } from "./draw";
+import { matchLocalFont } from "./localFonts";
 
 interface TextRun {
   str: string;
@@ -206,7 +207,7 @@ export function PageView({ page, source, anns, zoom, tool, style, selectedId, on
   }
 
   /** Clicking an existing line of text: cover it and put an editable copy in its place. */
-  function editRun(run: TextRun) {
+  async function editRun(run: TextRun) {
     const canvas = canvasRef.current;
     const box = { x: run.x - 1.5, y: run.baseline - run.size * 0.92, w: run.width + 3, h: run.size * 1.2 };
     let bg = "#ffffff";
@@ -252,9 +253,11 @@ export function PageView({ page, source, anns, zoom, tool, style, selectedId, on
     let bold = false;
     let italic = false;
     let serif = false;
+    let fontKey: string | undefined;
+    let name = run.fontName ?? "";
     try {
       const f: any = geo?.js?.commonObjs.has(run.fontName) ? geo.js.commonObjs.get(run.fontName) : null;
-      const name = String(f?.name ?? run.fontName ?? "");
+      name = String(f?.name ?? run.fontName ?? "");
       bold = !!f?.bold || /bold|black|heavy|semibold|demi/i.test(name);
       italic = !!f?.italic || /italic|oblique/i.test(name);
       serif = !!f?.isSerifFont || /times|serif|georgia|cambria|garamond|palatino|book/i.test(name);
@@ -262,6 +265,9 @@ export function PageView({ page, source, anns, zoom, tool, style, selectedId, on
     } catch {
       /* default look */
     }
+    // The same font installed on this computer gives an exact match (the browser asks permission once).
+    const local = await matchLocalFont(name, bold, italic);
+    if (local) fontKey = local.key;
     const cover: Ann = { id: newId(), kind: "cover", x: box.x, y: box.y, w: box.w, h: box.h, color: bg };
     const text: Ann = {
       id: newId(),
@@ -271,9 +277,11 @@ export function PageView({ page, source, anns, zoom, tool, style, selectedId, on
       text: run.str,
       size: Math.round(run.size * 10) / 10,
       color: fg,
-      bold,
-      italic,
+      // The real font already is bold or italic where it should be, so don't style it a second time.
+      bold: fontKey ? false : bold,
+      italic: fontKey ? false : italic,
       serif,
+      fontKey,
     };
     onAdd([cover, text], text.id);
   }
@@ -294,7 +302,7 @@ export function PageView({ page, source, anns, zoom, tool, style, selectedId, on
               className="pdfed-run"
               title="Click to edit this text"
               style={{ left: (r.x - 1) * zoom, top: (r.baseline - r.size * 0.92) * zoom, width: (r.width + 2) * zoom, height: r.size * 1.2 * zoom }}
-              onClick={() => editRun(r)}
+              onClick={() => void editRun(r)}
             />
           ))}
 
@@ -325,7 +333,7 @@ export function PageView({ page, source, anns, zoom, tool, style, selectedId, on
                   color: a.color,
                   fontWeight: a.bold ? 700 : 400,
                   fontStyle: a.italic ? "italic" : "normal",
-                  fontFamily: a.serif ? SERIF_STACK : FONT_STACK,
+                  fontFamily: fontFamily(a.serif, a.fontKey),
                   pointerEvents: tool === "select" ? "auto" : "none",
                 }}
               >

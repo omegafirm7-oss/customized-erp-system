@@ -1,5 +1,6 @@
 import { BlendMode, LineCapStyle, PDFDocument, PDFFont, PDFImage, StandardFonts, degrees, rgb } from "pdf-lib";
-import { drawAnn, isWinAnsi, textToPng } from "./draw";
+import fontkit from "@pdf-lib/fontkit";
+import { drawAnn, fontRegistry, isWinAnsi, textToPng } from "./draw";
 import { Ann, BASELINE, DocState, LINE_HEIGHT, PdfSource } from "./types";
 
 const hexColor = (c: string) => {
@@ -37,6 +38,8 @@ export async function exportPdf(
   onProgress?: (done: number, total: number) => void,
 ): Promise<Uint8Array> {
   const out = await PDFDocument.create();
+  out.registerFontkit(fontkit);
+  const ownFonts = new Map<string, PDFFont | null>();
   const loaded = new Map<number, PDFDocument>();
   const fonts = new Map<string, PDFFont>();
 
@@ -124,7 +127,29 @@ export async function exportPdf(
       } else if (a.kind === "text") {
         const clean = a.text.replace(/\r/g, "").replace(/\t/g, "    ");
         if (!clean.trim()) continue;
-        if (geo.rotation === 0 && isWinAnsi(clean)) {
+        // The document's own font, when it is in the file and can draw every character typed.
+        let own: PDFFont | null = null;
+        if (a.fontKey && geo.rotation === 0 && !/[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/.test(clean)) {
+          if (!ownFonts.has(a.fontKey)) {
+            const reg = fontRegistry.get(a.fontKey);
+            try {
+              ownFonts.set(a.fontKey, reg?.data ? await out.embedFont(reg.data, { subset: true }) : null);
+            } catch {
+              ownFonts.set(a.fontKey, null);
+            }
+          }
+          const candidate = ownFonts.get(a.fontKey) ?? null;
+          if (candidate) {
+            const set = new Set(candidate.getCharacterSet());
+            if ([...clean].every((ch) => ch === "\n" || set.has(ch.codePointAt(0)!))) own = candidate;
+          }
+        }
+        if (own) {
+          clean.split("\n").forEach((line, i) => {
+            const [ux, uy] = geo.toUser(a.x, a.y + a.size * BASELINE + i * a.size * LINE_HEIGHT);
+            if (line) pdfPage.drawText(line, { x: ux, y: uy, size: a.size, font: own!, color: hexColor(a.color) });
+          });
+        } else if (geo.rotation === 0 && isWinAnsi(clean)) {
           const std = a.serif
             ? a.bold
               ? a.italic ? StandardFonts.TimesRomanBoldItalic : StandardFonts.TimesRomanBold

@@ -30,13 +30,28 @@ export const hasRtl = (s: string) => {
 /** True when every character can be written with the standard PDF Helvetica font (Latin-1 range). */
 export const isWinAnsi = (s: string) => /^[\x20-\x7E\xA0-\xFF\n\r\t]*$/.test(s);
 
-export function textFont(size: number, bold: boolean, k: number, italic = false, serif = false) {
-  return `${italic ? "italic " : ""}${bold ? "bold " : ""}${size * k}px ${serif ? SERIF_STACK : FONT_STACK}`;
+/** Fonts taken from the PDF itself, so edited text can use the document's real typeface. */
+export interface EmbeddedFont {
+  /** CSS family name pdf.js registered for the font. */
+  css: string;
+  /** The font program, when the PDF contains it. */
+  data: Uint8Array | null;
+}
+export const fontRegistry = new Map<string, EmbeddedFont>();
+
+export function fontFamily(serif: boolean, fontKey?: string) {
+  const own = fontKey ? fontRegistry.get(fontKey) : undefined;
+  const fallback = serif ? SERIF_STACK : FONT_STACK;
+  return own ? `"${own.css}", ${fallback}` : fallback;
+}
+
+export function textFont(size: number, bold: boolean, k: number, italic = false, serif = false, fontKey?: string) {
+  return `${italic ? "italic " : ""}${bold ? "bold " : ""}${size * k}px ${fontFamily(serif, fontKey)}`;
 }
 
 /** Width and height of a text annotation in PDF points, measured the way the browser lays it out. */
-export function measureText(ctx: CanvasRenderingContext2D, text: string, size: number, bold: boolean, italic = false, serif = false) {
-  ctx.font = textFont(size, bold, 1, italic, serif);
+export function measureText(ctx: CanvasRenderingContext2D, text: string, size: number, bold: boolean, italic = false, serif = false, fontKey?: string) {
+  ctx.font = textFont(size, bold, 1, italic, serif, fontKey);
   const lines = text.split("\n");
   const w = Math.max(...lines.map((l) => ctx.measureText(l).width), 1);
   return { w, h: lines.length * size * LINE_HEIGHT, lines };
@@ -80,7 +95,7 @@ export async function drawAnn(ctx: CanvasRenderingContext2D, a: Ann, k: number) 
       break;
     }
     case "text": {
-      ctx.font = textFont(a.size, a.bold, k, a.italic, a.serif);
+      ctx.font = textFont(a.size, a.bold, k, a.italic, a.serif, a.fontKey);
       ctx.fillStyle = a.color;
       ctx.textBaseline = "alphabetic";
       const lines = a.text.split("\n");
@@ -104,7 +119,7 @@ export async function drawAnn(ctx: CanvasRenderingContext2D, a: Ann, k: number) 
 /** Renders a single text annotation to a transparent PNG (used when the text can't be written with a standard PDF font). */
 export async function textToPng(a: Extract<Ann, { kind: "text" }>, k: number) {
   const probe = document.createElement("canvas").getContext("2d")!;
-  const { w, h } = measureText(probe, a.text, a.size, a.bold, a.italic, a.serif);
+  const { w, h } = measureText(probe, a.text, a.size, a.bold, a.italic, a.serif, a.fontKey);
   const pad = 2;
   const canvas = document.createElement("canvas");
   canvas.width = Math.ceil((w + pad * 2) * k);
@@ -122,7 +137,7 @@ export const newId = () => Math.random().toString(36).slice(2, 10);
 export function annBox(a: Ann, probe: CanvasRenderingContext2D): { x: number; y: number; w: number; h: number } {
   switch (a.kind) {
     case "text": {
-      const m = measureText(probe, a.text || " ", a.size, a.bold, a.italic, a.serif);
+      const m = measureText(probe, a.text || " ", a.size, a.bold, a.italic, a.serif, a.fontKey);
       return { x: a.x, y: a.y, w: m.w, h: m.h };
     }
     case "pen": {
