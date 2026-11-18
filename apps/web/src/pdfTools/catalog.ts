@@ -43,10 +43,10 @@ export const TOOLS: ToolMeta[] = [
   T({ id: "ocr", title: "OCR PDF", desc: "Turn scanned PDFs into searchable, selectable text.", category: "optimize", color: "#4caf50", icon: "ocr", ready: false }),
 
   T({ id: "jpg-to-pdf", title: "JPG to PDF", desc: "Convert JPG, PNG and other images to PDF in seconds. Easily adjust orientation and margins.", category: "to-pdf", color: "#f5c518", icon: "image", ready: true }),
-  T({ id: "word-to-pdf", title: "Word to PDF", desc: "Make DOC and DOCX files easy to read by converting them to PDF.", category: "to-pdf", color: "#2b6cb0", icon: "word", ready: false }),
-  T({ id: "powerpoint-to-pdf", title: "PowerPoint to PDF", desc: "Make PPT and PPTX slideshows easy to view by converting them to PDF.", category: "to-pdf", color: "#e5532d", icon: "ppt", ready: false }),
+  T({ id: "word-to-pdf", title: "Word to PDF", desc: "Make DOC and DOCX files easy to read by converting them to PDF.", category: "to-pdf", color: "#2b6cb0", icon: "word", ready: true }),
+  T({ id: "powerpoint-to-pdf", title: "PowerPoint to PDF", desc: "Make PPT and PPTX slideshows easy to view by converting them to PDF.", category: "to-pdf", color: "#e5532d", icon: "ppt", ready: true }),
   T({ id: "excel-to-pdf", title: "Excel to PDF", desc: "Make Excel spreadsheets easy to read by converting them to PDF.", category: "to-pdf", color: "#2f9e5b", icon: "excel", ready: true }),
-  T({ id: "html-to-pdf", title: "HTML to PDF", desc: "Convert webpages and HTML files to PDF.", category: "to-pdf", color: "#f5c518", icon: "html", ready: false }),
+  T({ id: "html-to-pdf", title: "HTML to PDF", desc: "Convert webpages and HTML files to PDF.", category: "to-pdf", color: "#f5c518", icon: "html", ready: true }),
 
   T({ id: "pdf-to-jpg", title: "PDF to JPG", desc: "Convert each PDF page into a JPG image at the quality you choose.", category: "from-pdf", color: "#f5c518", icon: "image", ready: true }),
   T({ id: "pdf-to-word", title: "PDF to Word", desc: "Convert PDF text into an editable Word document (text-based PDFs).", category: "from-pdf", color: "#2b6cb0", icon: "word", ready: true }),

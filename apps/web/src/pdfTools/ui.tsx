@@ -67,7 +67,9 @@ export interface ToolContext {
 
 interface FileToolProps {
   toolId: string;
-  kind: "pdf" | "image" | "excel";
+  kind: "pdf" | "image" | "excel" | "word" | "ppt";
+  /** Replaces the privacy line (used by tools that convert on our server). */
+  privacy?: string;
   multiple?: boolean;
   minFiles?: number;
   /** Label of the main button. */
@@ -86,10 +88,29 @@ const ACCEPT: Record<FileToolProps["kind"], string> = {
   pdf: "application/pdf,.pdf",
   image: "image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp",
   excel: ".xlsx,.xls,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  word: ".doc,.docx,.odt,.rtf,.txt",
+  ppt: ".ppt,.pptx,.odp",
+};
+
+const KIND_LABEL: Record<FileToolProps["kind"], string> = { pdf: "PDF", image: "image", excel: "Excel", word: "Word", ppt: "PowerPoint" };
+const KIND_ERROR: Record<FileToolProps["kind"], string> = {
+  pdf: "Please choose a PDF file.",
+  image: "Please choose image files (JPG, PNG, WEBP...).",
+  excel: "Please choose an Excel or CSV file.",
+  word: "Please choose a Word document (.doc, .docx, .odt, .rtf or .txt).",
+  ppt: "Please choose a PowerPoint file (.ppt, .pptx or .odp).",
 };
 
 const matches = (kind: FileToolProps["kind"], f: File) =>
-  kind === "pdf" ? f.type === "application/pdf" || /\.pdf$/i.test(f.name) : kind === "image" ? f.type.startsWith("image/") || /\.(jpe?g|png|webp|gif|bmp)$/i.test(f.name) : /\.(xlsx|xls|csv)$/i.test(f.name);
+  kind === "pdf"
+    ? f.type === "application/pdf" || /\.pdf$/i.test(f.name)
+    : kind === "image"
+      ? f.type.startsWith("image/") || /\.(jpe?g|png|webp|gif|bmp)$/i.test(f.name)
+      : kind === "excel"
+        ? /\.(xlsx|xls|csv)$/i.test(f.name)
+        : kind === "word"
+          ? /\.(docx?|odt|rtf|txt)$/i.test(f.name)
+          : /\.(pptx?|odp)$/i.test(f.name);
 
 let itemCounter = 0;
 
@@ -110,7 +131,7 @@ export function FileTool(props: FileToolProps) {
     async (list: File[]) => {
       const ok = list.filter((f) => matches(kind, f));
       if (ok.length === 0) {
-        setError(kind === "pdf" ? "Please choose a PDF file." : kind === "image" ? "Please choose image files (JPG, PNG, WEBP...)." : "Please choose an Excel or CSV file.");
+        setError(KIND_ERROR[kind]);
         return;
       }
       setError(null);
@@ -212,7 +233,7 @@ export function FileTool(props: FileToolProps) {
             {items.length === 0 ? (
               <>
                 <button type="button" className="pt-big" style={{ background: tool.color }} onClick={() => inputRef.current?.click()}>
-                  Select {kind === "pdf" ? "PDF" : kind === "image" ? "image" : "Excel"} file{multiple ? "s" : ""}
+                  Select {KIND_LABEL[kind]} file{multiple ? "s" : ""}
                 </button>
                 {props.camera && (
                   <button type="button" className="pt-ghost" onClick={() => cameraRef.current?.click()}>
@@ -309,7 +330,7 @@ export function FileTool(props: FileToolProps) {
 
       <input ref={inputRef} type="file" hidden multiple={multiple} accept={ACCEPT[kind]} onChange={onInput} />
       <input ref={cameraRef} type="file" hidden accept="image/*" capture="environment" onChange={onInput} />
-      <p className="pt-privacy">Your files are processed inside your browser and are never uploaded to our servers.</p>
+      <p className="pt-privacy">{props.privacy ?? "Your files are processed inside your browser and are never uploaded to our servers."}</p>
     </div>
   );
 }
