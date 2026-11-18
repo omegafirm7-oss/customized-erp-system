@@ -146,6 +146,8 @@ export class ConvertService {
       "--disable-background-networking",
       "--mute-audio",
       "--hide-scrollbars",
+      // The stripped-down headless browser opens no page unless given one, and Puppeteer waits for it.
+      "about:blank",
     ];
     const wrapped = asConverter(["/usr/bin/timeout", "-k", "5", "100", CHROMIUM, ...flags]);
     let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
