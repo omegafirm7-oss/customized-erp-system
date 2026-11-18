@@ -52,14 +52,14 @@ export const TOOLS: ToolMeta[] = [
   T({ id: "pdf-to-word", title: "PDF to Word", desc: "Convert PDF text into an editable Word document (text-based PDFs).", category: "from-pdf", color: "#2b6cb0", icon: "word", ready: true }),
   T({ id: "pdf-to-powerpoint", title: "PDF to PowerPoint", desc: "Turn every PDF page into a PowerPoint slide.", category: "from-pdf", color: "#e5532d", icon: "ppt", ready: true }),
   T({ id: "pdf-to-excel", title: "PDF to Excel", desc: "Pull tables and text from a PDF into an Excel spreadsheet.", category: "from-pdf", color: "#2f9e5b", icon: "excel", ready: true }),
-  T({ id: "pdf-to-pdfa", title: "PDF to PDF/A", desc: "Convert a PDF to PDF/A, the ISO standard for long-term archiving.", category: "from-pdf", color: "#2b6cb0", icon: "pdfa", ready: false }),
+  T({ id: "pdf-to-pdfa", title: "PDF to PDF/A", desc: "Convert a PDF to PDF/A, the ISO standard for long-term archiving.", category: "from-pdf", color: "#2b6cb0", icon: "pdfa", ready: true }),
 
   T({ id: "rotate", title: "Rotate PDF", desc: "Rotate your PDFs the way you need them. You can even rotate selected pages.", category: "edit", color: "#9b59b6", icon: "rotate", ready: true }),
   T({ id: "page-numbers", title: "Add page numbers", desc: "Add page numbers into PDFs with ease. Choose position, format and typography.", category: "edit", color: "#9b59b6", icon: "numbers", ready: true }),
   T({ id: "watermark", title: "Add watermark", desc: "Stamp an image or text over your PDF in seconds. Choose typography, transparency and position.", category: "edit", color: "#9b59b6", icon: "watermark", ready: true }),
   T({ id: "crop", title: "Crop PDF", desc: "Trim the margins of your PDF pages to remove what you don't need.", category: "edit", color: "#9b59b6", icon: "crop", ready: true }),
   T({ id: "edit", title: "Edit PDF", desc: "Add text, images, shapes or freehand annotations. Edit existing text, size, font and colour.", category: "edit", color: "#9b59b6", icon: "edit", ready: true }),
-  T({ id: "pdf-forms", title: "PDF Forms", desc: "Create and fill PDF forms.", category: "edit", color: "#9b59b6", icon: "forms", ready: false }),
+  T({ id: "pdf-forms", title: "PDF Forms", desc: "Fill in PDF forms, or add text boxes, checkboxes and dropdowns to turn any PDF into a fillable form.", category: "edit", color: "#9b59b6", icon: "forms", ready: true }),
 
   T({ id: "unlock", title: "Unlock PDF", desc: "Remove PDF password security, giving you the freedom to use your PDFs as you want.", category: "security", color: "#4a6fa5", icon: "unlock", ready: true }),
   T({ id: "protect", title: "Protect PDF", desc: "Protect PDF files with a password. Encrypt PDF documents to prevent unauthorized access.", category: "security", color: "#4a6fa5", icon: "protect", ready: true }),

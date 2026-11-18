@@ -9,6 +9,12 @@ import { ConvertLimiter } from "./convert-limiter";
 import { ConvertService } from "./convert.service";
 import { OfficeKind } from "./upload-check";
 
+class PdfaDto {
+  @IsOptional()
+  @IsIn(["1", "2", "3"])
+  level?: string;
+}
+
 class HtmlConvertDto {
   @IsOptional()
   @IsString()
@@ -86,6 +92,17 @@ export class ConvertController {
   @UseInterceptors(FileInterceptor("file", { storage: memoryStorage(), limits: { fileSize: 25 * MB, files: 1 } }))
   powerpoint(@Req() req: Request, @Res({ passthrough: true }) res: Response, @UploadedFile() file?: Express.Multer.File) {
     return this.office("powerpoint", req, res, file);
+  }
+
+  @Post("pdfa")
+  @ApiConsumes("multipart/form-data")
+  @UseInterceptors(FileInterceptor("file", { storage: memoryStorage(), limits: { fileSize: 25 * MB, files: 1 } }))
+  async pdfa(@Req() req: Request, @Res({ passthrough: true }) res: Response, @Body() dto: PdfaDto, @UploadedFile() file?: Express.Multer.File) {
+    if (!file) throw new BadRequestException("No file was uploaded.");
+    this.limiter.checkRate(this.visitor(req));
+    const level = Number(dto.level ?? "2") as 1 | 2 | 3;
+    const pdf = await this.limiter.run(() => this.convert.pdfToPdfa(file, level));
+    return this.send(res, pdf, file.originalname.replace(/\.[^.]+$/, "") + "-pdfa.pdf");
   }
 
   @Post("html")

@@ -1,5 +1,5 @@
 import { assertPublicUrl, isPublicIp } from "./safe-fetch";
-import { assertSafeUpload } from "./upload-check";
+import { assertPdfUpload, assertSafeUpload } from "./upload-check";
 import { ConvertLimiter } from "./convert-limiter";
 
 describe("isPublicIp", () => {
@@ -135,5 +135,14 @@ describe("ConvertLimiter", () => {
     release();
     await Promise.all([first, ...queued]);
     expect(order).toEqual([1, 2, 3, 4, 5]);
+  });
+});
+
+describe("assertPdfUpload", () => {
+  it("accepts a PDF and refuses other files", () => {
+    const pdf = Buffer.concat([Buffer.from("%PDF-1.7\n"), Buffer.alloc(200, 32)]);
+    expect(() => assertPdfUpload(pdf)).not.toThrow();
+    expect(() => assertPdfUpload(Buffer.alloc(300, 65))).toThrow(); // no header
+    expect(() => assertPdfUpload(Buffer.from("%PDF-1.4"))).toThrow(); // too small to be real
   });
 });

@@ -5,7 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import puppeteer from "puppeteer-core";
 import { safeFetch, assertPublicUrl } from "./safe-fetch";
-import { assertSafeUpload, OfficeKind, extensionOf } from "./upload-check";
+import { assertPdfUpload, assertSafeUpload, OfficeKind, extensionOf } from "./upload-check";
 
 /**
  * Where the converters run. In production they run as a separate, unprivileged
@@ -16,6 +16,8 @@ const RUN_AS = process.env.CONVERT_RUN_AS || "";
 const BASE_DIR = process.env.CONVERT_TMP_DIR || path.join(os.tmpdir(), "pdfconv");
 const SOFFICE = process.env.SOFFICE_PATH || "/usr/bin/soffice";
 const CHROMIUM = process.env.CHROMIUM_PATH || "/usr/lib64/chromium-browser/headless_shell";
+const GS = process.env.GS_PATH || "/usr/bin/gs";
+const GS_SHARE = process.env.GS_SHARE_DIR || "/usr/share/ghostscript";
 
 /** Command prefix that drops to the converter user and makes files group-writable so the API can clean up. */
 const asConverter = (argv: string[]): string[] => {
@@ -121,6 +123,67 @@ export class ConvertService {
         throw new UnprocessableEntityException("This file could not be converted. It may be damaged, password-protected or in an unsupported format.");
       }
       if (pdf.length === 0) throw new UnprocessableEntityException("The conversion produced an empty file.");
+      return pdf;
+    } finally {
+      await this.cleanup(dir);
+    }
+  }
+
+  /**
+   * Any PDF -> PDF/A (archival) with Ghostscript: fonts embedded, colours in sRGB, transparency and
+   * other features the standard forbids removed. Runs as the converter user with no network.
+   */
+  async pdfToPdfa(file: { originalname: string; buffer: Buffer }, level: 1 | 2 | 3): Promise<Buffer> {
+    assertPdfUpload(file.buffer);
+    let template: string;
+    try {
+      template = await fs.readFile(path.join(GS_SHARE, "lib", "PDFA_def.ps"), "utf8");
+    } catch {
+      this.logger.error("Ghostscript's PDF/A template was not found; is ghostscript installed?");
+      throw new UnprocessableEntityException("PDF/A conversion is not available right now.");
+    }
+    const icc = path.join(GS_SHARE, "iccprofiles", "srgb.icc");
+    const title = file.originalname.replace(/\.[^.]+$/, "").replace(/[()\\]/g, " ").slice(0, 120) || "Document";
+    const dir = await this.makeJobDir();
+    try {
+      const input = path.join(dir, "input.pdf");
+      const output = path.join(dir, "out.pdf");
+      const def = path.join(dir, "PDFA_def.ps");
+      await fs.writeFile(input, file.buffer, { mode: 0o660 });
+      await fs.writeFile(def, template.replace("(srgb.icc)", `(${icc})`).replace("/Title (Title)", `/Title (${title})`), { mode: 0o660 });
+      const argv = asConverter([
+        "/usr/bin/unshare",
+        "-rn",
+        "/usr/bin/timeout",
+        "-k",
+        "5",
+        "100",
+        GS,
+        "-dBATCH",
+        "-dNOPAUSE",
+        "-dQUIET",
+        "-dSAFER",
+        `-dPDFA=${level}`,
+        "-dPDFACompatibilityPolicy=1",
+        "-sColorConversionStrategy=RGB",
+        "-sProcessColorModel=DeviceRGB",
+        "-dEmbedAllFonts=true",
+        "-sDEVICE=pdfwrite",
+        `--permit-file-read=${icc}`,
+        `--permit-file-read=${def}`,
+        `-sOutputFile=${output}`,
+        def,
+        input,
+      ]);
+      const { code, stderr } = await this.run(argv, 115000);
+      let pdf: Buffer;
+      try {
+        pdf = await fs.readFile(output);
+      } catch {
+        this.logger.warn(`Ghostscript failed (exit ${code}): ${stderr.slice(0, 300)}`);
+        throw new UnprocessableEntityException("This PDF could not be converted to PDF/A. It may be damaged or password-protected.");
+      }
+      if (pdf.length < 100 || !pdf.includes("pdfaid:part")) throw new UnprocessableEntityException("This PDF could not be converted to PDF/A.");
       return pdf;
     } finally {
       await this.cleanup(dir);

@@ -59,3 +59,9 @@ export function assertSafeUpload(buf: Buffer, ext: string, kind: OfficeKind) {
     if (buf.subarray(0, 8192).includes(0)) throw new BadRequestException("That file isn't a plain text document.");
   }
 }
+
+/** A PDF upload must really start like a PDF (the header may follow a few bytes of junk, as the spec allows). */
+export function assertPdfUpload(buf: Buffer) {
+  if (buf.length < 100) throw new BadRequestException("That file is too small to be a PDF.");
+  if (!buf.subarray(0, 1024).toString("latin1").includes("%PDF-")) throw new BadRequestException("That file isn't a PDF.");
+}

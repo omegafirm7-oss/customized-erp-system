@@ -24,6 +24,8 @@ const REGISTRY: Record<string, LazyExoticComponent<ComponentType>> = {
   ocr: lazy(() => import("./moreTools").then((m) => ({ default: m.OcrTool }))),
   protect: lazy(() => import("./moreTools").then((m) => ({ default: m.ProtectTool }))),
   unlock: lazy(() => import("./moreTools").then((m) => ({ default: m.UnlockTool }))),
+  "pdf-to-pdfa": lazy(() => import("./serverTools").then((m) => ({ default: m.PdfToPdfaTool }))),
+  "pdf-forms": lazy(() => import("./formsTool").then((m) => ({ default: m.FormsTool }))),
   "word-to-pdf": lazy(() => import("./serverTools").then((m) => ({ default: m.WordToPdfTool }))),
   "powerpoint-to-pdf": lazy(() => import("./serverTools").then((m) => ({ default: m.PowerpointToPdfTool }))),
   "html-to-pdf": lazy(() => import("./serverTools").then((m) => ({ default: m.HtmlToPdfTool }))),

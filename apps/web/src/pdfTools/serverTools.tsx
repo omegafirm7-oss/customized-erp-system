@@ -208,3 +208,38 @@ export function HtmlToPdfTool() {
     </div>
   );
 }
+
+export function PdfToPdfaTool() {
+  const [level, setLevel] = useState("2");
+  return (
+    <FileTool
+      toolId="pdf-to-pdfa"
+      kind="pdf"
+      action="Convert to PDF/A"
+      privacy={SERVER_NOTE}
+      options={() => (
+        <Field label="PDF/A version" hint="PDF/A-2b suits most archives. Use PDF/A-1b only if a system asks for it specifically.">
+          <select value={level} onChange={(e) => setLevel(e.target.value)}>
+            <option value="2">PDF/A-2b (recommended)</option>
+            <option value="1">PDF/A-1b (strictest, widest compatibility)</option>
+            <option value="3">PDF/A-3b (allows attachments)</option>
+          </select>
+        </Field>
+      )}
+      run={async ({ files }, progress) => {
+        progress("Converting… this can take up to a minute");
+        const form = new FormData();
+        form.append("file", files[0]);
+        form.append("level", level);
+        const blob = await convertOnServer("pdfa", form);
+        return [
+          {
+            blob,
+            filename: `${baseName(files[0].name)}-pdfa.pdf`,
+            note: `Converted to PDF/A-${level}b with fonts embedded and colours in sRGB. Features the standard forbids (such as scripts and some transparency) were removed. Run it through a PDF/A validator if you must prove compliance.`,
+          },
+        ];
+      }}
+    />
+  );
+}
