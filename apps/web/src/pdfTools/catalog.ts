@@ -67,8 +67,8 @@ export const TOOLS: ToolMeta[] = [
   T({ id: "redact", title: "Redact PDF", desc: "Permanently black out or white out sensitive text and areas in a PDF.", category: "security", color: "#4a6fa5", icon: "redact", ready: true, to: "edit?tool=cover&flatten=1" }),
   T({ id: "compare", title: "Compare PDF", desc: "Show a side-by-side comparison and highlight the changes between two PDFs.", category: "security", color: "#4a6fa5", icon: "compare", ready: true }),
 
-  T({ id: "ai-summarizer", title: "AI Summarizer", desc: "Summarise long PDFs into the key points in seconds.", category: "intelligence", color: "#6f4cff", icon: "summary", ready: false }),
-  T({ id: "translate", title: "Translate PDF", desc: "Translate PDF documents into another language.", category: "intelligence", color: "#6f4cff", icon: "translate", ready: false }),
+  T({ id: "ai-summarizer", title: "AI Summarizer", desc: "Summarise long PDFs into the key points in seconds.", category: "intelligence", color: "#6f4cff", icon: "summary", ready: true }),
+  T({ id: "translate", title: "Translate PDF", desc: "Translate the text of a PDF into another language, such as Arabic or English, and download it as PDF or Word.", category: "intelligence", color: "#6f4cff", icon: "translate", ready: true }),
   T({ id: "pdf-to-markdown", title: "PDF to Markdown", desc: "Convert PDF text into clean Markdown with headings and lists.", category: "intelligence", color: "#6f4cff", icon: "markdown", ready: true }),
 ];
 

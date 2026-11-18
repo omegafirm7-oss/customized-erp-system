@@ -26,6 +26,8 @@ const REGISTRY: Record<string, LazyExoticComponent<ComponentType>> = {
   unlock: lazy(() => import("./moreTools").then((m) => ({ default: m.UnlockTool }))),
   "pdf-to-pdfa": lazy(() => import("./serverTools").then((m) => ({ default: m.PdfToPdfaTool }))),
   "pdf-forms": lazy(() => import("./formsTool").then((m) => ({ default: m.FormsTool }))),
+  "ai-summarizer": lazy(() => import("./aiTools").then((m) => ({ default: m.SummarizerTool }))),
+  translate: lazy(() => import("./aiTools").then((m) => ({ default: m.TranslateTool }))),
   "word-to-pdf": lazy(() => import("./serverTools").then((m) => ({ default: m.WordToPdfTool }))),
   "powerpoint-to-pdf": lazy(() => import("./serverTools").then((m) => ({ default: m.PowerpointToPdfTool }))),
   "html-to-pdf": lazy(() => import("./serverTools").then((m) => ({ default: m.HtmlToPdfTool }))),
