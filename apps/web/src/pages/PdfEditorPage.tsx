@@ -1,13 +1,11 @@
 import { ChangeEvent, DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import * as pdfjs from "pdfjs-dist";
-// Bundled as a normal .js worker so it works whatever MIME type the web server gives .mjs files.
-import PdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?worker";
+import { useSearchParams } from "react-router-dom";
+import { pdfjs } from "../pdfTools/engine";
 import { exportPdf } from "../pdfEditor/exportPdf";
 import { newId } from "../pdfEditor/draw";
 import { PageView, ToolStyle, usePageViewport } from "../pdfEditor/PageView";
 import { Ann, DocState, PageRef, PdfSource, Tool } from "../pdfEditor/types";
 
-pdfjs.GlobalWorkerOptions.workerPort = new PdfWorker();
 
 const TOOLS: Array<{ id: Tool; label: string; hint: string }> = [
   { id: "select", label: "Select", hint: "Click to select, drag to move, drag the corner to resize" },
@@ -96,18 +94,28 @@ export function PdfEditorPage() {
   const [future, setFuture] = useState<DocState[]>([]);
   const [current, setCurrent] = useState(0);
   const [zoom, setZoom] = useState(1);
-  const [tool, setTool] = useState<Tool>("select");
+  const [params] = useSearchParams();
+  const initialTool = (TOOLS.some((t) => t.id === params.get("tool")) ? params.get("tool") : "select") as Tool;
+  const [tool, setTool] = useState<Tool>(initialTool);
   const [colors, setColors] = useState<Record<Tool, string>>(DEFAULT_COLORS);
   const [textSize, setTextSize] = useState(14);
   const [lineWidth, setLineWidth] = useState(2);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [flatten, setFlatten] = useState(false);
+  const [flatten, setFlatten] = useState(params.get("flatten") === "1");
   const [fileName, setFileName] = useState("document.pdf");
   const [dirty, setDirty] = useState(false);
   const [signing, setSigning] = useState(false);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
+  const signAsked = useRef(false);
+  useEffect(() => {
+    // "Sign PDF" opens the signature pad as soon as a file is loaded.
+    if (params.get("sign") === "1" && sources.length > 0 && !signAsked.current) {
+      signAsked.current = true;
+      setSigning(true);
+    }
+  }, [params, sources.length]);
   const mainRef = useRef<HTMLDivElement>(null);
   const openRef = useRef<HTMLInputElement>(null);
   const mergeRef = useRef<HTMLInputElement>(null);
@@ -238,7 +246,7 @@ export function PdfEditorPage() {
       setSelectedId(null);
       setFileName(file.name);
       setDirty(false);
-      setTool("select");
+      setTool(initialTool);
       setZoom(0); // 0 = fit to width once the first page reports its size
     } catch (err: any) {
       setError(err.message);
