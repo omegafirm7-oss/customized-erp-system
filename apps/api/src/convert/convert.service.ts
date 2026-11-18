@@ -150,7 +150,7 @@ export class ConvertService {
       const output = path.join(dir, "out.pdf");
       const def = path.join(dir, "PDFA_def.ps");
       await fs.writeFile(input, file.buffer, { mode: 0o660 });
-      await fs.writeFile(def, template.replace("(srgb.icc)", `(${icc})`).replace("/Title (Title)", `/Title (${title})`), { mode: 0o660 });
+      await fs.writeFile(def, template.split("(srgb.icc)").join(`(${icc})`).replace("/Title (Title)", `/Title (${title})`), { mode: 0o660 });
       const argv = asConverter([
         "/usr/bin/unshare",
         "-rn",
@@ -176,10 +176,14 @@ export class ConvertService {
         input,
       ]);
       const { code, stderr } = await this.run(argv, 115000);
-      let pdf: Buffer;
+      let pdf: Buffer | null = null;
       try {
         pdf = await fs.readFile(output);
       } catch {
+        /* handled below */
+      }
+      // Ghostscript can write a (blank) file even when it hit an error, so any reported error counts as a failure.
+      if (!pdf || /Error:|Unrecoverable error/.test(stderr)) {
         this.logger.warn(`Ghostscript failed (exit ${code}): ${stderr.slice(0, 300)}`);
         throw new UnprocessableEntityException("This PDF could not be converted to PDF/A. It may be damaged or password-protected.");
       }
