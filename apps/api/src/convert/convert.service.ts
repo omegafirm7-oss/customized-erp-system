@@ -39,12 +39,13 @@ export class ConvertService {
   private async makeJobDir() {
     await fs.mkdir(BASE_DIR, { recursive: true, mode: 0o2770 });
     const dir = await fs.mkdtemp(path.join(BASE_DIR, "job-"));
-    await fs.chmod(dir, 0o770);
+    await fs.chmod(dir, 0o2770); // setgid: new files inherit the converter group, which both users share
     return dir;
   }
 
   private async cleanup(dir: string) {
     try {
+      if (RUN_AS) await this.run(asConverter(["/bin/rm", "-rf", dir]), 15000).catch(() => undefined);
       await fs.rm(dir, { recursive: true, force: true });
     } catch (err) {
       this.logger.warn(`Could not remove ${dir}: ${(err as Error).message}`);
@@ -87,7 +88,7 @@ export class ConvertService {
       const input = path.join(dir, `input.${ext}`);
       const outDir = path.join(dir, "out");
       await fs.mkdir(outDir, { mode: 0o770 });
-      await fs.chmod(outDir, 0o770);
+      await fs.chmod(outDir, 0o2770);
       await fs.writeFile(input, file.buffer, { mode: 0o660 });
       const argv = asConverter([
         "/usr/bin/unshare",
