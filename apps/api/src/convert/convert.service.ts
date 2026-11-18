@@ -131,6 +131,9 @@ export class ConvertService {
   async htmlToPdf(opts: HtmlOptions): Promise<Buffer> {
     if (opts.url) assertPublicUrl(opts.url);
     const dir = await this.makeJobDir();
+    // Chromium writes its control address into the profile folder; make that folder readable by us too.
+    await fs.mkdir(path.join(dir, "profile"), { mode: 0o2770 });
+    await fs.chmod(path.join(dir, "profile"), 0o2770);
     const flags = [
       "--headless",
       "--remote-debugging-port=0",
