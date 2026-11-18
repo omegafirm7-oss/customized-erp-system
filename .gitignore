@@ -11,3 +11,6 @@ apps/api/generated/
 
 # Real business data — never commit actual financial/vendor records
 imports/
+
+# OCR engine files are copied from node_modules at build time (scripts/copy-ocr-assets.mjs)
+apps/web/public/ocr/*.js

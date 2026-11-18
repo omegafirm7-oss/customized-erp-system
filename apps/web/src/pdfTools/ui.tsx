@@ -70,6 +70,8 @@ interface FileToolProps {
   kind: "pdf" | "image" | "excel" | "word" | "ppt";
   /** Replaces the privacy line (used by tools that convert on our server). */
   privacy?: string;
+  /** Don't open the PDF just to count its pages (needed for password-protected files). */
+  noPageCount?: boolean;
   multiple?: boolean;
   minFiles?: number;
   /** Label of the main button. */
@@ -138,7 +140,7 @@ export function FileTool(props: FileToolProps) {
       setResults([]);
       const fresh: Item[] = (multiple ? ok : ok.slice(0, 1)).map((file) => ({ id: String(++itemCounter), file }));
       setItems((prev) => (multiple ? [...prev, ...fresh] : fresh));
-      if (kind === "pdf") {
+      if (kind === "pdf" && !props.noPageCount) {
         for (const it of fresh) {
           try {
             const pdf = await openPdf(new Uint8Array(await it.file.arrayBuffer()), it.file.name);
@@ -151,7 +153,7 @@ export function FileTool(props: FileToolProps) {
         }
       }
     },
-    [kind, multiple],
+    [kind, multiple, props.noPageCount],
   );
 
   function onInput(e: ChangeEvent<HTMLInputElement>) {

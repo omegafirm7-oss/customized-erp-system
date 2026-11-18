@@ -40,7 +40,7 @@ export const TOOLS: ToolMeta[] = [
 
   T({ id: "compress", title: "Compress PDF", desc: "Reduce the file size of your PDF while keeping it readable.", category: "optimize", color: "#4caf50", icon: "compress", ready: true }),
   T({ id: "repair", title: "Repair PDF", desc: "Recover the data from a damaged or corrupted PDF where possible.", category: "optimize", color: "#4caf50", icon: "repair", ready: true }),
-  T({ id: "ocr", title: "OCR PDF", desc: "Turn scanned PDFs into searchable, selectable text.", category: "optimize", color: "#4caf50", icon: "ocr", ready: false }),
+  T({ id: "ocr", title: "OCR PDF", desc: "Turn scanned PDFs into searchable, selectable text in English or Arabic.", category: "optimize", color: "#4caf50", icon: "ocr", ready: true }),
 
   T({ id: "jpg-to-pdf", title: "JPG to PDF", desc: "Convert JPG, PNG and other images to PDF in seconds. Easily adjust orientation and margins.", category: "to-pdf", color: "#f5c518", icon: "image", ready: true }),
   T({ id: "word-to-pdf", title: "Word to PDF", desc: "Make DOC and DOCX files easy to read by converting them to PDF.", category: "to-pdf", color: "#2b6cb0", icon: "word", ready: true }),
@@ -61,8 +61,8 @@ export const TOOLS: ToolMeta[] = [
   T({ id: "edit", title: "Edit PDF", desc: "Add text, images, shapes or freehand annotations. Edit existing text, size, font and colour.", category: "edit", color: "#9b59b6", icon: "edit", ready: true }),
   T({ id: "pdf-forms", title: "PDF Forms", desc: "Create and fill PDF forms.", category: "edit", color: "#9b59b6", icon: "forms", ready: false }),
 
-  T({ id: "unlock", title: "Unlock PDF", desc: "Remove PDF password security, giving you the freedom to use your PDFs as you want.", category: "security", color: "#4a6fa5", icon: "unlock", ready: false }),
-  T({ id: "protect", title: "Protect PDF", desc: "Protect PDF files with a password. Encrypt PDF documents to prevent unauthorized access.", category: "security", color: "#4a6fa5", icon: "protect", ready: false }),
+  T({ id: "unlock", title: "Unlock PDF", desc: "Remove PDF password security, giving you the freedom to use your PDFs as you want.", category: "security", color: "#4a6fa5", icon: "unlock", ready: true }),
+  T({ id: "protect", title: "Protect PDF", desc: "Protect PDF files with a password. Encrypt PDF documents to prevent unauthorized access.", category: "security", color: "#4a6fa5", icon: "protect", ready: true }),
   T({ id: "sign", title: "Sign PDF", desc: "Sign yourself or request electronic signatures from others.", category: "security", color: "#4a6fa5", icon: "sign", ready: true, to: "edit?sign=1" }),
   T({ id: "redact", title: "Redact PDF", desc: "Permanently black out or white out sensitive text and areas in a PDF.", category: "security", color: "#4a6fa5", icon: "redact", ready: true, to: "edit?tool=cover&flatten=1" }),
   T({ id: "compare", title: "Compare PDF", desc: "Show a side-by-side comparison and highlight the changes between two PDFs.", category: "security", color: "#4a6fa5", icon: "compare", ready: true }),
