@@ -36,14 +36,21 @@ describe("Activity Log records timesheet downloads (e2e)", () => {
     await request(server).post("/audit/events/timesheet-download").set(auth(ctx.accessToken)).send({ employeeId: employee.id, periodId: period.id, channel: "WHATSAPP" }).expect(201);
 
     const adminToken = await asPlatformAdmin(app, ctx);
-    const res = (await request(server).get("/audit/activity-log").query({ action: "DOWNLOAD", entityName: "Timesheet PDF" }).set(auth(adminToken)).expect(200)).body;
-    expect(res.total).toBe(2);
-    const first = res.items[0];
-    expect(first.action).toBe("DOWNLOAD");
-    expect(first.user.email).toBe(ctx.email);
-    expect(first.details).toMatchObject({ employeeCode: "EMPT", employeeName: "Tariq Hasan" });
-    expect(first.details.period).toContain("to");
-    expect(res.items.map((i: any) => i.details.via).sort()).toEqual(["Downloaded", "Sent via WhatsApp"]);
+    // Downloads and WhatsApp sends are separate activity types, each with its own filter.
+    const downloads = (await request(server).get("/audit/activity-log").query({ action: "DOWNLOAD", entityName: "Timesheet PDF" }).set(auth(adminToken)).expect(200)).body;
+    expect(downloads.total).toBe(1);
+    expect(downloads.items[0].user.email).toBe(ctx.email);
+    expect(downloads.items[0].details).toMatchObject({ employeeCode: "EMPT", employeeName: "Tariq Hasan", via: "Downloaded" });
+    expect(downloads.items[0].details.period).toContain("to");
+
+    const shares = (await request(server).get("/audit/activity-log").query({ action: "SHARE", entityName: "Timesheet PDF" }).set(auth(adminToken)).expect(200)).body;
+    expect(shares.total).toBe(1);
+    expect(shares.items[0].action).toBe("SHARE");
+    expect(shares.items[0].details).toMatchObject({ employeeCode: "EMPT", via: "Sent via WhatsApp", sentTo: null }); // this employee has no phone saved
+
+    // Both together under the record type.
+    const both = (await request(server).get("/audit/activity-log").query({ entityName: "Timesheet PDF" }).set(auth(adminToken)).expect(200)).body;
+    expect(both.total).toBe(2);
 
     // The drop-down for record types offers it.
     const types = (await request(server).get("/audit/activity-log/record-types").set(auth(adminToken)).expect(200)).body;

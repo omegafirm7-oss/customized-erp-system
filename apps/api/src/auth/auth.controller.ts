@@ -138,7 +138,9 @@ export class AuthController {
   }
 
   private requestMeta(req: Request) {
-    return { ipAddress: req.ip, userAgent: req.headers["user-agent"] };
+    // Behind nginx, req.ip is the proxy itself (127.0.0.1); nginx passes the visitor's real address in X-Real-IP.
+    const real = req.headers["x-real-ip"];
+    return { ipAddress: (Array.isArray(real) ? real[0] : real) || req.ip, userAgent: req.headers["user-agent"] };
   }
 
   private setRefreshCookie(res: Response, tokens: IssuedTokens) {

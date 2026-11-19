@@ -93,7 +93,7 @@ export class AuditService {
         ipAddress: r.ipAddress,
         userAgent: r.userAgent,
         // What was acted on, for events that carry it (for example which timesheet was downloaded).
-        details: r.action === AuditAction.DOWNLOAD ? (r.afterSnapshot ?? null) : null,
+        details: r.action === AuditAction.DOWNLOAD || r.action === AuditAction.SHARE ? (r.afterSnapshot ?? null) : null,
         user: r.changedByUserId ? (usersById.get(r.changedByUserId) ?? null) : null,
       })),
       total,
@@ -119,7 +119,7 @@ export class AuditService {
     input: { employeeId: string; periodId?: string; channel: "DOWNLOAD" | "WHATSAPP" },
     meta: { ipAddress?: string | null; userAgent?: string | null },
   ) {
-    const employee = await this.prisma.employee.findFirst({ where: { id: input.employeeId, companyId }, select: { id: true, code: true, nameEn: true } });
+    const employee = await this.prisma.employee.findFirst({ where: { id: input.employeeId, companyId }, select: { id: true, code: true, nameEn: true, phone: true } });
     if (!employee) throw new NotFoundException("Employee not found");
     const period = input.periodId
       ? await this.prisma.fiscalPeriod.findFirst({ where: { id: input.periodId, companyId }, select: { startDate: true, endDate: true } })
@@ -128,13 +128,15 @@ export class AuditService {
       companyId,
       entityName: "Timesheet PDF",
       entityId: employee.id,
-      action: AuditAction.DOWNLOAD,
+      action: input.channel === "WHATSAPP" ? AuditAction.SHARE : AuditAction.DOWNLOAD,
       changedByUserId: userId,
       afterSnapshot: {
         employeeCode: employee.code,
         employeeName: employee.nameEn,
         period: period ? `${period.startDate.toISOString().slice(0, 10)} to ${period.endDate.toISOString().slice(0, 10)}` : null,
         via: input.channel === "WHATSAPP" ? "Sent via WhatsApp" : "Downloaded",
+        // The number the WhatsApp chat opens to (the employee's saved phone); blank means the sender chose the recipient by hand.
+        ...(input.channel === "WHATSAPP" ? { sentTo: employee.phone?.trim() || null } : {}),
       },
       ipAddress: meta.ipAddress ?? null,
       userAgent: meta.userAgent ?? null,

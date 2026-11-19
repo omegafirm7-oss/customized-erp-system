@@ -11,7 +11,7 @@ interface ActivityLogRow {
   userAgent: string | null;
   user: { id: string; email: string; fullName: string } | null;
   /** For downloads: what was taken. */
-  details: { employeeCode?: string; employeeName?: string; period?: string | null; via?: string } | null;
+  details: { employeeCode?: string; employeeName?: string; period?: string | null; via?: string; sentTo?: string | null } | null;
 }
 
 interface CompanyUserRow {
@@ -20,7 +20,7 @@ interface CompanyUserRow {
   fullName: string;
 }
 
-const ACTIONS = ["LOGIN", "LOGOUT", "DOWNLOAD", "CREATE", "UPDATE", "DELETE", "POST", "REVERSE", "CLOSE"];
+const ACTIONS = ["LOGIN", "LOGOUT", "DOWNLOAD", "SHARE", "CREATE", "UPDATE", "DELETE", "POST", "REVERSE", "CLOSE"];
 
 const ACTION_LABELS: Record<string, string> = {
   LOGIN: "Logged in",
@@ -32,6 +32,7 @@ const ACTION_LABELS: Record<string, string> = {
   REVERSE: "Reversed",
   CLOSE: "Closed",
   DOWNLOAD: "Downloaded",
+  SHARE: "Shared via WhatsApp",
 };
 
 const PAGE_SIZE = 50;
@@ -111,6 +112,16 @@ export function ActivityLogPage() {
     setPage(1);
   }
 
+  /** One click to see every timesheet sent over WhatsApp, and to which number. */
+  function showTimesheetShares() {
+    setUserId("");
+    setAction("SHARE");
+    setEntityName("Timesheet PDF");
+    setFrom("");
+    setTo("");
+    setPage(1);
+  }
+
   function clearFilters() {
     setUserId("");
     setAction("");
@@ -168,8 +179,11 @@ export function ActivityLogPage() {
         <button className="secondary" onClick={clearFilters}>
           Clear
         </button>
-        <button className="secondary" onClick={showTimesheetDownloads} title="Show who downloaded or sent a timesheet PDF">
+        <button className="secondary" onClick={showTimesheetDownloads} title="Show who downloaded a timesheet PDF">
           Timesheet downloads
+        </button>
+        <button className="secondary" onClick={showTimesheetShares} title="Show who sent a timesheet PDF over WhatsApp, and to which number">
+          Timesheet WhatsApp shares
         </button>
       </div>
 
@@ -205,7 +219,7 @@ export function ActivityLogPage() {
                     <td>{r.entityName}</td>
                     <td>
                       {r.details
-                        ? [r.details.employeeCode && r.details.employeeName ? `${r.details.employeeCode} ${r.details.employeeName}` : null, r.details.period, r.details.via].filter(Boolean).join(" · ")
+                        ? [r.details.employeeCode && r.details.employeeName ? `${r.details.employeeCode} ${r.details.employeeName}` : null, r.details.period, r.details.via, r.details.via === "Sent via WhatsApp" ? (r.details.sentTo ? `to ${r.details.sentTo}` : r.details.sentTo === null ? "recipient chosen by hand (no phone saved)" : "recipient not recorded") : null].filter(Boolean).join(" · ")
                         : "—"}
                     </td>
                     <td>{r.ipAddress ?? "—"}</td>
