@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import { AuditAction } from "@prisma/client";
 import { PrismaService } from "../common/prisma/prisma.service";
 
@@ -92,11 +92,52 @@ export class AuditService {
         entityId: r.entityId,
         ipAddress: r.ipAddress,
         userAgent: r.userAgent,
+        // What was acted on, for events that carry it (for example which timesheet was downloaded).
+        details: r.action === AuditAction.DOWNLOAD ? (r.afterSnapshot ?? null) : null,
         user: r.changedByUserId ? (usersById.get(r.changedByUserId) ?? null) : null,
       })),
       total,
       page: filter.page,
       pageSize: filter.pageSize,
     };
+  }
+
+  /** The kinds of record that appear in this company's log, for the filter drop-down. */
+  async recordTypes(companyId: string) {
+    const rows = await this.prisma.auditLog.groupBy({ by: ["entityName"], where: { companyId }, _count: { _all: true }, orderBy: { entityName: "asc" } });
+    return rows.map((r) => ({ entityName: r.entityName, count: r._count._all }));
+  }
+
+  /**
+   * Records that someone downloaded (or sent over WhatsApp) an employee's timesheet PDF. The names and the
+   * period come from the database, not from what the browser claims, so the entry can't be made to say
+   * something else.
+   */
+  async logTimesheetDownload(
+    companyId: string,
+    userId: string,
+    input: { employeeId: string; periodId?: string; channel: "DOWNLOAD" | "WHATSAPP" },
+    meta: { ipAddress?: string | null; userAgent?: string | null },
+  ) {
+    const employee = await this.prisma.employee.findFirst({ where: { id: input.employeeId, companyId }, select: { id: true, code: true, nameEn: true } });
+    if (!employee) throw new NotFoundException("Employee not found");
+    const period = input.periodId
+      ? await this.prisma.fiscalPeriod.findFirst({ where: { id: input.periodId, companyId }, select: { startDate: true, endDate: true } })
+      : null;
+    await this.log({
+      companyId,
+      entityName: "Timesheet PDF",
+      entityId: employee.id,
+      action: AuditAction.DOWNLOAD,
+      changedByUserId: userId,
+      afterSnapshot: {
+        employeeCode: employee.code,
+        employeeName: employee.nameEn,
+        period: period ? `${period.startDate.toISOString().slice(0, 10)} to ${period.endDate.toISOString().slice(0, 10)}` : null,
+        via: input.channel === "WHATSAPP" ? "Sent via WhatsApp" : "Downloaded",
+      },
+      ipAddress: meta.ipAddress ?? null,
+      userAgent: meta.userAgent ?? null,
+    });
   }
 }

@@ -16,6 +16,11 @@ import { AuditService } from "./audit.service";
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 
+  @Get("activity-log/record-types")
+  recordTypes(@CurrentCompanyId() companyId: string) {
+    return this.auditService.recordTypes(companyId);
+  }
+
   @Get("activity-log")
   async listActivityLog(
     @CurrentCompanyId() companyId: string,

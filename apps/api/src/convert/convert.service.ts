@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import puppeteer from "puppeteer-core";
+import type { Browser } from "puppeteer-core";
 import { safeFetch, assertPublicUrl } from "./safe-fetch";
 import { assertPdfUpload, assertSafeUpload, OfficeKind, extensionOf } from "./upload-check";
 
@@ -217,8 +217,10 @@ export class ConvertService {
       "about:blank",
     ];
     const wrapped = asConverter(["/usr/bin/timeout", "-k", "5", "100", CHROMIUM, ...flags]);
-    let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
+    let browser: Browser | null = null;
     try {
+      // Loaded only when a page is actually converted (the library is ESM-only, which the test runner can't load up front).
+      const { default: puppeteer } = await import("puppeteer-core");
       browser = await puppeteer.launch({
         executablePath: wrapped[0],
         args: wrapped.slice(1),

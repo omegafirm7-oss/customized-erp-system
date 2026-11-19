@@ -10,6 +10,8 @@ interface ActivityLogRow {
   ipAddress: string | null;
   userAgent: string | null;
   user: { id: string; email: string; fullName: string } | null;
+  /** For downloads: what was taken. */
+  details: { employeeCode?: string; employeeName?: string; period?: string | null; via?: string } | null;
 }
 
 interface CompanyUserRow {
@@ -18,7 +20,7 @@ interface CompanyUserRow {
   fullName: string;
 }
 
-const ACTIONS = ["LOGIN", "LOGOUT", "CREATE", "UPDATE", "DELETE", "POST", "REVERSE", "CLOSE"];
+const ACTIONS = ["LOGIN", "LOGOUT", "DOWNLOAD", "CREATE", "UPDATE", "DELETE", "POST", "REVERSE", "CLOSE"];
 
 const ACTION_LABELS: Record<string, string> = {
   LOGIN: "Logged in",
@@ -29,6 +31,7 @@ const ACTION_LABELS: Record<string, string> = {
   POST: "Posted",
   REVERSE: "Reversed",
   CLOSE: "Closed",
+  DOWNLOAD: "Downloaded",
 };
 
 const PAGE_SIZE = 50;
@@ -43,6 +46,8 @@ export function ActivityLogPage() {
 
   const [userId, setUserId] = useState("");
   const [action, setAction] = useState("");
+  const [entityName, setEntityName] = useState("");
+  const [recordTypes, setRecordTypes] = useState<string[]>([]);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
 
@@ -56,6 +61,13 @@ export function ActivityLogPage() {
       });
   }, []);
 
+  useEffect(() => {
+    apiClient
+      .get<Array<{ entityName: string }>>("/audit/activity-log/record-types")
+      .then((res) => setRecordTypes(res.data.map((r) => r.entityName)))
+      .catch(() => undefined);
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -64,6 +76,7 @@ export function ActivityLogPage() {
         params: {
           userId: userId || undefined,
           action: action || undefined,
+          entityName: entityName || undefined,
           from: from ? new Date(from).toISOString() : undefined,
           to: to ? new Date(`${to}T23:59:59.999`).toISOString() : undefined,
           page,
@@ -77,7 +90,7 @@ export function ActivityLogPage() {
     } finally {
       setLoading(false);
     }
-  }, [userId, action, from, to, page]);
+  }, [userId, action, entityName, from, to, page]);
 
   useEffect(() => {
     load();
@@ -88,9 +101,20 @@ export function ActivityLogPage() {
     load();
   }
 
+  /** One click to see who took a timesheet and when. */
+  function showTimesheetDownloads() {
+    setUserId("");
+    setAction("DOWNLOAD");
+    setEntityName("Timesheet PDF");
+    setFrom("");
+    setTo("");
+    setPage(1);
+  }
+
   function clearFilters() {
     setUserId("");
     setAction("");
+    setEntityName("");
     setFrom("");
     setTo("");
     setPage(1);
@@ -124,6 +148,14 @@ export function ActivityLogPage() {
             </option>
           ))}
         </select>
+        <select value={entityName} onChange={(e) => setEntityName(e.target.value)}>
+          <option value="">All record types</option>
+          {[...new Set([...recordTypes, ...(entityName ? [entityName] : [])])].map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </select>
         <div>
           <label>From </label>
           <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
@@ -135,6 +167,9 @@ export function ActivityLogPage() {
         <button onClick={applyFilters}>Apply</button>
         <button className="secondary" onClick={clearFilters}>
           Clear
+        </button>
+        <button className="secondary" onClick={showTimesheetDownloads} title="Show who downloaded or sent a timesheet PDF">
+          Timesheet downloads
         </button>
       </div>
 
@@ -150,6 +185,7 @@ export function ActivityLogPage() {
                 <th>User</th>
                 <th>Activity</th>
                 <th>Record</th>
+                <th>Details</th>
                 <th>IP Address</th>
               </tr>
             </thead>
@@ -167,13 +203,18 @@ export function ActivityLogPage() {
                       </span>
                     </td>
                     <td>{r.entityName}</td>
+                    <td>
+                      {r.details
+                        ? [r.details.employeeCode && r.details.employeeName ? `${r.details.employeeCode} ${r.details.employeeName}` : null, r.details.period, r.details.via].filter(Boolean).join(" · ")
+                        : "—"}
+                    </td>
                     <td>{r.ipAddress ?? "—"}</td>
                   </tr>
                 );
               })}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={6} style={{ color: "#98a2b3" }}>
+                  <td colSpan={7} style={{ color: "#98a2b3" }}>
                     No activity recorded for this filter.
                   </td>
                 </tr>

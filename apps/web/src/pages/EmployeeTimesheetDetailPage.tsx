@@ -162,6 +162,19 @@ export function EmployeeTimesheetDetailPage() {
     };
   }
 
+  /** Tells the server who took this timesheet and when (the PDF is built in the browser, so the server can't see it otherwise). */
+  async function reportTimesheetTaken(channel: "DOWNLOAD" | "WHATSAPP") {
+    if (!id) return;
+    try {
+      await Promise.race([
+        apiClient.post("/audit/events/timesheet-download", { employeeId: id, periodId: periodId || undefined, channel }),
+        new Promise((resolve) => setTimeout(resolve, 5000)),
+      ]);
+    } catch {
+      /* the file is still delivered; a failed report must not block the user's work */
+    }
+  }
+
   async function downloadPdfForPeriod() {
     setDownloadingPdf(true);
     setError(null);
@@ -169,6 +182,7 @@ export function EmployeeTimesheetDetailPage() {
       const built = await buildPdfParams();
       if (!built) return;
       const doc = buildEmployeeAttendancePdf(built.params);
+      await reportTimesheetTaken("DOWNLOAD");
       doc.save(attendancePdfFilename(built.params.employeeCode, built.params.periodLabel));
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "Failed to generate PDF");
@@ -184,6 +198,7 @@ export function EmployeeTimesheetDetailPage() {
       const built = await buildPdfParams();
       if (!built) return;
       const doc = buildEmployeeAttendancePdf(built.params);
+      await reportTimesheetTaken("WHATSAPP");
       const filename = attendancePdfFilename(built.params.employeeCode, built.params.periodLabel);
       const blob = doc.output("blob") as Blob;
       const file = new File([blob], filename, { type: "application/pdf" });
