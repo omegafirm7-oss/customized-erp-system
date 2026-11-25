@@ -448,6 +448,17 @@ describe("Projects — full job accounting (e2e)", () => {
       await postDraftInvoice(ctx, project.id, "5104", "300", today); // stays draft
       const posted = await postDraftInvoice(ctx, project.id, "5103", "150", today);
       await request(app.getHttpServer()).post(`/ap/invoices/${posted.id}/post`).set("Authorization", `Bearer ${ctx.accessToken}`).expect(201);
+      // The owner's General Expenses (5111) are company overhead: tagged to the project by mistake, they must not count.
+      const general = (
+        await request(app.getHttpServer())
+          .post("/coa/accounts")
+          .set("Authorization", `Bearer ${ctx.accessToken}`)
+          .send({ code: "5111", name: "General Expenses", accountSubClassCode: "OPERATING_EXPENSE", isPostable: true, normalBalance: "DEBIT" })
+          .expect(201)
+      ).body;
+      const originalLookup = ctx.accountByCode;
+      ctx.accountByCode = (code: string) => (code === "5111" ? general : originalLookup(code));
+      await postDraftInvoice(ctx, project.id, "5111", "77", today);
 
       const res = await request(app.getHttpServer())
         .get(`/projects/${project.id}/expenses`)

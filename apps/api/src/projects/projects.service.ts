@@ -22,6 +22,10 @@ import { computeAssignmentBilling, EntrySummary, RateBasisKind } from "../manpow
 import { CreateProjectDto, CreateWbsTaskDto, UpdateProjectDto, UpdateWbsTaskDto } from "./dto/project.dtos";
 
 /** Legal status transitions; CLOSED is terminal. */
+// Company overhead accounts: the owner's general expenses are never a project cost, so they stay out of Project
+// Intelligence and the project expense register even when a line was tagged to a project.
+const COMPANY_OVERHEAD_ACCOUNT_CODES = ["5111"];
+
 const TRANSITIONS: Record<ProjectStatus, ProjectStatus[]> = {
   PLANNED: [ProjectStatus.ACTIVE],
   ACTIVE: [ProjectStatus.COMPLETED, ProjectStatus.CLOSED],
@@ -557,6 +561,7 @@ export class ProjectsService {
       JOIN "purchase_invoices" pi ON pi."id" = pil."purchaseInvoiceId"
       JOIN "accounts" a ON a."id" = pil."expenseAccountId"
       WHERE pil."projectId" = ${projectId} AND pi."status" != 'CANCELLED'
+        AND a."code" NOT IN (${Prisma.join(COMPANY_OVERHEAD_ACCOUNT_CODES)})
       GROUP BY a."id", a."code", a."name", a."costCategory"
       ORDER BY a."code"
     `;
@@ -895,6 +900,7 @@ export class ProjectsService {
         AND je."status" = 'POSTED' AND je."reversalOfEntryId" IS NULL
         AND jel."debit" - jel."credit" != 0
         AND je."sourceModule" != 'AP'
+        AND a."code" NOT IN (${Prisma.join(COMPANY_OVERHEAD_ACCOUNT_CODES)})
         AND (a."controlAccountType" IS NULL OR a."controlAccountType" NOT IN ('SALARY_EXPENSE', 'PROJECT_SALARY_EXPENSE', 'GOSI_EXPENSE', 'EOSB_EXPENSE'))
         AND je."id" NOT IN (SELECT "journalEntryId" FROM "employee_payments" WHERE "companyId" = ${companyId} AND "journalEntryId" IS NOT NULL)
         AND je."id" NOT IN (SELECT "journalEntryId" FROM "final_settlements" WHERE "companyId" = ${companyId} AND "journalEntryId" IS NOT NULL)
@@ -959,6 +965,7 @@ export class ProjectsService {
       JOIN "accounts" a ON a."id" = pil."expenseAccountId"
       JOIN "business_partners" bp ON bp."id" = pi."businessPartnerId"
       WHERE pil."projectId" = ${projectId} AND pi."companyId" = ${companyId} AND pi."status" != 'CANCELLED'
+        AND a."code" NOT IN (${Prisma.join(COMPANY_OVERHEAD_ACCOUNT_CODES)})
     `;
     for (const r of invoiceLines) {
       lines.push({
