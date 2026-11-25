@@ -26,6 +26,7 @@ import { CashFlowLineDetailPage } from "./pages/CashFlowLineDetailPage";
 import { PartnersPage } from "./pages/PartnersPage";
 import { PartnerDetailPage } from "./pages/PartnerDetailPage";
 import { ProtectedContent } from "./components/ProtectedContent";
+import { ReimbursementsPage } from "./pages/ReimbursementsPage";
 import { EditPurchaseInvoicePage } from "./pages/EditPurchaseInvoicePage";
 import { ItemsPage } from "./pages/ItemsPage";
 import { SalesInvoicesPage, NewSalesInvoicePage } from "./pages/SalesInvoicesPage";
@@ -147,6 +148,7 @@ const PROTECTED_PATHS = new Set<string>([
   "/ap/invoices",
   "/ap/invoices/new",
   "/ap/invoices/:id/edit",
+  "/ap/reimbursements",
   "/projects/monthly-cost-report",
   "/projects/:id/monthly-cost-trend/:month/:category",
   "/projects/:id",
@@ -167,6 +169,7 @@ const companyRoutes: Array<{ path: string; element: JSX.Element }> = [
   { path: "/ap/invoices", element: <PurchaseInvoicesPage /> },
   { path: "/ap/invoices/new", element: <NewPurchaseInvoicePage /> },
   { path: "/ap/invoices/:id/edit", element: <EditPurchaseInvoicePage /> },
+  { path: "/ap/reimbursements", element: <ReimbursementsPage /> },
   { path: "/ap/quotations", element: <PurchaseQuotationsPage /> },
   { path: "/ap/orders", element: <PurchaseOrdersPage /> },
   { path: "/ap/orders/:id", element: <PurchaseOrderDetailPage /> },

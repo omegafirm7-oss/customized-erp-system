@@ -10,6 +10,8 @@ import { LineBuilderService } from "./line-builder.service";
 import { ArService } from "./ar.service";
 import { ArController } from "./ar.controller";
 import { ApService } from "./ap.service";
+import { ReimbursementsController } from "./reimbursements.controller";
+import { ReimbursementsService } from "./reimbursements.service";
 import { ApController } from "./ap.controller";
 import { PaymentsService } from "./payments.service";
 import { PaymentsController } from "./payments.controller";
@@ -27,6 +29,7 @@ import { SalesOrdersController } from "./sales-orders.controller";
   controllers: [
     ArController,
     ApController,
+    ReimbursementsController,
     PaymentsController,
     PurchaseQuotationsController,
     PurchaseOrdersController,
@@ -38,6 +41,7 @@ import { SalesOrdersController } from "./sales-orders.controller";
     LineBuilderService,
     ArService,
     ApService,
+    ReimbursementsService,
     PaymentsService,
     PurchaseQuotationsService,
     PurchaseOrdersService,

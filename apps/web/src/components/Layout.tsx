@@ -29,6 +29,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: "/ar/invoices", label: "Sales Invoices" },
       { to: "/ap/invoices", label: "Purchase Invoices" },
+      { to: "/ap/reimbursements", label: "Reimbursements" },
       { to: "/payments", label: "Payments" },
       { to: "/reports/ar-aging", label: "AR Aging" },
       { to: "/reports/ap-aging", label: "AP Aging" },

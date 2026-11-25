@@ -953,6 +953,11 @@ model BusinessPartner {
   fbrRegistrationCheckedAt     DateTime?
   currencyCode                 String?
   isActive                     Boolean              @default(true)
+  // A director / project manager / supervisor who pays company costs out of pocket and is repaid later. Their
+  // expenses are booked as purchase invoices in their name, so what the company owes them is simply their
+  // open payable balance.
+  isStaffPayee                 Boolean              @default(false)
+  staffRole                    String?
   createdAt                    DateTime             @default(now())
   updatedAt                    DateTime             @updatedAt
 
@@ -1317,6 +1322,10 @@ model PurchaseInvoice {
   journalEntryId           String?         @unique
   journalEntry             JournalEntry?   @relation(fields: [journalEntryId], references: [id])
   memo                     String?
+  // For expenses paid by staff out of pocket: who the goods or service were actually bought from, and their VAT number
+  // (blank when there is no VAT invoice, in which case no input VAT is claimed).
+  reimbursementSupplierName String?
+  reimbursementSupplierVat  String?
   createdByUserId          String
   postedByUserId           String?
   postedAt                 DateTime?

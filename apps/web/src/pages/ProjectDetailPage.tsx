@@ -86,6 +86,7 @@ interface IntelligenceSummary {
     { total: string; paid: string; pending: string; accounts: IntelligenceAccountRow[] }
   >;
   grandTotal: string;
+  owedToStaff?: string;
 }
 
 interface MonthlyCostTrendRow {
@@ -681,6 +682,13 @@ export function ProjectDetailPage() {
               <div className="pi-kpi-card">
                 <div className="pi-kpi-label">Other Cost</div>
                 <div className="pi-kpi-value">{formatMoney(intelligence.categories.OTHER?.total)}</div>
+              </div>
+            )}
+            {Number(intelligence.owedToStaff ?? 0) > 0 && (
+              <div className="pi-kpi-card">
+                <div className="pi-kpi-label">Owed to staff (to reimburse)</div>
+                <div className="pi-kpi-value">{formatMoney(intelligence.owedToStaff)}</div>
+                <div style={{ fontSize: 11, color: "#98a2b3", marginTop: 4 }}>Already inside Total Cost</div>
               </div>
             )}
             <div className="pi-kpi-card">

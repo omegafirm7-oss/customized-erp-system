@@ -844,7 +844,19 @@ export class ProjectsService {
       .add(pendingMachinery)
       .toFixed(2);
 
-    return { categories, grandTotal };
+    // Part of the cost above that staff paid out of pocket and the company has not yet repaid (shown separately;
+    // it is already inside the totals, so repaying it never changes them).
+    const owedRows = await this.prisma.$queryRaw<Array<{ owed: Prisma.Decimal | null }>>`
+      SELECT SUM(pil."grossAmount" * pi."openAmount" / NULLIF(pi."grossTotal", 0)) AS "owed"
+      FROM "purchase_invoice_lines" pil
+      JOIN "purchase_invoices" pi ON pi."id" = pil."purchaseInvoiceId"
+      JOIN "business_partners" bp ON bp."id" = pi."businessPartnerId"
+      WHERE pil."projectId" = ${projectId} AND pi."companyId" = ${companyId} AND bp."isStaffPayee" = true
+        AND pi."status" IN ('POSTED', 'PARTIALLY_PAID')
+    `;
+    const owedToStaff = new Prisma.Decimal(owedRows[0]?.owed ?? 0).toFixed(2);
+
+    return { categories, grandTotal, owedToStaff };
   }
 
   /**
@@ -929,6 +941,9 @@ export class ProjectsService {
         accountName: string;
         costCategory: string | null;
         partnerName: string;
+        isStaffPayee: boolean;
+        staffRole: string | null;
+        supplierName: string | null;
         description: string;
         netAmount: Prisma.Decimal;
         vatAmount: Prisma.Decimal;
@@ -936,6 +951,7 @@ export class ProjectsService {
       }>
     >`
       SELECT pil."id", pi."postingDate" AS "date", pi."invoiceNumber", pi."vendorInvoiceNumber", pi."status",
+             bp."isStaffPayee", bp."staffRole", pi."reimbursementSupplierName" AS "supplierName",
              a."code" AS "accountCode", a."name" AS "accountName", a."costCategory",
              bp."name" AS "partnerName", pil."description", pil."netAmount", pil."vatAmount", pil."grossAmount"
       FROM "purchase_invoice_lines" pil
@@ -949,11 +965,15 @@ export class ProjectsService {
         id: r.id,
         date: r.date,
         reference: r.invoiceNumber ?? r.vendorInvoiceNumber,
-        source: r.status === "DRAFT" ? "Purchase invoice (draft)" : "Purchase invoice",
+        source: r.isStaffPayee
+          ? `Paid by ${r.partnerName}${r.staffRole ? ` (${r.staffRole})` : ""} — to reimburse${r.status === "DRAFT" ? " (draft)" : ""}`
+          : r.status === "DRAFT"
+            ? "Purchase invoice (draft)"
+            : "Purchase invoice",
         accountCode: r.accountCode,
         accountName: r.accountName,
         costCategory: r.costCategory ?? "OTHER",
-        partnerName: r.partnerName,
+        partnerName: r.isStaffPayee && r.supplierName ? r.supplierName : r.partnerName,
         description: r.description,
         net: new Prisma.Decimal(r.netAmount),
         vat: new Prisma.Decimal(r.vatAmount),
