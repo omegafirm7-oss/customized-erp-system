@@ -44,6 +44,25 @@ interface ProjectDetail {
 
 const PROJECT_PHASES = ["Mobilization", "Design & Procurement", "Execution", "Finishing", "Handover"] as const;
 
+interface ProjectExpenseRow {
+  id: string;
+  date: string;
+  reference: string | null;
+  source: string;
+  accountCode: string;
+  accountName: string;
+  costCategory: string;
+  partnerName: string | null;
+  description: string | null;
+  amount: string;
+  isDraft: boolean;
+}
+interface ProjectExpenses {
+  total: string;
+  bySource: Array<{ source: string; amount: string }>;
+  rows: ProjectExpenseRow[];
+}
+
 interface IntelligenceAccountRow {
   id: string;
   code: string;
@@ -272,6 +291,9 @@ export function ProjectDetailPage() {
   const [estimates, setEstimates] = useState({ code: "", name: "", contractValue: "", estimatedTotalCost: "" });
   const [intelligence, setIntelligence] = useState<IntelligenceSummary | null>(null);
   const [monthlyTrend, setMonthlyTrend] = useState<MonthlyCostTrendRow[] | null>(null);
+  const [expenses, setExpenses] = useState<ProjectExpenses | null>(null);
+  const [expenseSource, setExpenseSource] = useState("");
+  const [expenseSearch, setExpenseSearch] = useState("");
   const [costCenterForm, setCostCenterForm] = useState({ code: "", name: "" });
   const [phaseForm, setPhaseForm] = useState({ startDate: "", currentPhase: "", natureOfWork: "" });
   const { user } = useAuth();
@@ -284,6 +306,11 @@ export function ProjectDetailPage() {
       apiClient.get<IntelligenceSummary>(`/projects/${id}/intelligence`),
       apiClient.get<{ rows: MonthlyCostTrendRow[] }>(`/projects/${id}/monthly-cost-trend`),
     ]);
+    // Loaded on its own so a failure here never blanks the rest of the dashboard.
+    apiClient
+      .get<ProjectExpenses>(`/projects/${id}/expenses`)
+      .then((r) => setExpenses(r.data))
+      .catch(() => setExpenses(null));
     setProject(projectRes.data);
     setPeriods(periodsRes.data);
     setIntelligence(intelligenceRes.data);
@@ -712,6 +739,93 @@ export function ProjectDetailPage() {
               );
             })}
           </div>
+        </div>
+      )}
+
+      {expenses && (
+        <div className="card">
+          <h3>All expenses assigned to this project</h3>
+          <p style={{ color: "#667085", fontSize: 13, marginTop: 0 }}>
+            Every expense posted against this project — purchase invoices, payments, payroll, allowances, equipment and
+            manual journals — plus purchase invoices still in draft. Amounts are net of VAT, as booked in the ledger.
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+            <strong style={{ alignSelf: "center" }}>Total: {formatMoney(expenses.total)}</strong>
+            {expenses.bySource.map((s) => (
+              <button
+                key={s.source}
+                className={expenseSource === s.source ? "" : "secondary"}
+                onClick={() => setExpenseSource(expenseSource === s.source ? "" : s.source)}
+                title="Click to show only this source"
+              >
+                {s.source}: {formatMoney(s.amount)}
+              </button>
+            ))}
+            <input
+              placeholder="Search account, vendor, description…"
+              value={expenseSearch}
+              onChange={(e) => setExpenseSearch(e.target.value)}
+              style={{ marginLeft: "auto", minWidth: 220 }}
+            />
+          </div>
+          {(() => {
+            const q = expenseSearch.trim().toLowerCase();
+            const shown = expenses.rows.filter(
+              (r) =>
+                (!expenseSource || r.source === expenseSource) &&
+                (!q || `${r.accountCode} ${r.accountName} ${r.partnerName ?? ""} ${r.description ?? ""} ${r.reference ?? ""}`.toLowerCase().includes(q)),
+            );
+            const shownTotal = shown.reduce((s, r) => s + Number(r.amount), 0);
+            return (
+              <div style={{ overflowX: "auto" }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Reference</th>
+                      <th>Source</th>
+                      <th>Account</th>
+                      <th>Vendor / party</th>
+                      <th>Description</th>
+                      <th style={{ textAlign: "right" }}>Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shown.map((r) => (
+                      <tr key={r.id}>
+                        <td>{r.date.slice(0, 10)}</td>
+                        <td>{r.reference ?? "—"}</td>
+                        <td>{r.source}</td>
+                        <td>
+                          {r.accountCode} — {r.accountName}
+                        </td>
+                        <td>{r.partnerName ?? "—"}</td>
+                        <td>{r.description ?? ""}</td>
+                        <td style={{ textAlign: "right", fontWeight: 600 }}>{formatMoney(r.amount)}</td>
+                      </tr>
+                    ))}
+                    {shown.length === 0 && (
+                      <tr>
+                        <td colSpan={7} style={{ color: "#98a2b3" }}>
+                          No expenses {expenseSource || q ? "match this filter" : "recorded against this project yet"}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                  {shown.length > 0 && (
+                    <tfoot>
+                      <tr>
+                        <td colSpan={6} style={{ textAlign: "right", fontWeight: 700 }}>
+                          {shown.length} line{shown.length === 1 ? "" : "s"}
+                        </td>
+                        <td style={{ textAlign: "right", fontWeight: 700 }}>{formatMoney(shownTotal)}</td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+            );
+          })()}
         </div>
       )}
 

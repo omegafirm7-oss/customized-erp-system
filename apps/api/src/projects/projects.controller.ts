@@ -65,6 +65,12 @@ export class ProjectsController {
     return this.projectsService.getProjectIntelligence(companyId, id);
   }
 
+  @Get("projects/:id/expenses")
+  @Permissions(PERMISSIONS.PROJECT_VIEW)
+  async getExpenses(@CurrentCompanyId() companyId: string, @Param("id") id: string) {
+    return this.projectsService.getProjectExpenses(companyId, id);
+  }
+
   @Get("projects/:id/monthly-cost-trend")
   @Permissions(PERMISSIONS.PROJECT_VIEW)
   async getMonthlyCostTrend(@CurrentCompanyId() companyId: string, @Param("id") id: string) {

@@ -832,6 +832,123 @@ export class ProjectsService {
     return { categories, grandTotal };
   }
 
+  /**
+   * Every expense assigned to this project, from every source, in one register.
+   * The ledger side is each posted expense line carrying the project's cost center (purchase invoices,
+   * payments, payroll, employee payments, manual journals, equipment…). A journal entry that was reversed,
+   * and the entry that reversed it, are left out because together they net to nothing. Purchase-invoice
+   * lines still in draft are not in the ledger yet, so they are added and marked as drafts.
+   */
+  async getProjectExpenses(companyId: string, projectId: string) {
+    const project = await this.getOwned(companyId, projectId);
+    const SOURCE_LABEL: Record<string, string> = {
+      MANUAL: "Manual journal",
+      AR: "Sales",
+      AP: "Purchase invoice",
+      INVENTORY: "Inventory",
+      PAYROLL: "Payroll / employee payment",
+      PROJECTS: "Project",
+      EQUIPMENT: "Equipment",
+    };
+    const ledger = await this.prisma.$queryRaw<
+      Array<{
+        id: string;
+        date: Date;
+        entryNumber: string | null;
+        sourceModule: string;
+        sourceDocumentId: string | null;
+        accountCode: string;
+        accountName: string;
+        costCategory: string | null;
+        partnerName: string | null;
+        description: string | null;
+        amount: Prisma.Decimal;
+      }>
+    >`
+      SELECT jel."id", je."postingDate" AS "date", je."entryNumber", je."sourceModule", je."sourceDocumentId",
+             a."code" AS "accountCode", a."name" AS "accountName", a."costCategory",
+             bp."name" AS "partnerName", COALESCE(jel."description", je."memo") AS "description",
+             (jel."debit" - jel."credit") AS "amount"
+      FROM "journal_entry_lines" jel
+      JOIN "journal_entries" je ON je."id" = jel."journalEntryId"
+      JOIN "accounts" a ON a."id" = jel."accountId"
+      JOIN "account_classes" ac ON ac."id" = a."accountClassId"
+      LEFT JOIN "business_partners" bp ON bp."id" = jel."businessPartnerId"
+      WHERE jel."companyId" = ${companyId} AND jel."costCenterId" = ${project.costCenterId}
+        AND ac."code" = 'EXPENSE'
+        AND je."status" = 'POSTED' AND je."reversalOfEntryId" IS NULL
+        AND jel."debit" - jel."credit" != 0
+        AND NOT EXISTS (SELECT 1 FROM "journal_entries" r WHERE r."reversalOfEntryId" = je."id" AND r."status" IN ('POSTED','REVERSED'))
+      ORDER BY je."postingDate" DESC, je."entryNumber" DESC
+    `;
+    const drafts = await this.prisma.$queryRaw<
+      Array<{
+        id: string;
+        date: Date;
+        invoiceNumber: string | null;
+        vendorInvoiceNumber: string;
+        accountCode: string;
+        accountName: string;
+        costCategory: string | null;
+        partnerName: string;
+        description: string;
+        amount: Prisma.Decimal;
+      }>
+    >`
+      SELECT pil."id", pi."postingDate" AS "date", pi."invoiceNumber", pi."vendorInvoiceNumber",
+             a."code" AS "accountCode", a."name" AS "accountName", a."costCategory",
+             bp."name" AS "partnerName", pil."description", pil."netAmount" AS "amount"
+      FROM "purchase_invoice_lines" pil
+      JOIN "purchase_invoices" pi ON pi."id" = pil."purchaseInvoiceId"
+      JOIN "accounts" a ON a."id" = pil."expenseAccountId"
+      JOIN "business_partners" bp ON bp."id" = pi."businessPartnerId"
+      WHERE pil."projectId" = ${projectId} AND pi."companyId" = ${companyId} AND pi."status" = 'DRAFT'
+      ORDER BY pi."postingDate" DESC
+    `;
+
+    const rows = [
+      ...ledger.map((r) => ({
+        id: r.id,
+        date: r.date,
+        reference: r.entryNumber,
+        source: SOURCE_LABEL[r.sourceModule] ?? r.sourceModule,
+        sourceModule: r.sourceModule,
+        sourceDocumentId: r.sourceDocumentId,
+        accountCode: r.accountCode,
+        accountName: r.accountName,
+        costCategory: r.costCategory ?? "OTHER",
+        partnerName: r.partnerName,
+        description: r.description,
+        amount: new Prisma.Decimal(r.amount),
+        isDraft: false,
+      })),
+      ...drafts.map((r) => ({
+        id: r.id,
+        date: r.date,
+        reference: r.invoiceNumber ?? r.vendorInvoiceNumber,
+        source: "Purchase invoice (draft)",
+        sourceModule: "AP",
+        sourceDocumentId: null as string | null,
+        accountCode: r.accountCode,
+        accountName: r.accountName,
+        costCategory: r.costCategory ?? "OTHER",
+        partnerName: r.partnerName as string | null,
+        description: r.description as string | null,
+        amount: new Prisma.Decimal(r.amount),
+        isDraft: true,
+      })),
+    ].sort((a, b) => b.date.getTime() - a.date.getTime());
+
+    const total = rows.reduce((sum, r) => sum.add(r.amount), new Prisma.Decimal(0));
+    const bySource = new Map<string, Prisma.Decimal>();
+    for (const r of rows) bySource.set(r.source, (bySource.get(r.source) ?? new Prisma.Decimal(0)).add(r.amount));
+    return {
+      total: total.toFixed(2),
+      bySource: [...bySource].map(([source, amount]) => ({ source, amount: amount.toFixed(2) })).sort((a, b) => Number(b.amount) - Number(a.amount)),
+      rows: rows.map((r) => ({ ...r, amount: r.amount.toFixed(2) })),
+    };
+  }
+
   /** Drill-down: every purchase-invoice line recorded against this project on a given expense account. */
   async getAccountInvoiceLines(companyId: string, projectId: string, accountId: string) {
     await this.getOwned(companyId, projectId);

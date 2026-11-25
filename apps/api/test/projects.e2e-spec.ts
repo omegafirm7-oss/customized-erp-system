@@ -440,6 +440,29 @@ describe("Projects — full job accounting (e2e)", () => {
       expect(Number(lines.body[0].grossAmount)).toBe(300);
     });
 
+    it("lists every expense assigned to the project in one register (posted from the ledger, drafts flagged)", async () => {
+      const ctx = await setupProjectContext();
+      const project = await createOverTimeProject(ctx);
+      const today = new Date().toISOString();
+
+      await postDraftInvoice(ctx, project.id, "5104", "300", today); // stays draft
+      const posted = await postDraftInvoice(ctx, project.id, "5103", "150", today);
+      await request(app.getHttpServer()).post(`/ap/invoices/${posted.id}/post`).set("Authorization", `Bearer ${ctx.accessToken}`).expect(201);
+
+      const res = await request(app.getHttpServer())
+        .get(`/projects/${project.id}/expenses`)
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .expect(200);
+      expect(res.body.rows).toHaveLength(2);
+      expect(res.body.total).toBe("450.00");
+      const draftRow = res.body.rows.find((r: any) => r.isDraft);
+      expect(draftRow.accountCode).toBe("5104");
+      const postedRow = res.body.rows.find((r: any) => !r.isDraft);
+      expect(postedRow.accountCode).toBe("5103");
+      expect(postedRow.source).toBe("Purchase invoice");
+      expect(res.body.bySource.map((s: any) => s.source).sort()).toEqual(["Purchase invoice", "Purchase invoice (draft)"]);
+    });
+
     it("Material/Machinery costs are gross of VAT — the real amount paid/payable, not the net GL expense", async () => {
       const ctx = await setupProjectContext();
       const project = await createOverTimeProject(ctx);
