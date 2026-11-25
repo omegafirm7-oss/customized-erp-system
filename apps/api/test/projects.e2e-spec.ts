@@ -485,6 +485,26 @@ describe("Projects — full job accounting (e2e)", () => {
       expect(after.dashboardTotal).toBe(after.total);
     });
 
+    it("shows only the employees assigned to this project as its manpower, split active/released with a trade count", async () => {
+      const ctx = await setupProjectContext();
+      const project = await createOverTimeProject(ctx);
+      const detail = (await request(app.getHttpServer()).get(`/projects/${project.id}`).set("Authorization", `Bearer ${ctx.accessToken}`).expect(200)).body;
+      const HEADER =
+        "code,nameEn,nameAr,designation,nationality,isSaudi,iqamaOrNationalId,iqamaExpiry,passportNumber,passportExpiry,gosiNumber,joinDate,contractType,bankCode,iban,costCenterCode,annualLeaveDays,basicSalary,housingAllowance,transportAllowance,otherAllowance,gosiExempt";
+      const csv = [
+        HEADER,
+        `KH-1,Worker One,,Mason,PK,false,2298765431,2027-12-31,,,,2026-01-01,LIMITED,10,SA0380000000608010167519,${detail.costCenter.code},21,3000,0,0,0,false`,
+        `KH-2,Worker Two,,Mason,PK,false,2298765432,2027-12-31,,,,2026-01-01,LIMITED,10,SA0380000000608010167519,${detail.costCenter.code},21,3000,0,0,0,false`,
+        `OTH-1,Not On Site,,Carpenter,PK,false,2298765433,2027-12-31,,,,2026-01-01,LIMITED,10,SA0380000000608010167519,,21,3000,0,0,0,false`,
+      ].join("\n");
+      await request(app.getHttpServer()).post("/hr/employees/import").set("Authorization", `Bearer ${ctx.accessToken}`).send({ csv }).expect(201);
+      const res = (await request(app.getHttpServer()).get(`/projects/${project.id}/manpower`).set("Authorization", `Bearer ${ctx.accessToken}`).expect(200)).body;
+      expect(res.active).toBe(2);
+      expect(res.released).toBe(0);
+      expect(res.employees.map((e: any) => e.code)).toEqual(["KH-1", "KH-2"]);
+      expect(res.byTrade).toEqual([{ trade: "Mason", active: 2, released: 0 }]);
+    });
+
     it("a vendor-invoice line on a Labor account counts as Labor and appears in the register, which still equals the dashboard total", async () => {
       const ctx = await setupProjectContext();
       const project = await createOverTimeProject(ctx);

@@ -1075,6 +1075,35 @@ export class ProjectsService {
     };
   }
 
+  /**
+   * The manpower supplied to this project: every employee whose cost center is the project's, split into
+   * active and released, with a head-count by trade.
+   */
+  async getManpower(companyId: string, projectId: string) {
+    const project = await this.getOwned(companyId, projectId);
+    const employees = project.costCenterId
+      ? await this.prisma.employee.findMany({
+          where: { companyId, costCenterId: project.costCenterId },
+          select: { id: true, code: true, nameEn: true, designation: true, nationality: true, status: true, joinDate: true },
+          orderBy: { code: "asc" },
+        })
+      : [];
+    const byTrade = new Map<string, { trade: string; active: number; released: number }>();
+    for (const e of employees) {
+      const trade = e.designation?.trim() || "Unspecified";
+      const row = byTrade.get(trade) ?? { trade, active: 0, released: 0 };
+      if (e.status === "ACTIVE") row.active += 1;
+      else row.released += 1;
+      byTrade.set(trade, row);
+    }
+    return {
+      active: employees.filter((e) => e.status === "ACTIVE").length,
+      released: employees.filter((e) => e.status !== "ACTIVE").length,
+      byTrade: [...byTrade.values()].sort((a, b) => b.active + b.released - (a.active + a.released)),
+      employees,
+    };
+  }
+
   /** Drill-down: every purchase-invoice line recorded against this project on a given expense account. */
   async getAccountInvoiceLines(companyId: string, projectId: string, accountId: string) {
     await this.getOwned(companyId, projectId);

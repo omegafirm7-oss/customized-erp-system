@@ -49,13 +49,16 @@ export function EmployeesPage() {
   const navigate = useNavigate();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [nameFilter, setNameFilter] = useState("");
+  const [projectFilter, setProjectFilter] = useState("");
   const nameQuery = nameFilter.trim().toLowerCase();
   const visibleEmployees = useMemo(
     () =>
-      nameQuery
-        ? employees.filter((e) => e.nameEn.toLowerCase().includes(nameQuery) || e.code.toLowerCase().includes(nameQuery))
-        : employees,
-    [employees, nameQuery],
+      employees.filter(
+        (e) =>
+          (!projectFilter || (projectFilter === "none" ? !e.costCenter : e.costCenter?.code === projectFilter)) &&
+          (!nameQuery || e.nameEn.toLowerCase().includes(nameQuery) || e.code.toLowerCase().includes(nameQuery)),
+      ),
+    [employees, nameQuery, projectFilter],
   );
   const canManageHr = useHasPermission("hr.employee.manage");
   const [raise, setRaise] = useState({ effectiveFrom: "", basicSalary: "", codes: "" });
@@ -232,12 +235,21 @@ export function EmployeesPage() {
               onChange={(e) => setNameFilter(e.target.value)}
               style={{ minWidth: 280 }}
             />
-            {nameQuery && (
+            <select value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)} title="Show one project's manpower">
+              <option value="">All projects ({employees.length})</option>
+              {costCenters.map((c) => (
+                <option key={c.id} value={c.code}>
+                  {c.name.replace(/^Project:s*/, "")} ({employees.filter((e) => e.costCenter?.code === c.code).length})
+                </option>
+              ))}
+              <option value="none">Not assigned to a project</option>
+            </select>
+            {(nameQuery || projectFilter) && (
               <>
                 <span style={{ color: "#667085", fontSize: 13 }}>
                   Showing {visibleEmployees.length} of {employees.length} employees
                 </span>
-                <button type="button" className="secondary" onClick={() => setNameFilter("")}>
+                <button type="button" className="secondary" onClick={() => { setNameFilter(""); setProjectFilter(""); }}>
                   Clear
                 </button>
               </>
@@ -252,7 +264,7 @@ export function EmployeesPage() {
                 <th>Nationality</th>
                 <th>GOSI</th>
                 <th>Gross salary</th>
-                <th>Cost center</th>
+                <th>Project</th>
                 <th>Docs</th>
                 <th>Loans</th>
                 <th>Pending</th>
@@ -270,7 +282,7 @@ export function EmployeesPage() {
                   <td>{e.nationality ?? "—"}</td>
                   <td>{e.isSaudi ? "Saudi" : "Expat"}</td>
                   <td>{grossOf(e).toFixed(2)}</td>
-                  <td>{e.costCenter?.code ?? "—"}</td>
+                  <td>{e.costCenter ? e.costCenter.name.replace(/^Project:s*/, "") : "Not assigned"}</td>
                   <td>
                     {expiryBadge(e.iqamaExpiry)} {expiryBadge(e.passportExpiry)}
                   </td>
@@ -281,10 +293,10 @@ export function EmployeesPage() {
                   </td>
                 </tr>
               ))}
-              {nameQuery && visibleEmployees.length === 0 && (
+              {(nameQuery || projectFilter) && visibleEmployees.length === 0 && (
                 <tr>
                   <td colSpan={11} style={{ color: "#98a2b3" }}>
-                    No employees match "{nameFilter.trim()}".
+                    No employees match this filter.
                   </td>
                 </tr>
               )}
@@ -361,7 +373,7 @@ export function EmployeesPage() {
             <input placeholder="Bank code" value={form.bankCode} onChange={(e) => setForm({ ...form, bankCode: e.target.value })} style={{ width: 90 }} />
             <input placeholder="IBAN" value={form.iban} onChange={(e) => setForm({ ...form, iban: e.target.value })} style={{ flex: 1 }} />
             <select value={form.costCenterId} onChange={(e) => setForm({ ...form, costCenterId: e.target.value })}>
-              <option value="">No cost center</option>
+              <option value="">No project assigned</option>
               {costCenters.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.code} — {c.name}

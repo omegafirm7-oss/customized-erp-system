@@ -66,6 +66,13 @@ interface ProjectExpenses {
   rows: ProjectExpenseRow[];
 }
 
+interface ProjectManpower {
+  active: number;
+  released: number;
+  byTrade: Array<{ trade: string; active: number; released: number }>;
+  employees: Array<{ id: string; code: string; nameEn: string; designation: string | null; nationality: string | null; status: string; joinDate: string }>;
+}
+
 interface IntelligenceAccountRow {
   id: string;
   code: string;
@@ -295,6 +302,8 @@ export function ProjectDetailPage() {
   const [intelligence, setIntelligence] = useState<IntelligenceSummary | null>(null);
   const [monthlyTrend, setMonthlyTrend] = useState<MonthlyCostTrendRow[] | null>(null);
   const [expenses, setExpenses] = useState<ProjectExpenses | null>(null);
+  const [manpower, setManpower] = useState<ProjectManpower | null>(null);
+  const [showReleased, setShowReleased] = useState(false);
   const [expenseSource, setExpenseSource] = useState("");
   const [expenseSearch, setExpenseSearch] = useState("");
   const [costCenterForm, setCostCenterForm] = useState({ code: "", name: "" });
@@ -314,6 +323,11 @@ export function ProjectDetailPage() {
       .get<ProjectExpenses>(`/projects/${id}/expenses`)
       .then((r) => setExpenses(r.data))
       .catch(() => setExpenses(null));
+    // Employee names are HR data: a 403 here (no HR access) simply hides the panel.
+    apiClient
+      .get<ProjectManpower>(`/projects/${id}/manpower`)
+      .then((r) => setManpower(r.data))
+      .catch(() => setManpower(null));
     setProject(projectRes.data);
     setPeriods(periodsRes.data);
     setIntelligence(intelligenceRes.data);
@@ -759,6 +773,57 @@ export function ProjectDetailPage() {
               );
             })}
           </div>
+        </div>
+      )}
+
+      {manpower && (
+        <div className="card">
+          <h3>Manpower on this project</h3>
+          <p style={{ color: "#667085", fontSize: 13, marginTop: 0 }}>
+            Employees assigned to this project in HR. To put someone on this project, choose it in the Project field when adding or editing the employee.
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginBottom: 12 }}>
+            <strong>{manpower.active} active</strong>
+            <span style={{ color: "#667085" }}>{manpower.released} released</span>
+            <span style={{ color: "#667085" }}>
+              {manpower.byTrade.map((t) => `${t.trade}: ${t.active}${t.released ? ` (+${t.released} released)` : ""}`).join(" · ")}
+            </span>
+            <Link to="/hr/employees" style={{ marginLeft: "auto" }}>Open Employees</Link>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Name</th>
+                <th>Trade</th>
+                <th>Nationality</th>
+                <th>Joined</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {manpower.employees
+                .filter((e) => showReleased || e.status === "ACTIVE")
+                .map((e) => (
+                  <tr key={e.id}>
+                    <td><Link to={`/hr/employees/${e.id}`}>{e.code}</Link></td>
+                    <td>{e.nameEn}</td>
+                    <td>{e.designation ?? "—"}</td>
+                    <td>{e.nationality ?? "—"}</td>
+                    <td>{e.joinDate.slice(0, 10)}</td>
+                    <td>{e.status === "ACTIVE" ? "Active" : "Released"}</td>
+                  </tr>
+                ))}
+              {manpower.active === 0 && !showReleased && (
+                <tr><td colSpan={6} style={{ color: "#98a2b3" }}>No active employees assigned to this project yet</td></tr>
+              )}
+            </tbody>
+          </table>
+          {manpower.released > 0 && (
+            <button className="secondary" style={{ marginTop: 8 }} onClick={() => setShowReleased(!showReleased)}>
+              {showReleased ? "Hide released employees" : `Show ${manpower.released} released employees`}
+            </button>
+          )}
         </div>
       )}
 

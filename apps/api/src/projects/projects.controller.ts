@@ -71,6 +71,13 @@ export class ProjectsController {
     return this.projectsService.getProjectExpenses(companyId, id);
   }
 
+  // Employee names are HR data, so this needs HR access as well as project access.
+  @Get("projects/:id/manpower")
+  @Permissions(PERMISSIONS.PROJECT_VIEW, PERMISSIONS.HR_EMPLOYEE_VIEW)
+  async getManpower(@CurrentCompanyId() companyId: string, @Param("id") id: string) {
+    return this.projectsService.getManpower(companyId, id);
+  }
+
   @Get("projects/:id/monthly-cost-trend")
   @Permissions(PERMISSIONS.PROJECT_VIEW)
   async getMonthlyCostTrend(@CurrentCompanyId() companyId: string, @Param("id") id: string) {
