@@ -461,6 +461,28 @@ describe("Projects — full job accounting (e2e)", () => {
       expect(postedRow.accountCode).toBe("5103");
       expect(postedRow.source).toBe("Purchase invoice");
       expect(res.body.bySource.map((s: any) => s.source).sort()).toEqual(["Purchase invoice", "Purchase invoice (draft)"]);
+
+      // A manual journal on the project is real cost too: it appears in the register AND in the dashboard,
+      // and the register total equals the dashboard grand total to the penny.
+      const je = await request(app.getHttpServer())
+        .post("/gl/journal-entries")
+        .set("Authorization", `Bearer ${ctx.accessToken}`)
+        .send({
+          postingDate: today,
+          documentDate: today,
+          lines: [
+            { accountId: ctx.accountByCode("5210").id, debit: "99.99", credit: "0", projectId: project.id },
+            { accountId: ctx.cashAccount.id, debit: "0", credit: "99.99" },
+          ],
+        })
+        .expect(201);
+      await request(app.getHttpServer()).post(`/gl/journal-entries/${je.body.id}/post`).set("Authorization", `Bearer ${ctx.accessToken}`).expect(201);
+      const after = (await request(app.getHttpServer()).get(`/projects/${project.id}/expenses`).set("Authorization", `Bearer ${ctx.accessToken}`).expect(200)).body;
+      expect(after.rows.find((r: any) => r.source === "Manual journal").amount).toBe("99.99");
+      expect(after.total).toBe("549.99");
+      const dash = (await request(app.getHttpServer()).get(`/projects/${project.id}/intelligence`).set("Authorization", `Bearer ${ctx.accessToken}`).expect(200)).body;
+      expect(dash.grandTotal).toBe(after.total);
+      expect(after.dashboardTotal).toBe(after.total);
     });
 
     it("Material/Machinery costs are gross of VAT — the real amount paid/payable, not the net GL expense", async () => {

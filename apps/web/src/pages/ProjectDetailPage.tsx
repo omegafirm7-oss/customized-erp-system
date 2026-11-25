@@ -54,11 +54,14 @@ interface ProjectExpenseRow {
   costCategory: string;
   partnerName: string | null;
   description: string | null;
+  net: string | null;
+  vat: string | null;
   amount: string;
   isDraft: boolean;
 }
 interface ProjectExpenses {
   total: string;
+  dashboardTotal: string;
   bySource: Array<{ source: string; amount: string }>;
   rows: ProjectExpenseRow[];
 }
@@ -440,9 +443,21 @@ export function ProjectDetailPage() {
     }
   }
 
+  function downloadExpensesCsv(rows: ProjectExpenseRow[]) {
+    if (!project) return;
+    downloadCsv(
+      `${project.code}-all-expenses.csv`,
+      ["Date", "Reference", "Source", "Account code", "Account", "Vendor / party", "Description", "Net (SAR)", "VAT (SAR)", "Total incl. VAT (SAR)"],
+      [
+        ...rows.map((r) => [r.date.slice(0, 10), r.reference ?? "", r.source, r.accountCode, r.accountName, r.partnerName ?? "", r.description ?? "", r.net ?? "", r.vat ?? "", Number(r.amount).toFixed(2)]),
+        ["", "", "", "", "", "", "Total", "", "", rows.reduce((s, r) => s + Number(r.amount), 0).toFixed(2)],
+      ],
+    );
+  }
+
   function downloadIntelligenceCsv() {
     if (!intelligence || !project) return;
-    const cats = ["MATERIAL", "MACHINERY", "LABOR"] as const;
+    const cats = ["MATERIAL", "MACHINERY", "LABOR", "OTHER"] as const;
     const rows: Array<Array<string | number>> = [];
     let total = 0;
     for (const cat of cats) {
@@ -626,11 +641,7 @@ export function ProjectDetailPage() {
             <div className="pi-kpi-card">
               <div className="pi-kpi-label">Total Cost</div>
               <div className="pi-kpi-value">
-                {formatMoney(
-                  Number(intelligence.categories.MATERIAL?.total ?? 0) +
-                    Number(intelligence.categories.MACHINERY?.total ?? 0) +
-                    Number(intelligence.categories.LABOR?.total ?? 0),
-                )}
+                {formatMoney(intelligence.grandTotal)}
               </div>
             </div>
             <div className="pi-kpi-card">
@@ -652,6 +663,12 @@ export function ProjectDetailPage() {
                 Paid {formatMoney(intelligence.categories.LABOR?.paid)} · Pending {formatMoney(intelligence.categories.LABOR?.pending)}
               </div>
             </div>
+            {Number(intelligence.categories.OTHER?.total ?? 0) !== 0 && (
+              <div className="pi-kpi-card">
+                <div className="pi-kpi-label">Other Cost</div>
+                <div className="pi-kpi-value">{formatMoney(intelligence.categories.OTHER?.total)}</div>
+              </div>
+            )}
             <div className="pi-kpi-card">
               <div className="pi-kpi-label">Contract Value</div>
               <div className="pi-kpi-value accent-blue">{formatMoney(project.contractValue)}</div>
@@ -691,9 +708,11 @@ export function ProjectDetailPage() {
           </div>
 
           <div className="pi-tables-grid">
-            {(["MATERIAL", "MACHINERY", "LABOR"] as const).map((cat) => {
+            {(["MATERIAL", "MACHINERY", "LABOR", "OTHER"] as const)
+              .filter((cat) => cat !== "OTHER" || Number(intelligence.categories.OTHER?.total ?? 0) !== 0)
+              .map((cat) => {
               const bucket = intelligence.categories[cat];
-              const label = cat === "MATERIAL" ? "Material Cost by Account" : cat === "MACHINERY" ? "Machinery Cost by Account" : "Labor Cost by Account";
+              const label = cat === "MATERIAL" ? "Material Cost by Account" : cat === "MACHINERY" ? "Machinery Cost by Account" : cat === "LABOR" ? "Labor Cost by Account" : "Other Cost by Account";
               return (
                 <div key={cat} className={`pi-table-card ${cat.toLowerCase()}`}>
                   <h4>
@@ -713,8 +732,9 @@ export function ProjectDetailPage() {
                         .map((a) => (
                           <tr
                             key={a.id}
-                            className="pi-table-row-link"
+                            className={a.id.startsWith("ledger:") ? undefined : "pi-table-row-link"}
                             onClick={() =>
+                              !a.id.startsWith("ledger:") &&
                               navigate(
                                 cat === "LABOR"
                                   ? `/projects/${id}/costs/labor?accountId=${a.id}`
@@ -747,10 +767,15 @@ export function ProjectDetailPage() {
           <h3>All expenses assigned to this project</h3>
           <p style={{ color: "#667085", fontSize: 13, marginTop: 0 }}>
             Every expense posted against this project — purchase invoices, payments, payroll, allowances, equipment and
-            manual journals — plus purchase invoices still in draft. Amounts are net of VAT, as booked in the ledger.
+            manual journals — plus purchase invoices still in draft. Amounts include VAT and add up to the Total Cost shown in Project Intelligence above.
           </p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
             <strong style={{ alignSelf: "center" }}>Total: {formatMoney(expenses.total)}</strong>
+            {expenses.total !== expenses.dashboardTotal && (
+              <span style={{ alignSelf: "center", color: "#b42318", fontSize: 12 }}>
+                (dashboard shows {formatMoney(expenses.dashboardTotal)})
+              </span>
+            )}
             {expenses.bySource.map((s) => (
               <button
                 key={s.source}
@@ -761,6 +786,24 @@ export function ProjectDetailPage() {
                 {s.source}: {formatMoney(s.amount)}
               </button>
             ))}
+            {canDownload && (
+              <button
+                className="secondary"
+                onClick={() => {
+                  const q = expenseSearch.trim().toLowerCase();
+                  downloadExpensesCsv(
+                    expenses.rows.filter(
+                      (r) =>
+                        (!expenseSource || r.source === expenseSource) &&
+                        (!q || `${r.accountCode} ${r.accountName} ${r.partnerName ?? ""} ${r.description ?? ""} ${r.reference ?? ""}`.toLowerCase().includes(q)),
+                    ),
+                  );
+                }}
+                title="Download the list as shown (respects the filter and search)"
+              >
+                Download (CSV)
+              </button>
+            )}
             <input
               placeholder="Search account, vendor, description…"
               value={expenseSearch}
@@ -787,7 +830,9 @@ export function ProjectDetailPage() {
                       <th>Account</th>
                       <th>Vendor / party</th>
                       <th>Description</th>
-                      <th style={{ textAlign: "right" }}>Amount</th>
+                      <th style={{ textAlign: "right" }}>Net</th>
+                      <th style={{ textAlign: "right" }}>VAT</th>
+                      <th style={{ textAlign: "right" }}>Total incl. VAT</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -801,12 +846,14 @@ export function ProjectDetailPage() {
                         </td>
                         <td>{r.partnerName ?? "—"}</td>
                         <td>{r.description ?? ""}</td>
+                        <td style={{ textAlign: "right" }}>{r.net === null ? "" : formatMoney(r.net)}</td>
+                        <td style={{ textAlign: "right" }}>{r.vat === null ? "" : formatMoney(r.vat)}</td>
                         <td style={{ textAlign: "right", fontWeight: 600 }}>{formatMoney(r.amount)}</td>
                       </tr>
                     ))}
                     {shown.length === 0 && (
                       <tr>
-                        <td colSpan={7} style={{ color: "#98a2b3" }}>
+                        <td colSpan={9} style={{ color: "#98a2b3" }}>
                           No expenses {expenseSource || q ? "match this filter" : "recorded against this project yet"}
                         </td>
                       </tr>
@@ -815,7 +862,7 @@ export function ProjectDetailPage() {
                   {shown.length > 0 && (
                     <tfoot>
                       <tr>
-                        <td colSpan={6} style={{ textAlign: "right", fontWeight: 700 }}>
+                        <td colSpan={8} style={{ textAlign: "right", fontWeight: 700 }}>
                           {shown.length} line{shown.length === 1 ? "" : "s"}
                         </td>
                         <td style={{ textAlign: "right", fontWeight: 700 }}>{formatMoney(shownTotal)}</td>
