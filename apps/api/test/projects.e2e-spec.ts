@@ -485,6 +485,25 @@ describe("Projects — full job accounting (e2e)", () => {
       expect(after.dashboardTotal).toBe(after.total);
     });
 
+    it("a vendor-invoice line on a Labor account counts as Labor and appears in the register, which still equals the dashboard total", async () => {
+      const ctx = await setupProjectContext();
+      const project = await createOverTimeProject(ctx);
+      const today = new Date().toISOString();
+      await postDraftInvoice(ctx, project.id, "5104", "300", today); // material
+      await postDraftInvoice(ctx, project.id, "5216", "90", today); // food allowance bought on an invoice (Labor account)
+
+      const dash = (await request(app.getHttpServer()).get(`/projects/${project.id}/intelligence`).set("Authorization", `Bearer ${ctx.accessToken}`).expect(200)).body;
+      expect(dash.categories.LABOR.total).toBe("90.00");
+      expect(dash.grandTotal).toBe("390.00");
+      const reg = (await request(app.getHttpServer()).get(`/projects/${project.id}/expenses`).set("Authorization", `Bearer ${ctx.accessToken}`).expect(200)).body;
+      expect(reg.rows).toHaveLength(2);
+      expect(reg.total).toBe("390.00");
+      const labor = dash.categories.LABOR.accounts.find((a: any) => a.code === "5216");
+      const drill = (await request(app.getHttpServer()).get(`/projects/${project.id}/costs/labor?accountId=${labor.id}`).set("Authorization", `Bearer ${ctx.accessToken}`).expect(200)).body;
+      expect(drill).toHaveLength(1);
+      expect(drill[0].source).toBe("INVOICE");
+    });
+
     it("Material/Machinery costs are gross of VAT — the real amount paid/payable, not the net GL expense", async () => {
       const ctx = await setupProjectContext();
       const project = await createOverTimeProject(ctx);

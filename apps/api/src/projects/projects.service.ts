@@ -557,7 +557,6 @@ export class ProjectsService {
       JOIN "purchase_invoices" pi ON pi."id" = pil."purchaseInvoiceId"
       JOIN "accounts" a ON a."id" = pil."expenseAccountId"
       WHERE pil."projectId" = ${projectId} AND pi."status" != 'CANCELLED'
-        AND (a."costCategory" IS NULL OR a."costCategory" != 'LABOR')
       GROUP BY a."id", a."code", a."name", a."costCategory"
       ORDER BY a."code"
     `;
@@ -778,7 +777,10 @@ export class ProjectsService {
     // Labor rows (allowance + payroll) always land in LABOR regardless of the resolved
     // account's tag, and are merged by account id first so the same account appearing in
     // both sources (edge case) still produces one row.
-    for (const row of invoiceRows) {
+    // Invoice lines booked on a Labor-tagged account (for example a food allowance bought on a vendor invoice)
+    // are labor cost too; they merge into Labor below, by account, with the employee payments and payroll.
+    const invoiceLaborRows = invoiceRows.filter((r) => r.costCategory === "LABOR");
+    for (const row of invoiceRows.filter((r) => r.costCategory !== "LABOR")) {
       const bucket = row.costCategory ?? "OTHER";
       const amount = new Prisma.Decimal(row.amount);
       totals[bucket] = totals[bucket].add(amount);
@@ -803,7 +805,7 @@ export class ProjectsService {
       categories.OTHER.accounts.push({ id: `ledger:${accountId}`, code: row.code, name: `${row.name} (journal postings)`, amount: row.amount.toFixed(2) });
     }
     const laborByAccount = new Map<string, { code: string; name: string; amount: Prisma.Decimal }>();
-    for (const row of [...allowanceRows, ...payrollRows]) {
+    for (const row of [...allowanceRows, ...payrollRows, ...invoiceLaborRows]) {
       const existing = laborByAccount.get(row.id);
       const amount = new Prisma.Decimal(row.amount);
       laborByAccount.set(row.id, {
@@ -941,7 +943,6 @@ export class ProjectsService {
       JOIN "accounts" a ON a."id" = pil."expenseAccountId"
       JOIN "business_partners" bp ON bp."id" = pi."businessPartnerId"
       WHERE pil."projectId" = ${projectId} AND pi."companyId" = ${companyId} AND pi."status" != 'CANCELLED'
-        AND (a."costCategory" IS NULL OR a."costCategory" != 'LABOR')
     `;
     for (const r of invoiceLines) {
       lines.push({
@@ -1118,7 +1119,7 @@ export class ProjectsService {
     const accountFilter = accountId ? Prisma.sql`AND a."id" = ${accountId}` : Prisma.empty;
 
     type Row = {
-      source: "ALLOWANCE" | "FOOD" | "SALARY" | "PAYROLL";
+      source: "ALLOWANCE" | "FOOD" | "SALARY" | "PAYROLL" | "INVOICE";
       employeeId: string | null;
       employeeCode: string | null;
       employeeName: string | null;
@@ -1167,13 +1168,29 @@ export class ProjectsService {
       HAVING SUM(jel."debit" - jel."credit") != 0
     `;
 
+    // Vendor-invoice lines booked on a Labor-tagged account count as Labor on the dashboard, so they are listed too.
+    const invoiceAccountFilter = accountId ? Prisma.sql`AND a."id" = ${accountId}` : Prisma.empty;
+    const invoiceLaborLines = await this.prisma.$queryRaw<Row[]>`
+      SELECT 'INVOICE' AS "source", NULL AS "employeeId", NULL AS "employeeCode", bp."name" AS "employeeName",
+             a."code" AS "accountCode", a."name" AS "accountName", pil."grossAmount" AS "amount",
+             pi."postingDate" AS "date", (COALESCE(pi."invoiceNumber", pi."vendorInvoiceNumber") || ' — ' || pil."description") AS "memo",
+             NULL AS "payrollRunId", NULL AS "payrollRunNumber"
+      FROM "purchase_invoice_lines" pil
+      JOIN "purchase_invoices" pi ON pi."id" = pil."purchaseInvoiceId"
+      JOIN "accounts" a ON a."id" = pil."expenseAccountId"
+      JOIN "business_partners" bp ON bp."id" = pi."businessPartnerId"
+      WHERE pil."projectId" = ${projectId} AND pi."companyId" = ${companyId} AND pi."status" != 'CANCELLED'
+        AND a."costCategory" = 'LABOR'
+        ${invoiceAccountFilter}
+    `;
+
     // Final settlements (EOSB/leave payout/final-salary-days on termination
     // or resignation) are deliberately NOT included here — a settlement is
     // a one-time HR/legal exit payout, not ongoing project labor cost, so it
     // shouldn't show up in this drill-down at all (matches the exclusion in
     // getProjectIntelligence's payrollRows above).
 
-    return [...allowancePayments, ...payrollPostings].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return [...allowancePayments, ...payrollPostings, ...invoiceLaborLines].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }
 
   // ── WBS tasks ────────────────────────────────────────────────────────

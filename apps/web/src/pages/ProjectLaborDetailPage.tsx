@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 
 interface LaborPayment {
-  source: "ALLOWANCE" | "FOOD" | "SALARY" | "PAYROLL";
+  source: "ALLOWANCE" | "FOOD" | "SALARY" | "PAYROLL" | "INVOICE";
   employeeId: string | null;
   employeeCode: string | null;
   employeeName: string | null;
@@ -71,7 +71,9 @@ export function ProjectLaborDetailPage() {
                       ? "Food"
                       : p.source === "SALARY"
                         ? "Salary"
-                        : "Payroll"}
+                        : p.source === "INVOICE"
+                          ? "Invoice"
+                          : "Payroll"}
                 </span>
               </td>
               <td>
@@ -80,7 +82,7 @@ export function ProjectLaborDetailPage() {
                     {p.employeeCode} — {p.employeeName}
                   </Link>
                 ) : (
-                  "—"
+                  p.employeeName ?? "—"
                 )}
               </td>
               <td>{p.accountCode ? `${p.accountCode} — ${p.accountName}` : "—"}</td>
