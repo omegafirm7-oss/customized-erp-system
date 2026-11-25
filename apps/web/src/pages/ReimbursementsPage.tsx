@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { apiClient } from "../api/client";
 import { AttachButton } from "../components/AttachButton";
+import { SearchableSelect } from "../components/SearchableSelect";
 import { useCanDownload } from "../hooks/useCanDownload";
 import { useHasPermission } from "../hooks/useHasPermission";
 import { downloadCsv } from "../utils/csv";
@@ -49,6 +50,15 @@ interface Account {
   accountClass?: { code: string };
 }
 
+interface VendorRef {
+  id: string;
+  code: string;
+  name: string;
+  partnerType: string;
+  taxRegistrationNumber: string | null;
+  isStaffPayee?: boolean;
+}
+
 interface ProjectRef {
   id: string;
   code: string;
@@ -74,6 +84,8 @@ export function ReimbursementsPage() {
   const [statement, setStatement] = useState<Statement | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [projects, setProjects] = useState<ProjectRef[]>([]);
+  const [vendors, setVendors] = useState<VendorRef[]>([]);
+  const [vendorPick, setVendorPick] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -107,7 +119,25 @@ export function ReimbursementsPage() {
     loadPayees().catch(() => setError("Could not load the reimbursement list"));
     apiClient.get<Account[]>("/coa/accounts").then((res) => setAccounts(res.data.filter((a) => a.isPostable)));
     apiClient.get<ProjectRef[]>("/projects").then((res) => setProjects(res.data.filter((p) => p.status === "ACTIVE")));
+    // Supplier master data, so a known supplier's name and VAT number fill in by themselves.
+    apiClient
+      .get<VendorRef[]>("/partners")
+      .then((res) => setVendors(res.data.filter((p) => !p.isStaffPayee && (p.partnerType === "VENDOR" || p.partnerType === "BOTH"))))
+      .catch(() => setVendors([]));
   }, [loadPayees]);
+
+  function pickVendor(id: string) {
+    setVendorPick(id);
+    const v = vendors.find((x) => x.id === id);
+    if (!v) return;
+    setExpense((prev) => ({
+      ...prev,
+      supplierName: v.name,
+      supplierVat: v.taxRegistrationNumber ?? "",
+      // A supplier on file with a VAT number normally means a VAT invoice; the box can still be unticked.
+      hasVatInvoice: v.taxRegistrationNumber ? true : prev.hasVatInvoice,
+    }));
+  }
 
   useEffect(() => {
     if (selected) loadStatement(selected).catch(() => setError("Could not load this person's statement"));
@@ -166,6 +196,7 @@ export function ReimbursementsPage() {
         }
       }
       setExpense({ ...emptyExpense, date: expense.date, projectId: expense.projectId, accountId: expense.accountId });
+      setVendorPick("");
       setReceiptFile(null);
       setNotice((canPost ? "Expense recorded on the project." : "Expense saved as a draft for approval.") + evidenceNote);
       await refresh();
@@ -307,11 +338,25 @@ export function ReimbursementsPage() {
               <h3>Record an expense paid by {statement.payee.name}</h3>
               <form onSubmit={recordExpense}>
                 <div className="form-row">
+                  <div style={{ flex: 1, minWidth: 260 }}>
+                    <label>Supplier from master data </label>
+                    <SearchableSelect
+                      options={vendors}
+                      value={vendorPick}
+                      onChange={pickVendor}
+                      placeholder="Search supplier by name or code — fills name and VAT number…"
+                    />
+                  </div>
+                  <span className="field-hint" style={{ alignSelf: "flex-end" }}>
+                    Not on file? Just type the name and VAT number below.
+                  </span>
+                </div>
+                <div className="form-row">
                   <div>
                     <label>Date </label>
                     <input type="date" value={expense.date} onChange={(e) => setExpense({ ...expense, date: e.target.value })} required />
                   </div>
-                  <input placeholder="Bought from (supplier name)" value={expense.supplierName} onChange={(e) => setExpense({ ...expense, supplierName: e.target.value })} required style={{ flex: 1 }} />
+                  <input placeholder="Bought from (supplier name)" value={expense.supplierName} onChange={(e) => { setVendorPick(""); setExpense({ ...expense, supplierName: e.target.value }); }} required style={{ flex: 1 }} />
                   <input placeholder="Receipt / invoice no." value={expense.receiptNumber} onChange={(e) => setExpense({ ...expense, receiptNumber: e.target.value })} required />
                 </div>
                 <div className="form-row">
