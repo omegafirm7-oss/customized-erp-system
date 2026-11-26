@@ -1,6 +1,8 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { useCanDownload } from "../hooks/useCanDownload";
+import { useDocumentPdfDownload } from "../hooks/useDocumentPdfDownload";
 
 interface Line {
   id: string;
@@ -28,6 +30,7 @@ interface RequisitionDetail {
   status: string;
   memo: string | null;
   requiredByDate: string | null;
+  createdAt?: string;
   rejectionReason: string | null;
   project: { code: string; name: string } | null;
   lines: Line[];
@@ -52,6 +55,8 @@ function quoteTotal(q: SiblingQuotation): number {
 export function PurchaseRequisitionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const canDownload = useCanDownload();
+  const { download } = useDocumentPdfDownload("purchase");
   const [req, setReq] = useState<RequisitionDetail | null>(null);
   const [partners, setPartners] = useState<Partner[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -125,6 +130,36 @@ export function PurchaseRequisitionDetailPage() {
     }
   }
 
+  function downloadPdf() {
+    if (!req) return;
+    const priced = req.lines.some((l) => l.estimatedUnitPrice);
+    const refs: Array<[string, string]> = [];
+    if (req.project) refs.push(["Project", `${req.project.code} — ${req.project.name}`]);
+    if (req.requiredByDate) refs.push(["Required by", new Date(req.requiredByDate).toLocaleDateString()]);
+    const rfqs = req.quotations.filter((q) => q.quotationNumber).map((q) => q.quotationNumber as string);
+    if (rfqs.length) refs.push(["RFQs raised", rfqs.join(", ")]);
+    download({
+      docTypeLabel: "Purchase Requisition",
+      documentNumber: req.requisitionNumber,
+      documentDate: req.createdAt ?? new Date().toISOString(),
+      status: req.status,
+      recordId: req.id,
+      references: refs,
+      notes: [req.memo, req.rejectionReason ? `Rejected: ${req.rejectionReason}` : null].filter(Boolean).join("\n") || null,
+      signatures: ["Requested by", "Reviewed by", "Approved by"],
+      lines: [],
+      plainTable: {
+        head: priced ? ["#", "Description", "Qty", "Est. Unit Price", "Est. Total"] : ["#", "Description", "Qty"],
+        rightAlign: priced ? [2, 3, 4] : [2],
+        body: req.lines.map((l, i) =>
+          priced
+            ? [String(i + 1), l.description, l.quantity, l.estimatedUnitPrice ? money(l.estimatedUnitPrice) : "", l.estimatedUnitPrice ? money(Number(l.quantity) * Number(l.estimatedUnitPrice)) : ""]
+            : [String(i + 1), l.description, l.quantity],
+        ),
+      },
+    });
+  }
+
   if (!req) return <p>Loading…</p>;
 
   return (
@@ -146,6 +181,13 @@ export function PurchaseRequisitionDetailPage() {
             </span>
           </h2>
           <span>
+            {canDownload && (
+              <>
+                <button className="secondary" onClick={downloadPdf}>
+                  PDF
+                </button>{" "}
+              </>
+            )}
             {req.status === "DRAFT" && (
               <button disabled={busy} onClick={() => action("submit")}>
                 Submit for approval

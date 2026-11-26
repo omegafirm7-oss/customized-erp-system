@@ -137,7 +137,10 @@ export function SalesQuotationsPage() {
     setError(null);
     try {
       const res = await apiClient.get<{
-        quotationNumber: string;
+        id: string;
+        status: string;
+        memo?: string | null;
+        quotationNumber: string | null;
         quotationDate: string;
         businessPartner: { name: string; code: string; taxRegistrationNumber?: string | null };
         lines: Array<{ description: string; quantity: string; unitPrice: string; vatCategory: string; item?: { code: string } | null }>;
@@ -146,6 +149,9 @@ export function SalesQuotationsPage() {
       download({
         docTypeLabel: "Sales Quotation",
         documentNumber: q.quotationNumber,
+        status: q.status,
+        recordId: q.id,
+        notes: q.memo,
         documentDate: q.quotationDate,
         partnerLabel: "Bill To",
         partner: q.businessPartner,

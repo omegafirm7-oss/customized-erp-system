@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { useCanDownload } from "../hooks/useCanDownload";
+import { useDocumentPdfDownload } from "../hooks/useDocumentPdfDownload";
 
 interface ReceiptLine {
   id: string;
@@ -28,6 +30,8 @@ const QC_RESULTS = ["PASSED", "FAILED", "PARTIAL"];
 
 export function GoodsReceiptDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const canDownload = useCanDownload();
+  const { download } = useDocumentPdfDownload("purchase");
   const [receipt, setReceipt] = useState<ReceiptDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -101,6 +105,39 @@ export function GoodsReceiptDetailPage() {
     }
   }
 
+  function downloadPdf() {
+    if (!receipt) return;
+    download({
+      docTypeLabel: "Goods Receipt Note",
+      documentNumber: receipt.receiptNumber,
+      documentDate: receipt.receivedDate,
+      status: receipt.status,
+      recordId: receipt.id,
+      partnerLabel: "Vendor",
+      partner: receipt.purchaseOrder.businessPartner,
+      references: [
+        ["Purchase Order", receipt.purchaseOrder.orderNumber ?? "(draft)"],
+        ["Warehouse", `${receipt.warehouse.code} — ${receipt.warehouse.name}`],
+      ],
+      signatures: ["Received by", "QC inspected by", "Approved by"],
+      lines: [],
+      plainTable: {
+        head: ["#", "Description", "Ordered", "Received", "QC", "Accepted", "Rejected", "Notes"],
+        rightAlign: [2, 3, 5, 6],
+        body: receipt.lines.map((l, i) => [
+          String(i + 1),
+          l.purchaseOrderLine.description,
+          l.purchaseOrderLine.quantity,
+          l.quantityReceived,
+          l.qcResult,
+          l.quantityAccepted,
+          l.quantityRejected,
+          l.qcNotes ?? "",
+        ]),
+      },
+    });
+  }
+
   if (!receipt) return <p>Loading…</p>;
   const isDraft = receipt.status === "DRAFT";
   const isQcPending = receipt.status === "QC_PENDING";
@@ -117,6 +154,13 @@ export function GoodsReceiptDetailPage() {
             </span>
           </h2>
           <span>
+            {canDownload && (
+              <>
+                <button className="secondary" onClick={downloadPdf}>
+                  PDF
+                </button>{" "}
+              </>
+            )}
             {isDraft && (
               <button disabled={busy} onClick={submitForQc}>
                 Submit for QC

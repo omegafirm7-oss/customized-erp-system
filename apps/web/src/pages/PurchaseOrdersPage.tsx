@@ -183,7 +183,10 @@ export function PurchaseOrdersPage() {
     setError(null);
     try {
       const res = await apiClient.get<{
-        orderNumber: string;
+        id: string;
+        status: string;
+        memo?: string | null;
+        orderNumber: string | null;
         orderDate: string;
         businessPartner: { name: string; code: string; taxRegistrationNumber?: string | null };
         lines: Array<{ description: string; quantity: string; unitPrice: string; vatCategory: string; item?: { code: string } | null }>;
@@ -192,6 +195,9 @@ export function PurchaseOrdersPage() {
       download({
         docTypeLabel: "Purchase Order",
         documentNumber: o.orderNumber,
+        status: o.status,
+        recordId: o.id,
+        notes: o.memo,
         documentDate: o.orderDate,
         partnerLabel: "Vendor",
         partner: o.businessPartner,

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "../api/client";
 import { useTemplateSettings } from "./useTemplateSettings";
-import { downloadCommercialDocumentPdf, CommercialDocumentLine, FiscalBlock } from "../utils/documentPdf";
+import { downloadCommercialDocumentPdf, CommercialDocumentExtras, CommercialDocumentLine, FiscalBlock } from "../utils/documentPdf";
 
 interface CurrentCompany {
+  crNumber?: string | null;
+  baseCurrencyCode?: string;
   legalName: string;
   addressLine1: string | null;
   addressLine2: string | null;
@@ -24,15 +26,17 @@ export function useDocumentPdfDownload(cycle: "sales" | "purchase") {
   }, []);
 
   const download = useCallback(
-    (params: {
-      docTypeLabel: string;
-      documentNumber: string;
-      documentDate: string;
-      partnerLabel: string;
-      partner: { name: string; code: string; taxRegistrationNumber?: string | null };
-      lines: CommercialDocumentLine[];
-      fiscal?: FiscalBlock | null;
-    }) => {
+    (
+      params: CommercialDocumentExtras & {
+        docTypeLabel: string;
+        documentNumber: string | null;
+        documentDate: string;
+        partnerLabel?: string;
+        partner?: { name: string; code: string; taxRegistrationNumber?: string | null };
+        lines: CommercialDocumentLine[];
+        fiscal?: FiscalBlock | null;
+      },
+    ) => {
       // Pakistan: "Sales Tax" + seller NTN instead of VAT / VAT number.
       const isPakistan = company?.countryCode === "PK";
       const address = company ? [company.addressLine1, company.addressLine2, company.city].filter(Boolean).join(", ") : "";
@@ -41,6 +45,8 @@ export function useDocumentPdfDownload(cycle: "sales" | "purchase") {
         companyName: company?.legalName ?? "",
         companyAddress: address || null,
         companyTaxNumber: (isPakistan ? company?.ntn : company?.taxRegistrationNumber) ?? null,
+        companyCrNumber: company?.crNumber ?? null,
+        currency: company?.baseCurrencyCode ?? null,
         taxLabel: isPakistan ? "Sales Tax" : "VAT",
         taxNumberLabel: isPakistan ? "NTN" : "VAT Reg. No",
         ...params,
@@ -48,6 +54,8 @@ export function useDocumentPdfDownload(cycle: "sales" | "purchase") {
           ? {
               logoDataUrl,
               accentColor: settings.accentColor,
+              headerTagline: settings.headerTagline,
+              headerMissionLine: settings.headerMissionLine,
               footerText: settings.footerText,
               showAddress: settings.showAddressInHeader,
               showTaxNumber: settings.showTaxNumberInHeader,

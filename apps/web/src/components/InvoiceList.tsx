@@ -208,6 +208,9 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
     setError(null);
     try {
       const res = await apiClient.get<{
+        id: string;
+        status: string;
+        memo?: string | null;
         invoiceNumber: string | null;
         vendorInvoiceNumber?: string;
         postingDate: string;
@@ -217,7 +220,11 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
       const inv = res.data;
       download({
         docTypeLabel: side === "ar" ? "Sales Invoice" : "Purchase Invoice",
-        documentNumber: inv.invoiceNumber ?? inv.vendorInvoiceNumber ?? "DRAFT",
+        documentNumber: inv.invoiceNumber ?? null,
+        status: inv.status,
+        recordId: inv.id,
+        notes: inv.memo,
+        references: inv.vendorInvoiceNumber ? [["Vendor Invoice No", inv.vendorInvoiceNumber]] : undefined,
         documentDate: inv.postingDate,
         partnerLabel: side === "ar" ? "Bill To" : "Vendor",
         partner: inv.businessPartner,
