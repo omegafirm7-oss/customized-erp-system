@@ -151,6 +151,65 @@ function printedStamp(): string {
  * documents, the lines, sign-off boxes, and an audit footer on every page (document number, status, print time,
  * record id, content fingerprint, page x of y).
  */
+/**
+ * Logos are usually uploaded as a square JPEG with a light-grey/white backdrop and padding. On a white page that
+ * backdrop prints as a faint box and the mark looks small and off-centre. Crop to the mark and make the
+ * near-white backdrop transparent. Returns the original on any failure (no canvas, undecodable image).
+ */
+async function tidyLogo(dataUrl: string): Promise<string> {
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = reject;
+      el.src = dataUrl;
+    });
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    if (!w || !h) return dataUrl;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return dataUrl;
+    ctx.drawImage(img, 0, 0);
+    const data = ctx.getImageData(0, 0, w, h);
+    const px = data.data;
+    let minX = w, minY = h, maxX = -1, maxY = -1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const o = (y * w + x) * 4;
+        const lum = px[o] * 0.3 + px[o + 1] * 0.59 + px[o + 2] * 0.11;
+        // backdrop (>=240) becomes transparent; 200–240 fades so anti-aliased edges stay smooth
+        const alpha = lum >= 240 ? 0 : lum <= 200 ? 255 : Math.round(((240 - lum) / 40) * 255);
+        if (px[o + 3] < 255) continue;
+        px[o + 3] = alpha;
+        if (alpha > 40) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX < 0) return dataUrl;
+    ctx.putImageData(data, 0, 0);
+    const pad = Math.round(Math.max(w, h) * 0.01);
+    const sx = Math.max(0, minX - pad);
+    const sy = Math.max(0, minY - pad);
+    const sw = Math.min(w, maxX + pad + 1) - sx;
+    const sh = Math.min(h, maxY + pad + 1) - sy;
+    const out = document.createElement("canvas");
+    const scale = Math.min(1, 500 / Math.max(sw, sh)); // 500 px is plenty for a 22 mm print
+    out.width = Math.max(1, Math.round(sw * scale));
+    out.height = Math.max(1, Math.round(sh * scale));
+    out.getContext("2d")!.drawImage(canvas, sx, sy, sw, sh, 0, 0, out.width, out.height);
+    return out.toDataURL("image/png");
+  } catch {
+    return dataUrl;
+  }
+}
+
 export async function downloadCommercialDocumentPdf(params: CommercialDocumentParams) {
   if (!downloadsAllowed()) return;
   const { companyName, companyAddress, companyTaxNumber, companyCrNumber, docTypeLabel, documentDate, lines, branding } = params;
@@ -216,11 +275,12 @@ export async function downloadCommercialDocumentPdf(params: CommercialDocumentPa
   let textX = left;
   if (branding?.logoDataUrl) {
     try {
-      const dims = doc.getImageProperties(branding.logoDataUrl);
+      const logoUrl = await tidyLogo(branding.logoDataUrl);
+      const dims = doc.getImageProperties(logoUrl);
       const boxH = 22;
       const logoW = Math.min(boxH * (dims.width / dims.height), 40);
       const logoH = logoW * (dims.height / dims.width);
-      doc.addImage(branding.logoDataUrl, logoFormatFromDataUrl(branding.logoDataUrl), left, 9 + (boxH - logoH) / 2, logoW, logoH, undefined, "FAST");
+      doc.addImage(logoUrl, logoFormatFromDataUrl(logoUrl), left, 9 + (boxH - logoH) / 2, logoW, logoH, undefined, "NONE");
       textX = left + logoW + 5;
     } catch {
       // carry on without the logo if the data URL can't be decoded
