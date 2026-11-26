@@ -234,7 +234,7 @@ export async function downloadCommercialDocumentPdf(params: CommercialDocumentPa
   const meta: string[][] = [
     ["Document No.", numberLabel, "Date", new Date(documentDate).toLocaleDateString()],
   ];
-  if (partner) meta.push([partnerLabel, partner.name, `${partnerLabel} Code`, partner.code]);
+  if (partner) meta.push([partnerLabel, partner.name, "Code", partner.code]);
   if (partner?.taxRegistrationNumber) meta.push([`${partnerLabel} ${taxLabel} No`, partner.taxRegistrationNumber, "", ""]);
   const refs = params.references ?? [];
   for (let i = 0; i < refs.length; i += 2) meta.push([refs[i][0], refs[i][1], refs[i + 1]?.[0] ?? "", refs[i + 1]?.[1] ?? ""]);

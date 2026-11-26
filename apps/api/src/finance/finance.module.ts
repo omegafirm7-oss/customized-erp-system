@@ -23,6 +23,8 @@ import { SalesQuotationsService } from "./sales-quotations.service";
 import { SalesQuotationsController } from "./sales-quotations.controller";
 import { SalesOrdersService } from "./sales-orders.service";
 import { SalesOrdersController } from "./sales-orders.controller";
+import { DeliveryNotesService } from "./delivery-notes.service";
+import { DeliveryNotesController } from "./delivery-notes.controller";
 
 @Module({
   imports: [NumberingModule, GlModule, AuditModule, ZatcaModule, FbrModule, InventoryModule],
@@ -35,6 +37,7 @@ import { SalesOrdersController } from "./sales-orders.controller";
     PurchaseOrdersController,
     SalesQuotationsController,
     SalesOrdersController,
+    DeliveryNotesController,
   ],
   providers: [
     AccountResolutionService,
@@ -47,6 +50,7 @@ import { SalesOrdersController } from "./sales-orders.controller";
     PurchaseOrdersService,
     SalesQuotationsService,
     SalesOrdersService,
+    DeliveryNotesService,
   ],
   exports: [
     AccountResolutionService,

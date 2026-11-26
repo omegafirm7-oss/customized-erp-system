@@ -120,6 +120,7 @@ const SALES_SECTION: NavSection = {
   items: [
     { to: "/ar/quotations", label: "Sales Quotations" },
     { to: "/ar/orders", label: "Sales Orders" },
+    { to: "/ar/delivery-notes", label: "Delivery Notes" },
   ],
 };
 

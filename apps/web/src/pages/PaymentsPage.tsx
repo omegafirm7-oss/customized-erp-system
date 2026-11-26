@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { useCanDownload } from "../hooks/useCanDownload";
+import { useDocumentPdfDownload } from "../hooks/useDocumentPdfDownload";
+import { amountInWords } from "../utils/amountInWords";
 
 interface PaymentRow {
   id: string;
@@ -16,7 +19,16 @@ interface PaymentRow {
   bankCashAccount?: { code: string; name: string };
 }
 
+interface PaymentDetail extends PaymentRow {
+  memo: string | null;
+  currencyCode: string;
+  businessPartner: { code: string; name: string; taxRegistrationNumber?: string | null };
+  allocations: Array<{ allocatedAmount: string; salesInvoice?: { invoiceNumber: string | null } | null; purchaseInvoice?: { invoiceNumber: string | null; vendorInvoiceNumber: string | null } | null }>;
+}
+
 export function PaymentsPage() {
+  const canDownload = useCanDownload();
+  const { download } = useDocumentPdfDownload("sales");
   const [payments, setPayments] = useState<PaymentRow[]>([]);
   const [direction, setDirection] = useState<"ALL" | "INCOMING" | "OUTGOING">("ALL");
   const [loading, setLoading] = useState(true);
@@ -36,6 +48,44 @@ export function PaymentsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  async function downloadReceipt(id: string) {
+    setError(null);
+    setBusyId(id);
+    try {
+      const p = (await apiClient.get<PaymentDetail>(`/payments/${id}`)).data;
+      const incoming = p.direction === "INCOMING";
+      const total = Number(p.amount);
+      const fmt = (v: number) => v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const rows = p.allocations.map((a, i) => [
+        String(i + 1),
+        incoming ? `Invoice ${a.salesInvoice?.invoiceNumber ?? ""}` : `Invoice ${a.purchaseInvoice?.invoiceNumber ?? a.purchaseInvoice?.vendorInvoiceNumber ?? ""}`,
+        fmt(Number(a.allocatedAmount)),
+      ]);
+      if (Number(p.unallocatedAmount) > 0) rows.push([String(rows.length + 1), "On account (not yet applied to an invoice)", fmt(Number(p.unallocatedAmount))]);
+      rows.push(["", "TOTAL " + (incoming ? "RECEIVED" : "PAID") + (p.currencyCode ? ` (${p.currencyCode})` : ""), fmt(total)]);
+      const refs: Array<[string, string]> = [["Paid into", p.bankCashAccount ? `${p.bankCashAccount.code} — ${p.bankCashAccount.name}` : ""], ["Amount in words", amountInWords(total, p.currencyCode)]];
+      if (p.reference) refs.push(["Reference", p.reference]);
+      download({
+        docTypeLabel: incoming ? "Receipt Voucher" : "Payment Voucher",
+        documentNumber: p.paymentNumber,
+        documentDate: p.paymentDate,
+        status: p.status,
+        recordId: p.id,
+        partnerLabel: incoming ? "Received from" : "Paid to",
+        partner: p.businessPartner,
+        references: refs,
+        notes: p.memo,
+        signatures: incoming ? ["Received by", "Authorised by", "Customer signature"] : ["Prepared by", "Authorised by", "Received by (payee)"],
+        lines: [],
+        plainTable: { head: ["#", "Settles", "Amount"], rightAlign: [2], body: rows },
+      });
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Failed to generate receipt");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   async function cancel(id: string) {
     setError(null);
@@ -108,6 +158,13 @@ export function PaymentsPage() {
                   <span className={`badge ${p.status === "POSTED" ? "posted" : "reversed"}`}>{p.status}</span>
                 </td>
                 <td>
+                  {canDownload && (
+                    <>
+                      <button className="secondary" disabled={busyId === p.id} onClick={() => downloadReceipt(p.id)}>
+                        {p.direction === "INCOMING" ? "Receipt" : "Voucher"}
+                      </button>{" "}
+                    </>
+                  )}
                   {p.status === "POSTED" && (
                     <button className="secondary" disabled={busyId === p.id} onClick={() => cancel(p.id)}>
                       Cancel

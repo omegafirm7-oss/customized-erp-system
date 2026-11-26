@@ -147,6 +147,7 @@ enum DocumentType {
   DEPRECIATION_RUN
   EMPLOYEE_PAYMENT
   PURCHASE_REQUISITION
+  DELIVERY_NOTE
 }
 
 enum EquipmentStatus {
@@ -542,6 +543,7 @@ model Company {
   hiredEquipmentTimesheets          HiredEquipmentTimesheet[]
   purchaseRequisitions              PurchaseRequisition[]
   goodsReceipts                     GoodsReceipt[]
+  deliveryNotes                     DeliveryNote[]
   joinRequests                      CompanyJoinRequest[]
   leads                             Lead[]
   opportunities                     Opportunity[]
@@ -1776,6 +1778,7 @@ model SalesOrder {
 
   lines         SalesOrderLine[]
   salesInvoices SalesInvoice[]
+  deliveryNotes DeliveryNote[]
 
   @@unique([companyId, orderNumber])
   @@index([companyId, status])
@@ -1803,9 +1806,60 @@ model SalesOrderLine {
   warehouse        Warehouse?   @relation(fields: [warehouseId], references: [id])
   costCenterId     String?
   costCenter       CostCenter?  @relation(fields: [costCenterId], references: [id])
+  deliveryLines    DeliveryNoteLine[]
 
   @@index([salesOrderId])
   @@map("sales_order_lines")
+}
+
+enum DeliveryNoteStatus {
+  DRAFT
+  DISPATCHED
+  DELIVERED
+  CANCELLED
+}
+
+// Proof that goods left for a customer against a Sales Order. Like GoodsReceipt on the purchase side it is a
+// document only: it never touches stock or the GL (stock leaves at sales-invoice posting as before).
+model DeliveryNote {
+  id              String             @id @default(uuid())
+  companyId       String
+  company         Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  deliveryNumber  String?
+  salesOrderId    String
+  salesOrder      SalesOrder         @relation(fields: [salesOrderId], references: [id])
+  deliveryDate    DateTime
+  status          DeliveryNoteStatus @default(DRAFT)
+  deliveryAddress String?
+  vehicleNumber   String?
+  driverName      String?
+  // Filled when the customer's representative signs for the goods.
+  receivedByName  String?
+  deliveredAt     DateTime?
+  memo            String?
+  createdByUserId String
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  lines DeliveryNoteLine[]
+
+  @@unique([companyId, deliveryNumber])
+  @@index([companyId, status])
+  @@index([salesOrderId])
+  @@map("delivery_notes")
+}
+
+model DeliveryNoteLine {
+  id               String         @id @default(uuid())
+  deliveryNoteId   String
+  deliveryNote     DeliveryNote   @relation(fields: [deliveryNoteId], references: [id], onDelete: Cascade)
+  salesOrderLineId String
+  salesOrderLine   SalesOrderLine @relation(fields: [salesOrderLineId], references: [id])
+  quantity         Decimal        @db.Decimal(18, 6)
+
+  @@index([deliveryNoteId])
+  @@index([salesOrderLineId])
+  @@map("delivery_note_lines")
 }
 
 model Payment {

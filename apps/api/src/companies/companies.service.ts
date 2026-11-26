@@ -82,6 +82,7 @@ export class CompaniesService {
         { documentType: DocumentType.GOODS_RECEIPT, prefix: "GRN-" },
         { documentType: DocumentType.SALES_QUOTATION, prefix: "SQ-" },
         { documentType: DocumentType.SALES_ORDER, prefix: "SO-" },
+        { documentType: DocumentType.DELIVERY_NOTE, prefix: "DN-" },
         { documentType: DocumentType.INCOMING_PAYMENT, prefix: "RCT-" },
         { documentType: DocumentType.OUTGOING_PAYMENT, prefix: "PAY-" },
         { documentType: DocumentType.STOCK_TRANSFER, prefix: "ST-" },

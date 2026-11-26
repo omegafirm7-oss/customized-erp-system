@@ -406,7 +406,12 @@ export class PaymentsService {
   private async getOwnedPayment(companyId: string, paymentId: string) {
     const payment = await this.prisma.payment.findFirst({
       where: { id: paymentId, companyId },
-      include: { allocations: true, businessPartner: true },
+      include: {
+        // Invoice numbers let a receipt/voucher say what the money settled.
+        allocations: { include: { salesInvoice: { select: { invoiceNumber: true } }, purchaseInvoice: { select: { invoiceNumber: true, vendorInvoiceNumber: true } } } },
+        businessPartner: true,
+        bankCashAccount: { select: { code: true, name: true } },
+      },
     });
     if (!payment) {
       throw new NotFoundException("Payment not found");

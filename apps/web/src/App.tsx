@@ -39,6 +39,8 @@ import { PurchaseRequisitionDetailPage } from "./pages/PurchaseRequisitionDetail
 import { GoodsReceiptDetailPage } from "./pages/GoodsReceiptDetailPage";
 import { SalesQuotationsPage } from "./pages/SalesQuotationsPage";
 import { SalesOrdersPage } from "./pages/SalesOrdersPage";
+import { DeliveryNotesPage } from "./pages/DeliveryNotesPage";
+import { DeliveryNoteDetailPage } from "./pages/DeliveryNoteDetailPage";
 import { LeadsPage } from "./pages/crm/LeadsPage";
 import { OpportunitiesPage } from "./pages/crm/OpportunitiesPage";
 import { LeadResearchPage } from "./pages/crm/LeadResearchPage";
@@ -178,6 +180,8 @@ const companyRoutes: Array<{ path: string; element: JSX.Element }> = [
   { path: "/procurement/goods-receipts/:id", element: <GoodsReceiptDetailPage /> },
   { path: "/ar/quotations", element: <SalesQuotationsPage /> },
   { path: "/ar/orders", element: <SalesOrdersPage /> },
+  { path: "/ar/delivery-notes", element: <DeliveryNotesPage /> },
+  { path: "/ar/delivery-notes/:id", element: <DeliveryNoteDetailPage /> },
   { path: "/crm/leads", element: <LeadsPage /> },
   { path: "/crm/opportunities", element: <OpportunitiesPage /> },
   { path: "/crm/lead-research", element: <LeadResearchPage /> },
