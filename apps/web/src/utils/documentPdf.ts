@@ -92,6 +92,35 @@ export interface CommercialDocumentParams extends CommercialDocumentExtras {
   };
 }
 
+// Arabic needs a font that has the glyphs (the PDF's built-in Helvetica has none, so names and addresses came out
+// as garbage). Amiri (SIL OFL) is served from /fonts and fetched only when a document actually contains Arabic;
+// jsPDF itself shapes the letters and flips the direction.
+const ARABIC = /[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]/;
+const hasArabic = (v: unknown): boolean => ARABIC.test(String(v ?? ""));
+let arabicFontCache: { regular: string; bold: string } | null = null;
+
+async function fetchBase64(url: string): Promise<string> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`font ${url} ${res.status}`);
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+async function registerArabicFont(doc: jsPDF): Promise<boolean> {
+  try {
+    if (!arabicFontCache) arabicFontCache = { regular: await fetchBase64("/fonts/Amiri-Regular.ttf"), bold: await fetchBase64("/fonts/Amiri-Bold.ttf") };
+    doc.addFileToVFS("Amiri-Regular.ttf", arabicFontCache.regular);
+    doc.addFont("Amiri-Regular.ttf", "Amiri", "normal");
+    doc.addFileToVFS("Amiri-Bold.ttf", arabicFontCache.bold);
+    doc.addFont("Amiri-Bold.ttf", "Amiri", "bold");
+    return true;
+  } catch {
+    return false; // fall back to Helvetica rather than fail the whole PDF
+  }
+}
+
 const DEFAULT_SIGNATURES = ["Prepared by", "Checked by", "Approved by"];
 const WATERMARK_STATUSES = new Set(["DRAFT", "CANCELLED", "REJECTED", "VOID"]);
 
@@ -165,6 +194,18 @@ export async function downloadCommercialDocumentPdf(params: CommercialDocumentPa
   ]);
 
   const doc = new jsPDF();
+  const needsArabic = [
+    companyName, companyAddress, partner?.name, partner?.code, params.notes, branding?.termsText, branding?.footerText, branding?.headerTagline,
+    ...(params.references ?? []).flat(),
+    ...lines.map((l) => l.description),
+    ...(params.plainTable ? [...params.plainTable.head, ...params.plainTable.body.flat()] : []),
+  ].some(hasArabic);
+  const arabic = needsArabic ? await registerArabicFont(doc) : false;
+  /** Picks Amiri for a string that contains Arabic, Helvetica otherwise, keeping the weight. */
+  const fontFor = (text: unknown, bold = false) => doc.setFont(arabic && hasArabic(text) ? "Amiri" : "helvetica", bold ? "bold" : "normal");
+  const arabicCells = (data: { cell: { text: string[]; styles: { font?: string } } }) => {
+    if (arabic && data.cell.text.some(hasArabic)) data.cell.styles.font = "Amiri";
+  };
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const left = 14;
@@ -175,16 +216,20 @@ export async function downloadCommercialDocumentPdf(params: CommercialDocumentPa
   let textX = left;
   if (branding?.logoDataUrl) {
     try {
-      doc.addImage(branding.logoDataUrl, logoFormatFromDataUrl(branding.logoDataUrl), left, 10, 30, 18, undefined, "FAST");
-      textX = left + 34;
+      const dims = doc.getImageProperties(branding.logoDataUrl);
+      const boxH = 22;
+      const logoW = Math.min(boxH * (dims.width / dims.height), 40);
+      const logoH = logoW * (dims.height / dims.width);
+      doc.addImage(branding.logoDataUrl, logoFormatFromDataUrl(branding.logoDataUrl), left, 9 + (boxH - logoH) / 2, logoW, logoH, undefined, "FAST");
+      textX = left + logoW + 5;
     } catch {
       // carry on without the logo if the data URL can't be decoded
     }
   }
-  doc.setFont("helvetica", "bold");
+  fontFor(companyName, true);
   doc.setFontSize(14);
   doc.setTextColor(...accent);
-  doc.text(companyName.toUpperCase(), textX, 15);
+  doc.text(hasArabic(companyName) ? companyName : companyName.toUpperCase(), textX, 15);
   let lineY = 20;
   doc.setFontSize(8);
   doc.setTextColor(200, 40, 40);
@@ -200,8 +245,11 @@ export async function downloadCommercialDocumentPdf(params: CommercialDocumentPa
   doc.setTextColor(90, 90, 90);
   doc.setFontSize(8);
   if ((branding?.showAddress ?? true) && companyAddress) {
-    doc.text(doc.splitTextToSize(companyAddress, 100), textX, lineY);
-    lineY += 4 * Math.min(2, doc.splitTextToSize(companyAddress, 100).length);
+    fontFor(companyAddress);
+    const addressLines = doc.splitTextToSize(companyAddress, 100);
+    doc.text(addressLines, textX, lineY);
+    lineY += 4 * Math.min(3, addressLines.length);
+    doc.setFont("helvetica", "normal");
   }
   const ids: string[] = [];
   if ((branding?.showTaxNumber ?? true) && companyTaxNumber) ids.push(`${params.taxNumberLabel ?? "VAT Reg. No"}: ${companyTaxNumber}`);
@@ -242,12 +290,13 @@ export async function downloadCommercialDocumentPdf(params: CommercialDocumentPa
     startY: y,
     theme: "grid",
     styles: { fontSize: 9, cellPadding: 2, lineColor: [200, 200, 200] },
+    didParseCell: arabicCells,
     body: meta,
     columnStyles: {
-      0: { fontStyle: "bold", cellWidth: 35, fillColor: [245, 246, 248] },
-      1: { cellWidth: 55 },
-      2: { fontStyle: "bold", cellWidth: 35, fillColor: [245, 246, 248] },
-      3: { cellWidth: 57 },
+      0: { fontStyle: "bold", cellWidth: 32, fillColor: [245, 246, 248] },
+      1: { cellWidth: 68 },
+      2: { fontStyle: "bold", cellWidth: 20, fillColor: [245, 246, 248] },
+      3: { cellWidth: 62 },
     },
     margin: { left, right: 14 },
   });
@@ -261,6 +310,7 @@ export async function downloadCommercialDocumentPdf(params: CommercialDocumentPa
       startY: y,
       head: [pt.head],
       body: pt.body,
+      didParseCell: arabicCells,
       styles: { fontSize: 9, cellPadding: 2 },
       headStyles: { fillColor: accent },
       columnStyles: alignRight,
@@ -285,6 +335,7 @@ export async function downloadCommercialDocumentPdf(params: CommercialDocumentPa
       startY: y,
       head: [head],
       body,
+      didParseCell: arabicCells,
       styles: { fontSize: 9, cellPadding: 2 },
       headStyles: { fillColor: accent },
       columnStyles: { 0: { cellWidth: 9 }, ...(showItemCode ? { 1: { cellWidth: 22 } } : {}), ...rightCols },
@@ -334,7 +385,7 @@ export async function downloadCommercialDocumentPdf(params: CommercialDocumentPa
     doc.setTextColor(0, 0, 0);
     doc.text("Notes", left, y);
     y += 5;
-    doc.setFont("helvetica", "normal");
+    fontFor(params.notes);
     const wrapped = doc.splitTextToSize(params.notes, pageWidth - 28);
     doc.text(wrapped, left, y);
     y += wrapped.length * 4.2 + 4;
@@ -347,7 +398,7 @@ export async function downloadCommercialDocumentPdf(params: CommercialDocumentPa
     doc.setTextColor(0, 0, 0);
     doc.text("Terms & Conditions", left, y);
     y += 5;
-    doc.setFont("helvetica", "normal");
+    fontFor(branding.termsText);
     const wrapped = doc.splitTextToSize(branding.termsText, pageWidth - 28);
     doc.text(wrapped, left, y);
     y += wrapped.length * 4.2 + 4;
@@ -393,7 +444,11 @@ export async function downloadCommercialDocumentPdf(params: CommercialDocumentPa
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
     doc.setTextColor(90, 90, 90);
-    if (branding?.footerText) doc.text(branding.footerText, left, pageHeight - 16.5);
+    if (branding?.footerText) {
+      fontFor(branding.footerText);
+      doc.text(branding.footerText, left, pageHeight - 16.5);
+      doc.setFont("helvetica", "normal");
+    }
     doc.text(`${docTypeLabel} ${numberLabel}${status ? ` · ${status.replace(/_/g, " ")}` : ""}`, left, pageHeight - 12);
     doc.text(`Printed ${printedStamp()}`, pageWidth / 2, pageHeight - 12, { align: "center" });
     doc.text(`Page ${p} of ${pages}`, right, pageHeight - 12, { align: "right" });

@@ -1,0 +1,1 @@
+Amiri (c) The Amiri Project Authors (https://github.com/aliftype/amiri), licensed under the SIL Open Font License 1.1 (https://openfontlicense.org). Embedded in PDFs so Arabic names and addresses print correctly.

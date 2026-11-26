@@ -218,13 +218,18 @@ export function InvoiceList({ side }: { side: "ar" | "ap" }) {
         lines: Array<{ description: string; quantity: string; unitPrice: string; vatCategory: string; item?: { code: string } | null }>;
       }>(`/${side}/invoices/${id}`);
       const inv = res.data;
+      const extRef = /^\[EXT:([^\]]+)\]/.exec(inv.memo ?? "")?.[1];
       download({
         docTypeLabel: side === "ar" ? "Sales Invoice" : "Purchase Invoice",
         documentNumber: inv.invoiceNumber ?? null,
         status: inv.status,
         recordId: inv.id,
-        notes: inv.memo,
-        references: inv.vendorInvoiceNumber ? [["Vendor Invoice No", inv.vendorInvoiceNumber]] : undefined,
+        // Imported invoices carry a technical "[EXT:ref] Imported from another system" memo — show the reference, not the tag.
+        notes: inv.memo?.startsWith("[EXT:") ? null : inv.memo,
+        references: [
+          ...(inv.vendorInvoiceNumber ? [["Vendor Invoice No", inv.vendorInvoiceNumber] as [string, string]] : []),
+          ...(extRef ? [["External Ref", extRef] as [string, string]] : []),
+        ],
         documentDate: inv.postingDate,
         partnerLabel: side === "ar" ? "Bill To" : "Vendor",
         partner: inv.businessPartner,

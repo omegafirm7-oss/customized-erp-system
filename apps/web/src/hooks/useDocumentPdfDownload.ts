@@ -39,7 +39,13 @@ export function useDocumentPdfDownload(cycle: "sales" | "purchase") {
     ) => {
       // Pakistan: "Sales Tax" + seller NTN instead of VAT / VAT number.
       const isPakistan = company?.countryCode === "PK";
-      const address = company ? [company.addressLine1, company.addressLine2, company.city].filter(Boolean).join(", ") : "";
+      // The street line is often a full pasted address already containing the city, so don't repeat parts.
+      const addressParts: string[] = [];
+      for (const part of company ? [company.addressLine1, company.addressLine2, company.city] : []) {
+        const t = part?.trim();
+        if (t && !addressParts.join(", ").toLowerCase().includes(t.toLowerCase())) addressParts.push(t);
+      }
+      const address = addressParts.join(", ");
       downloadCommercialDocumentPdf({
         cycle,
         companyName: company?.legalName ?? "",
